@@ -24,12 +24,13 @@ import type {
   PendingMessage,
   Presence,
   User,
+  UserBrief,
   Workspace,
 } from "@/lib/types";
 
 export type Screen = "loading" | "signin" | "workspace";
 
-interface TypingEntry {
+export interface TypingEntry {
   userId: Id;
   at: number;
 }
@@ -128,7 +129,7 @@ interface AppActions {
 
 export type AppStore = AppStateShape & AppActions;
 
-const TYPING_TTL_MS = 6_000;
+export const TYPING_TTL_MS = 6_000;
 
 export const useApp = create<AppStore>((set, get) => ({
   screen: "loading",
@@ -784,11 +785,22 @@ function applyReactionLocally(
 }
 
 /** Users currently typing in a channel, excluding stale entries. */
-export function typingNames(store: AppStore, channelId: Id | null): string[] {
-  if (!channelId) return [];
+/**
+ * Names to show in the "typing…" indicator.
+ *
+ * Takes the raw entries rather than the store, because it builds a fresh array:
+ * called from inside a zustand selector, that new reference on every snapshot
+ * read is an infinite render loop. Callers select `typing.get(channelId)` and
+ * `people` — both stable references — and call this in the render body.
+ */
+export function typingNames(
+  entries: TypingEntry[] | undefined,
+  people: Map<Id, UserBrief>,
+): string[] {
+  if (!entries || entries.length === 0) return [];
   const now = Date.now();
-  return (store.typing.get(channelId) ?? [])
+  return entries
     .filter((entry) => now - entry.at < TYPING_TTL_MS)
-    .map((entry) => store.people.get(entry.userId)?.display_name)
+    .map((entry) => people.get(entry.userId)?.display_name)
     .filter((name): name is string => Boolean(name));
 }

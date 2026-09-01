@@ -1,14 +1,32 @@
+import { useEffect, useState } from "react";
+
 import { channelPrefix } from "@/lib/format";
-import { typingNames, useApp } from "@/store/app";
+import { TYPING_TTL_MS, typingNames, useApp } from "@/store/app";
 
 export function ChannelHeader() {
   const channel = useApp((state) =>
     state.channels.find((candidate) => candidate.id === state.activeChannelId),
   );
-  const typing = useApp((state) => typingNames(state, state.activeChannelId));
+  // Selected as stable references; the names are derived below. A selector that
+  // returned a fresh array here would re-render forever.
+  const typingEntries = useApp((state) =>
+    state.activeChannelId ? state.typing.get(state.activeChannelId) : undefined,
+  );
+  const people = useApp((state) => state.people);
   const toggleMute = useApp((state) => state.toggleMute);
   const setPalette = useApp((state) => state.setPalette);
   const connection = useApp((state) => state.connection);
+
+  // Entries expire by wall clock, so nudge a render when the newest one ages
+  // out — otherwise "입력 중…" lingers until the next store change.
+  const [, expire] = useState(0);
+  useEffect(() => {
+    if (!typingEntries || typingEntries.length === 0) return undefined;
+    const timer = window.setTimeout(() => expire((n) => n + 1), TYPING_TTL_MS);
+    return () => window.clearTimeout(timer);
+  }, [typingEntries]);
+
+  const typing = typingNames(typingEntries, people);
 
   if (!channel) {
     return (
