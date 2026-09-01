@@ -103,6 +103,7 @@ smoke: ## 실행 중인 서버에 대해 실시간/미니앱 종단 검증
 .PHONY: lint
 lint: ## 린트 및 타입 검사
 	cd $(BACKEND) && .venv/bin/ruff check app tests scripts
+	$(BACKEND)/.venv/bin/ruff check scripts
 	cd $(DESKTOP) && npx tsc --noEmit
 	cd $(DESKTOP) && $(CARGO) clippy -p llack-core -- -D warnings
 	cd $(SDK) && npx tsc -p tsconfig.json --noEmit
@@ -110,7 +111,12 @@ lint: ## 린트 및 타입 검사
 .PHONY: fmt
 fmt: ## 자동 포매팅
 	cd $(BACKEND) && .venv/bin/ruff check app tests scripts --fix
+	$(BACKEND)/.venv/bin/ruff check scripts --fix
 	cd $(DESKTOP) && $(CARGO) fmt
+
+.PHONY: icons
+icons: ## 데스크톱 아이콘 세트 재생성
+	python3 scripts/generate_icons.py
 
 .PHONY: build
 build: ## 프론트엔드 및 SDK 프로덕션 빌드

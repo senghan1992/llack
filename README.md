@@ -11,7 +11,11 @@ Slack/Teams 를 대체하려는 것이 아니라, **매일 쓰면서 불편했�
 
 ---
 
-## 5분 만에 띄워보기
+> **윈도우에서 확인하시려면 → [docs/WINDOWS.md](docs/WINDOWS.md)**
+> 코드 가져오기부터 데스크톱 창 띄우기까지 단계별로 정리해 두었습니다.
+> 윈도우에는 `make` 가 없으므로 `.\llack.ps1` 스크립트를 쓰세요.
+
+## 5분 만에 띄워보기 (macOS / Linux)
 
 외부 의존성이 필요 없습니다. SQLite + 프로세스 내 pub/sub + 로컬 파일 저장으로 그대로 돌아갑니다.
 
@@ -134,6 +138,7 @@ llack/
 
 ## 문서
 
+- [docs/WINDOWS.md](docs/WINDOWS.md) — 윈도우에서 실행하기 (전송 · 설치 · 확인 · 문제 해결)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 시스템 구조, 데이터 모델, 실시간 프로토콜, 배포
 - [docs/APP_PLATFORM.md](docs/APP_PLATFORM.md) — 미니앱 플랫폼: 매니페스트, 스코프, 보안 모델
 - [docs/ROADMAP.md](docs/ROADMAP.md) — 이 초안에 없는 것과 다음에 할 것
@@ -147,6 +152,8 @@ make smoke          # 실행 중인 서버에 대한 종단 검증
 make lint           # ruff + tsc + clippy
 make reset-db       # DB 초기화 후 재시드
 ```
+
+윈도우는 같은 명령을 `.\llack.ps1 <명령>` 으로 실행합니다 (`.\llack.ps1 help`).
 
 ## 라이선스
 

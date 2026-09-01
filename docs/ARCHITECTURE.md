@@ -200,9 +200,17 @@ Windows Credential Manager, Linux Secret Service). 키체인을 못 쓰는 환�
 | 플랫폼 | 필요한 것 |
 | --- | --- |
 | macOS | Xcode Command Line Tools |
-| Windows | MSVC 빌드 도구 + WebView2 (설치 프로그램이 자동 처리) |
-| Ubuntu/Debian | `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev build-essential` |
-| Fedora | `webkit2gtk4.1-devel gtk3-devel libsoup3-devel librsvg2-devel` |
+| Windows | MSVC C++ 빌드 도구 + WebView2 런타임 (윈도우 11 은 기본 포함) |
+| Ubuntu/Debian | `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libdbus-1-dev build-essential` |
+| Fedora | `webkit2gtk4.1-devel gtk3-devel libsoup3-devel librsvg2-devel dbus-devel` |
+
+리눅스에서 `libdbus-1-dev` 가 필요한 이유: 리프레시 토큰을 OS 비밀 저장소에 넣기 위해
+`keyring` 크레이트를 쓰고, 리눅스에서는 그것이 Secret Service(D-Bus)로 연결됩니다.
+윈도우는 Credential Manager, macOS 는 Keychain 을 쓰므로 추가 패키지가 없습니다.
+
+아이콘은 `python3 scripts/generate_icons.py` 로 코드에서 생성합니다. 저장소에 아무도
+재생성할 수 없는 바이너리 에셋을 두지 않기 위해서입니다. 실제 로고로 교체하려면
+`cd desktop && npm run tauri icon <로고.png>` 를 쓰세요.
 
 Amazon Linux 2023 에는 webkit2gtk 패키지가 없어 셸 링크가 불가합니다.
 `llack-core` 는 어디서든 빌드·테스트됩니다.
