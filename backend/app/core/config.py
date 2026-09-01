@@ -53,9 +53,15 @@ class Settings(BaseSettings):
     presence_ttl_seconds: int = 60
 
     # ── CORS ────────────────────────────────────────────────────────────
+    # A mini-app panel runs on its own origin and calls `/api/v1/app-bridge`
+    # from there, so every host that serves a panel belongs here too — not
+    # just the desktop shell. 5180 is the bundled example app's dev port.
     cors_origins: list[str] = [
         "http://localhost:1420",
+        "http://127.0.0.1:1420",
         "http://localhost:5173",
+        "http://localhost:5180",
+        "http://127.0.0.1:5180",
         "tauri://localhost",
     ]
 

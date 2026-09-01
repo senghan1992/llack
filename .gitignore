@@ -36,3 +36,10 @@ Thumbs.db
 
 # Claude Code local settings (per-developer, not shared)
 .claude/settings.local.json
+
+# 예제 미니앱 안으로 복사된 SDK 빌드 산출물
+examples/apps/standup/vendor/
+
+# 디자인 검증 스크린샷과 세션 상태 (재생성 가능한 산출물)
+.impeccable/review/
+.impeccable/build/

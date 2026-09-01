@@ -207,6 +207,17 @@ function Task-SetupDesktop {
     Write-Ok "완료"
 }
 
+function Task-VendorSdk {
+    # 예제 앱은 자기 디렉터리를 웹 루트로 서빙하므로, 저장소 상위의
+    # packages/ 경로는 HTTP 로 닿지 않습니다. 빌드 산출물을 안으로 복사합니다.
+    Write-Step "SDK 를 예제 앱 안으로 복사"
+    $target = Join-Path $Root "examples\apps\standup\vendor\llack-app-sdk"
+    if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+    New-Item -ItemType Directory -Force -Path $target | Out-Null
+    Copy-Item (Join-Path $Sdk "dist\*.js") $target
+    Write-Ok "vendor\llack-app-sdk"
+}
+
 function Task-SetupSdk {
     Write-Step "미니앱 SDK 빌드"
     Invoke-In $Sdk {
@@ -270,6 +281,7 @@ function Task-Build {
 }
 
 function Task-ExampleApp {
+    Task-VendorSdk
     Write-Step "예제 미니앱 (http://localhost:5180)"
     $python = Resolve-Python
     Invoke-In (Join-Path $Root "examples\apps\standup") {
@@ -335,7 +347,8 @@ switch ($Task.ToLower()) {
                     Write-Host "설치 완료. 다음: .\llack.ps1 seed" -ForegroundColor Green }
     "setup-backend" { Task-SetupBackend }
     "setup-desktop" { Task-SetupDesktop }
-    "setup-sdk"   { Task-SetupSdk }
+    "setup-sdk"   { Task-SetupSdk; Task-VendorSdk }
+    "vendor-sdk"  { Task-VendorSdk }
     "migrate"     { Task-Migrate }
     "seed"        { Task-Seed }
     "dev"         { Task-Dev }

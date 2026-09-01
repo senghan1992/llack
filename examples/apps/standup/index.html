@@ -5,23 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>데일리 스탠드업</title>
     <style>
+      /*
+       * A panel is a guest: it keeps its own stylesheet, but a reference app
+       * should look like it belongs to the product it demonstrates. These
+       * values mirror the host's ramp and its single accent so app authors
+       * copying this file start from the house style.
+       *
+       * No dark block: the host ships light only, and an app that follows the
+       * OS into dark inside a light panel is a mismatch, not a courtesy.
+       */
       :root {
-        color-scheme: light dark;
-        --bg: #ffffff;
-        --fg: #1b1725;
-        --muted: #6b6580;
-        --border: #e4e1ec;
-        --accent: #7c6aff;
-        --input-bg: #f7f6fb;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #1f1a26;
-          --fg: #ece9f2;
-          --muted: #a49fb4;
-          --border: rgba(255, 255, 255, 0.1);
-          --input-bg: #17131f;
-        }
+        color-scheme: light;
+        --bg: #fafaf9;
+        --fg: #16171a;
+        --muted: #6a6a64;
+        --border: #c2c2bc;
+        --accent: #a50034;
+        --input-bg: #ffffff;
       }
       * { box-sizing: border-box; }
       body {
@@ -45,7 +45,7 @@
         color: inherit;
         background: var(--input-bg);
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 2px;
         resize: vertical;
       }
       textarea:focus { border-color: var(--accent); outline: none; }
@@ -58,7 +58,7 @@
         color: inherit;
         background: var(--input-bg);
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 2px;
       }
       button {
         width: 100%;
@@ -68,7 +68,7 @@
         color: #fff;
         background: var(--accent);
         border: none;
-        border-radius: 8px;
+        border-radius: 2px;
         cursor: pointer;
       }
       button:disabled { opacity: 0.5; cursor: not-allowed; }

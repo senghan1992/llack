@@ -41,8 +41,14 @@ setup-desktop: ## 데스크톱 프론트엔드 의존성 설치
 	cd $(DESKTOP) && npm install --no-audit --no-fund
 
 .PHONY: setup-sdk
-setup-sdk: ## 미니앱 SDK 설치 및 빌드
+setup-sdk: vendor-sdk ## 미니앱 SDK 설치 및 빌드
+
+.PHONY: vendor-sdk
+vendor-sdk: ## SDK 빌드 후 예제 앱 안으로 복사 (예제 앱의 웹 루트에서 닿게)
 	cd $(SDK) && npm install --no-audit --no-fund && npm run build
+	rm -rf examples/apps/standup/vendor/llack-app-sdk
+	mkdir -p examples/apps/standup/vendor/llack-app-sdk
+	cp $(SDK)/dist/*.js examples/apps/standup/vendor/llack-app-sdk/
 
 ## ── 실행 ──────────────────────────────────────────────────────────────
 
@@ -63,7 +69,7 @@ web: ## 브라우저 모드를 0.0.0.0 에 바인딩 (LAN 직접 접속용 · �
 	cd $(DESKTOP) && LLACK_WEB_HOST=0.0.0.0 npm run dev
 
 .PHONY: example-app
-example-app: ## 예제 미니앱을 5180 포트로 서빙
+example-app: vendor-sdk ## 예제 미니앱을 5180 포트로 서빙
 	cd examples/apps/standup && python3 -m http.server 5180
 
 ## ── 데이터베이스 ──────────────────────────────────────────────────────

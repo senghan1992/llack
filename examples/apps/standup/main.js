@@ -12,7 +12,10 @@
  * persistence.
  */
 
-import { createClient, LlackError } from "../../../packages/llack-app-sdk/dist/index.js";
+// Vendored by `make setup-sdk` / `make example-app`: the app is served with
+// its own directory as the web root, so a path outside that root (the
+// monorepo's packages/) is not reachable over HTTP.
+import { createClient, LlackError } from "./vendor/llack-app-sdk/index.js";
 
 const elements = {
   who: document.getElementById("who"),
