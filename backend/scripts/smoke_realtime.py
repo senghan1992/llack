@@ -6,14 +6,18 @@ client runs its own event loop.
 """
 import asyncio
 import json
+import os
 import sys
 
 import httpx
 import websockets
 
-API = "http://127.0.0.1:8000/api/v1"
-WSU = "ws://127.0.0.1:8000/api/v1/ws"
-PW = "llack-dev-password"
+# Override when the server is not on the default port, e.g.
+#   LLACK_SMOKE_BASE_URL=http://127.0.0.1:8010 python scripts/smoke_realtime.py
+BASE = os.environ.get("LLACK_SMOKE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+API = f"{BASE}/api/v1"
+WSU = API.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
+PW = os.environ.get("LLACK_SMOKE_PASSWORD", "llack-dev-password")
 
 async def login(client, email):
     r = await client.post(f"{API}/auth/login", json={"email": email, "password": PW})

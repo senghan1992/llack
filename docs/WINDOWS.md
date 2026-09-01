@@ -235,10 +235,25 @@ IPv6(`::1`)로 먼저 해석되면서 연결이 거부되는 문제를 피하기
 
 ### 포트 8000 또는 1420 이 이미 사용 중
 
+무엇이 쓰고 있는지 확인하고 종료하거나:
+
 ```powershell
 Get-NetTCPConnection -LocalPort 8000 | Select-Object OwningProcess
 Stop-Process -Id <위에서 나온 PID>
 ```
+
+다른 포트를 쓰세요:
+
+```powershell
+cd backend
+.venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8010
+
+# 종단 검증도 같은 포트를 가리키게 합니다
+$env:LLACK_SMOKE_BASE_URL = "http://127.0.0.1:8010"
+.venv\Scripts\python.exe scripts\smoke_realtime.py
+```
+
+이 경우 앱의 로그인 화면에서 서버 주소를 `http://127.0.0.1:8010` 으로 입력하면 됩니다.
 
 ### `winget` 자체가 없음
 

@@ -4,12 +4,16 @@ Follows the exact path a panel app takes: the host mints a panel session, the
 panel uses only the bridge token, and every boundary is probed.
 """
 import asyncio
+import os
 import sys
 
 import httpx
 
-API = "http://127.0.0.1:8000/api/v1"
-PW = "llack-dev-password"
+# Override when the server is not on the default port, e.g.
+#   LLACK_SMOKE_BASE_URL=http://127.0.0.1:8010 python scripts/smoke_apps.py
+BASE = os.environ.get("LLACK_SMOKE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+API = f"{BASE}/api/v1"
+PW = os.environ.get("LLACK_SMOKE_PASSWORD", "llack-dev-password")
 results = {}
 
 def check(name, value):
