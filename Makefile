@@ -59,7 +59,7 @@ ui: ## 브라우저에서 앱 실행 (Tauri 없이, 로컬 접속만)
 	cd $(DESKTOP) && npm run dev
 
 .PHONY: web
-web: ## 브라우저 모드를 외부에서도 접속 가능하게 실행 (SSH 터널/LAN)
+web: ## 브라우저 모드를 0.0.0.0 에 바인딩 (LAN 직접 접속용 · 터널은 ui 로 충분)
 	cd $(DESKTOP) && LLACK_WEB_HOST=0.0.0.0 npm run dev
 
 .PHONY: example-app

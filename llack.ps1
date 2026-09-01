@@ -101,7 +101,7 @@ function Task-Help {
         @("seed",        "마이그레이션 + 개발용 시드 데이터"),
         @("dev",         "백엔드 개발 서버 (http://localhost:8000/docs)"),
         @("ui",          "브라우저에서 앱 실행 (Tauri 없이 · 설치 최소)"),
-        @("web",         "브라우저 모드를 외부에서도 접속 가능하게"),
+        @("web",         "브라우저 모드를 LAN 에서도 접속 가능하게"),
         @("desktop",     "데스크톱 앱 실행 (Tauri)"),
         @("build",       "데스크톱 앱 설치 파일 빌드 (.msi / .exe)"),
         @("example-app", "예제 미니앱을 5180 포트로 서빙"),
@@ -245,7 +245,8 @@ function Task-Ui {
 }
 
 function Task-Web {
-    # 같은 것을 0.0.0.0 에 바인딩합니다. 다른 기기(SSH 터널 · LAN)에서 접속할 때.
+    # 같은 것을 0.0.0.0 에 바인딩합니다. LAN 주소로 직접 붙을 때만 필요하고,
+    # SSH 터널은 루프백으로 접속하므로 ui 로 충분합니다.
     Write-Step "브라우저 모드 (외부 접속 허용)"
     Write-Ok "http://<이 PC 주소>:1420  ·  백엔드(dev)가 켜져 있어야 합니다"
     Invoke-In $Desktop {
