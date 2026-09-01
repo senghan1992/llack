@@ -114,7 +114,12 @@ export interface PendingMessage {
   id: string;
   channel_id: Id;
   client_msg_id: string;
-  payload: { body: string; parent_id?: Id | null; file_ids?: Id[] };
+  payload: {
+    body: string;
+    parent_id?: Id | null;
+    also_send_to_channel?: boolean;
+    file_ids?: Id[];
+  };
   state: "pending" | "sending" | "failed";
   attempts: number;
   last_error?: string | null;

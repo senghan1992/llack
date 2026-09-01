@@ -11,9 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-
-import { api } from "@/lib/ipc";
+import { shell } from "@/lib/ipc";
 import type { Id } from "@/lib/types";
 import { useApp } from "@/store/app";
 
@@ -127,14 +125,12 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
   const attachFiles = async () => {
     if (!workspaceId) return;
     try {
-      const selected = await openFileDialog({ multiple: true });
-      if (!selected) return;
-      const paths = Array.isArray(selected) ? selected : [selected];
       setUploading(true);
-      for (const path of paths) {
-        const file = await api.uploadFile(workspaceId, path);
+      // The picker differs per host (native dialog vs. file input); the upload
+      // that follows does not.
+      await shell.pickAndUploadFiles(workspaceId, (file) => {
         setAttachments((current) => [...current, { id: file.id, filename: file.filename }]);
-      }
+      });
     } catch (error) {
       reportError(error, "파일을 업로드하지 못했습니다.");
     } finally {

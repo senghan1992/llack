@@ -1,14 +1,21 @@
 /**
- * Typed wrappers around the Tauri command surface.
+ * Typed wrappers around the Tauri command surface — and the switch that lets
+ * the same UI run without Tauri at all.
  *
  * One place where every `invoke` name and argument shape is written down, so a
  * rename on the Rust side produces one compile error here rather than silent
  * runtime failures scattered across components.
+ *
+ * The exported `api` / `events` are the desktop shell's when the UI is running
+ * inside it, and the browser adapter in `web.ts` otherwise. `ShellApi` is
+ * derived from the Tauri implementation, so the adapter is checked against the
+ * real contract rather than a hand-copied one.
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import { asCommandError } from "./errors";
 import type {
   AppInstallation,
   AppSummary,
@@ -16,7 +23,6 @@ import type {
   Channel,
   ChannelKind,
   ChannelMembership,
-  CommandError,
   ConnectionStatus,
   DrainReport,
   FileRef,
@@ -31,22 +37,18 @@ import type {
   User,
   Workspace,
 } from "./types";
+import { pickFilesInBrowser, webApi, webEvents } from "./web";
 
-/** Narrow an unknown rejection into the error envelope the shell returns. */
-export function asCommandError(error: unknown): CommandError {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    "message" in error
-  ) {
-    return error as CommandError;
-  }
-  return {
-    code: "unknown_error",
-    message: typeof error === "string" ? error : "알 수 없는 오류가 발생했습니다.",
-    requires_reauth: false,
-  };
+export { asCommandError };
+
+/**
+ * True when the UI is hosted by the Tauri shell.
+ *
+ * Tauri injects this on the window before the bundle runs; its absence means a
+ * plain browser tab, where the HTTP adapter takes over.
+ */
+export function isDesktopShell(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -59,7 +61,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 // ── Connection & auth ───────────────────────────────────────────────────────
 
-export const api = {
+const tauriApi = {
   bootstrap: (serverUrl: string) =>
     call<BootstrapResult>("bootstrap", { serverUrl }),
 
@@ -178,8 +180,17 @@ export const api = {
 
   // ── Files ─────────────────────────────────────────────────────────────
 
-  uploadFile: (workspaceId: Id, path: string) =>
-    call<FileRef>("upload_file", { workspaceId, path }),
+  /**
+   * `source` is a filesystem path in the desktop shell. The browser adapter
+   * also accepts a `File`, which is what its picker produces; pick files
+   * through `shell.pickAndUploadFiles` so callers need not care which.
+   */
+  uploadFile: (workspaceId: Id, source: string | File) => {
+    if (typeof source !== "string") {
+      throw asCommandError("데스크톱 앱에서는 파일 경로로 업로드합니다.");
+    }
+    return call<FileRef>("upload_file", { workspaceId, path: source });
+  },
 
   downloadFile: (fileId: Id, filename: string) =>
     call<string>("download_file", { fileId, filename }),
@@ -218,9 +229,12 @@ export const api = {
     call<number>("prune_cache", { keepPerChannel }),
 };
 
+/** The contract both runtimes implement. */
+export type ShellApi = typeof tauriApi;
+
 // ── Events ──────────────────────────────────────────────────────────────────
 
-export const events = {
+const tauriEvents = {
   onReady: (handler: (payload: { default_server_url: string; version: string; platform: string }) => void) =>
     listen<{ default_server_url: string; version: string; platform: string }>(
       "llack://ready",
@@ -249,6 +263,45 @@ export const events = {
     listen<{ presence: string }>("llack://presence-request", (event) =>
       handler(event.payload),
     ),
+};
+
+/** The contract both runtimes implement. */
+export type ShellEvents = typeof tauriEvents;
+
+// ── Runtime selection ───────────────────────────────────────────────────────
+
+// Assigning through the annotations is what checks the browser adapter against
+// the desktop contract — a drift on either side fails the typecheck here.
+export const api: ShellApi = isDesktopShell() ? tauriApi : webApi;
+export const events: ShellEvents = isDesktopShell() ? tauriEvents : webEvents;
+
+/**
+ * Capabilities that are not commands but still differ per host: anything the
+ * platform, rather than the server, has to provide.
+ */
+export const shell = {
+  /**
+   * Pick files with the host's picker and upload them, reporting each one as
+   * it lands so the composer can show attachments appearing.
+   */
+  pickAndUploadFiles: async (
+    workspaceId: Id,
+    onUploaded: (file: FileRef) => void,
+  ): Promise<void> => {
+    if (isDesktopShell()) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ multiple: true });
+      if (!selected) return;
+      for (const path of Array.isArray(selected) ? selected : [selected]) {
+        onUploaded(await api.uploadFile(workspaceId, path));
+      }
+      return;
+    }
+
+    for (const file of await pickFilesInBrowser(true)) {
+      onUploaded(await api.uploadFile(workspaceId, file));
+    }
+  },
 };
 
 export type { UnlistenFn };

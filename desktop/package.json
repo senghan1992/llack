@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "web": "LLACK_WEB_HOST=0.0.0.0 vite"
   },
   "dependencies": {
     "react": "^18.3.1",

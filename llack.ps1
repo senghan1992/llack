@@ -100,7 +100,8 @@ function Task-Help {
         @("doctor",      "필요한 도구가 설치되어 있는지 진단"),
         @("seed",        "마이그레이션 + 개발용 시드 데이터"),
         @("dev",         "백엔드 개발 서버 (http://localhost:8000/docs)"),
-        @("ui",          "프론트엔드만 브라우저에서 (Tauri 없이)"),
+        @("ui",          "브라우저에서 앱 실행 (Tauri 없이 · 설치 최소)"),
+        @("web",         "브라우저 모드를 외부에서도 접속 가능하게"),
         @("desktop",     "데스크톱 앱 실행 (Tauri)"),
         @("build",       "데스크톱 앱 설치 파일 빌드 (.msi / .exe)"),
         @("example-app", "예제 미니앱을 5180 포트로 서빙"),
@@ -238,9 +239,19 @@ function Task-Dev {
 }
 
 function Task-Ui {
-    Write-Step "프론트엔드 개발 서버"
-    Write-Ok "http://localhost:1420"
+    Write-Step "브라우저 모드 (Tauri 없이)"
+    Write-Ok "http://localhost:1420  ·  백엔드(dev)가 켜져 있어야 합니다"
     Invoke-In $Desktop { npm run dev }
+}
+
+function Task-Web {
+    # 같은 것을 0.0.0.0 에 바인딩합니다. 다른 기기(SSH 터널 · LAN)에서 접속할 때.
+    Write-Step "브라우저 모드 (외부 접속 허용)"
+    Write-Ok "http://<이 PC 주소>:1420  ·  백엔드(dev)가 켜져 있어야 합니다"
+    Invoke-In $Desktop {
+        $env:LLACK_WEB_HOST = "0.0.0.0"
+        npm run dev
+    }
 }
 
 function Task-Desktop {
@@ -328,6 +339,7 @@ switch ($Task.ToLower()) {
     "seed"        { Task-Seed }
     "dev"         { Task-Dev }
     "ui"          { Task-Ui }
+    "web"         { Task-Web }
     "desktop"     { Task-Desktop }
     "build"       { Task-Build }
     "example-app" { Task-ExampleApp }

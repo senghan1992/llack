@@ -55,8 +55,12 @@ desktop: ## 데스크톱 앱 실행 (webkit2gtk 등 시스템 의존성 필요)
 	cd $(DESKTOP) && npm run app:dev
 
 .PHONY: ui
-ui: ## 프론트엔드만 브라우저에서 실행 (Tauri 없이 UI 확인)
+ui: ## 브라우저에서 앱 실행 (Tauri 없이, 로컬 접속만)
 	cd $(DESKTOP) && npm run dev
+
+.PHONY: web
+web: ## 브라우저 모드를 외부에서도 접속 가능하게 실행 (SSH 터널/LAN)
+	cd $(DESKTOP) && LLACK_WEB_HOST=0.0.0.0 npm run dev
 
 .PHONY: example-app
 example-app: ## 예제 미니앱을 5180 포트로 서빙
