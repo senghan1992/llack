@@ -17,11 +17,10 @@ export function Avatar({ id, name, avatarUrl, size = 36, presence, isBot }: Avat
         <img src={avatarUrl} alt="" width={size} height={size} />
       ) : (
         <span
-          className="avatar-fallback"
+          className={isBot ? "avatar-fallback is-bot" : "avatar-fallback"}
           style={{
             background: colorForId(id),
             fontSize: Math.max(11, size * 0.4),
-            borderRadius: isBot ? size * 0.25 : size * 0.28,
           }}
         >
           {initials(name)}

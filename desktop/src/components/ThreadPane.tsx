@@ -10,6 +10,7 @@ import { orderedMessages, useApp } from "@/store/app";
 
 import { Composer } from "./Composer";
 import { MessageRow } from "./MessageRow";
+import { IconClose } from "./Icon";
 
 export function ThreadPane() {
   const threadId = useApp((state) => state.openThreadId);
@@ -33,7 +34,7 @@ export function ThreadPane() {
           onClick={() => void openThread(null)}
           aria-label="스레드 닫기"
         >
-          ×
+          <IconClose size={13} />
         </button>
       </header>
 

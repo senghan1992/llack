@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { channelPrefix } from "@/lib/format";
 import { TYPING_TTL_MS, typingNames, useApp } from "@/store/app";
+
+import { ChannelMark, IconBell, IconBellOff, IconSearch } from "./Icon";
 
 export function ChannelHeader() {
   const channel = useApp((state) =>
@@ -32,7 +33,9 @@ export function ChannelHeader() {
     return (
       <header className="channel-header">
         <button type="button" className="palette-trigger" onClick={() => setPalette(true)}>
-          검색하거나 이동 (⌘K)
+          <IconSearch size={13} />
+          검색하거나 이동
+          <kbd>⌘K</kbd>
         </button>
       </header>
     );
@@ -46,7 +49,7 @@ export function ChannelHeader() {
     <header className="channel-header">
       <div className="channel-title">
         <h1>
-          <span className="channel-title-prefix">{channelPrefix(channel.kind)}</span>
+          <ChannelMark kind={channel.kind} />
           {title}
         </h1>
         {!isDm ? (
@@ -73,14 +76,16 @@ export function ChannelHeader() {
           onClick={() => void toggleMute(channel.id)}
           title={muted ? "알림 켜기" : "알림 끄기"}
         >
-          {muted ? "🔕" : "🔔"}
+          {muted ? <IconBellOff size={15} /> : <IconBell size={15} />}
         </button>
         <button
           type="button"
           className="palette-trigger"
           onClick={() => setPalette(true)}
         >
-          검색 (⌘K)
+          <IconSearch size={13} />
+          검색
+          <kbd>⌘K</kbd>
         </button>
       </div>
     </header>

@@ -19,6 +19,7 @@ import type { Message, PendingMessage } from "@/lib/types";
 import { orderedMessages, useApp } from "@/store/app";
 
 import { MessageRow } from "./MessageRow";
+import { IconArrowDown } from "./Icon";
 
 const BOTTOM_THRESHOLD_PX = 80;
 
@@ -150,7 +151,8 @@ export function MessageList() {
             setStickToBottom(true);
           }}
         >
-          ↓ 최신 메시지로
+          <IconArrowDown size={13} />
+          최신 메시지로
         </button>
       ) : null}
     </div>

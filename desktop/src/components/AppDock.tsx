@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { colorForId, initials } from "@/lib/format";
 import { api } from "@/lib/ipc";
 import { useApp } from "@/store/app";
+import { IconClose } from "./Icon";
 
 export function AppDock() {
   const workspaces = useApp((state) => state.workspaces);
@@ -71,15 +72,15 @@ export function AppDock() {
             }
             title={installation.app.tagline ?? installation.app.name}
           >
+            {/*
+              The app's own `accent_color` is deliberately ignored: on this
+              surface one colour carries one meaning, and an installed app
+              cannot spend it. The plate takes a neutral tint instead.
+            */}
             {installation.app.icon_url ? (
               <img src={installation.app.icon_url} alt="" />
             ) : (
-              <span
-                style={{
-                  background:
-                    installation.app.accent_color ?? colorForId(installation.app.id),
-                }}
-              >
+              <span style={{ background: colorForId(installation.app.id) }}>
                 {initials(installation.app.name)}
               </span>
             )}
@@ -163,7 +164,7 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
         <header className="modal-header">
           <h2>앱 추가</h2>
           <button type="button" onClick={onClose} aria-label="닫기">
-            ×
+            <IconClose size={13} />
           </button>
         </header>
 

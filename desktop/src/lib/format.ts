@@ -70,23 +70,38 @@ export function initials(name: string): string {
   return `${(parts[0] ?? "")[0] ?? ""}${(parts[1] ?? "")[0] ?? ""}`.toUpperCase();
 }
 
-/** Deterministic colour per id, so an avatar keeps its colour across sessions. */
+/**
+ * A stable plate tint for an identity.
+ *
+ * Four steps of the neutral ramp rather than a hue wheel: on this surface one
+ * colour carries one meaning (당신을 향한 신호), so an avatar may not spend it.
+ * Differentiation comes from the initials and a faint step in value, which is
+ * what the eye actually uses when scanning a column of names.
+ */
 export function colorForId(id: string): string {
-  const palette = [
-    "#4f46e5", "#0891b2", "#059669", "#ca8a04",
-    "#dc2626", "#c026d3", "#2563eb", "#ea580c",
+  const tints = [
+    "var(--tint-a)",
+    "var(--tint-b)",
+    "var(--tint-c)",
+    "var(--tint-d)",
   ];
   let hash = 0;
   for (let index = 0; index < id.length; index += 1) {
     hash = (hash * 31 + id.charCodeAt(index)) | 0;
   }
-  return palette[Math.abs(hash) % palette.length] as string;
+  return tints[Math.abs(hash) % tints.length] as string;
 }
 
+/**
+ * The typographic mark before a channel name.
+ *
+ * `#` is a character, not an icon, so it sets with the label. A private channel
+ * has no character that reads correctly at this size and takes a drawn lock
+ * instead — see `ChannelMark` in `components/Icon.tsx`.
+ */
 export function channelPrefix(kind: string): string {
   switch (kind) {
     case "private":
-      return "🔒";
     case "dm":
     case "group_dm":
       return "";

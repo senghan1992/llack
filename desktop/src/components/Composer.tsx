@@ -16,6 +16,7 @@ import type { Id } from "@/lib/types";
 import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
+import { IconClose, IconPaperclip } from "./Icon";
 
 const TYPING_THROTTLE_MS = 2_500;
 
@@ -174,7 +175,8 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
         <ul className="composer-attachments">
           {attachments.map((file) => (
             <li key={file.id}>
-              📎 {file.filename}
+              <IconPaperclip size={12} />
+              {file.filename}
               <button
                 type="button"
                 onClick={() =>
@@ -184,7 +186,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
                 }
                 aria-label="첨부 제거"
               >
-                ×
+                <IconClose size={11} />
               </button>
             </li>
           ))}
@@ -254,7 +256,11 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
             title="파일 첨부"
             aria-label="파일 첨부"
           >
-            {uploading ? "…" : "📎"}
+            {uploading ? (
+              <span className="composer-uploading" aria-label="업로드 중" />
+            ) : (
+              <IconPaperclip size={15} />
+            )}
           </button>
           <button
             type="button"

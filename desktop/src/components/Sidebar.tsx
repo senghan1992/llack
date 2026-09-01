@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 
-import { channelPrefix } from "@/lib/format";
+import { ChannelMark, IconPlus } from "./Icon";
 import type { Channel } from "@/lib/types";
 import { useApp } from "@/store/app";
 
@@ -83,13 +83,17 @@ export function Sidebar() {
             isBot={peer.is_bot}
           />
         ) : (
-          <span className="sidebar-prefix">{channelPrefix(channel.kind)}</span>
+          <ChannelMark kind={channel.kind} />
         )}
         <span className="sidebar-label">{label}</span>
         {mentions > 0 ? (
-          <span className="badge badge-mention">{mentions}</span>
+          <span key={`m${mentions}`} className="badge badge-mention">
+            {mentions}
+          </span>
         ) : unread > 0 && !muted ? (
-          <span className="badge">{unread > 99 ? "99+" : unread}</span>
+          <span key={`u${unread}`} className="badge">
+            {unread > 99 ? "99+" : unread}
+          </span>
         ) : null}
       </button>
     );
@@ -118,14 +122,21 @@ export function Sidebar() {
       <div className="sidebar-scroll">
         {groups.starred.length > 0 ? (
           <section className="sidebar-section">
-            <h2>중요</h2>
+            <h2>
+              <span aria-hidden="true" />
+              중요
+              <span className="sidebar-field">안 읽음</span>
+              <span aria-hidden="true" />
+            </h2>
             {groups.starred.map(renderChannel)}
           </section>
         ) : null}
 
         <section className="sidebar-section">
           <h2>
+            <span aria-hidden="true" />
             채널
+            <span className="sidebar-field">안 읽음</span>
             <button
               type="button"
               className="sidebar-add"
@@ -133,7 +144,7 @@ export function Sidebar() {
               aria-label="채널 추가"
               title="채널 추가"
             >
-              +
+              <IconPlus size={13} />
             </button>
           </h2>
           {creating ? (
@@ -157,7 +168,12 @@ export function Sidebar() {
         </section>
 
         <section className="sidebar-section">
-          <h2>다이렉트 메시지</h2>
+          <h2>
+            <span aria-hidden="true" />
+            다이렉트 메시지
+            <span className="sidebar-field">안 읽음</span>
+            <span aria-hidden="true" />
+          </h2>
           {groups.dms.map(renderChannel)}
           {groups.dms.length === 0 ? (
             <p className="sidebar-empty">

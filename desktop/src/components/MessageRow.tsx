@@ -7,6 +7,14 @@ import type { Message } from "@/lib/types";
 import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
+import {
+  IconEdit,
+  IconFile,
+  IconImage,
+  IconPin,
+  IconReply,
+  IconTrash,
+} from "./Icon";
 
 const QUICK_REACTIONS = ["👍", "🎉", "👀", "✅"];
 
@@ -92,12 +100,12 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
             id={author.id}
             name={author.display_name}
             avatarUrl={author.avatar_url}
-            size={36}
+            size={28}
             presence={author.is_bot ? undefined : presence.get(author.id)}
             isBot={author.is_bot}
           />
         ) : (
-          <Avatar id={message.id} name="?" size={36} />
+          <Avatar id={message.id} name="?" size={28} />
         )}
       </div>
 
@@ -109,7 +117,12 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
             <time dateTime={message.created_at}>
               {formatTime(message.created_at, me?.timezone)}
             </time>
-            {message.is_pinned ? <span className="tag-pin">📌 고정</span> : null}
+            {message.is_pinned ? (
+              <span className="tag-pin">
+                <IconPin size={11} />
+                고정
+              </span>
+            ) : null}
           </header>
         ) : null}
 
@@ -177,7 +190,11 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
                   title={`${file.filename} 내려받기`}
                 >
                   <span className="attachment-icon">
-                    {file.mime_type.startsWith("image/") ? "🖼" : "📄"}
+                    {file.mime_type.startsWith("image/") ? (
+                      <IconImage size={14} />
+                    ) : (
+                      <IconFile size={14} />
+                    )}
                   </span>
                   <span className="attachment-name">{file.filename}</span>
                   <span className="attachment-size">{formatBytes(file.size_bytes)}</span>
@@ -234,21 +251,28 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
             type="button"
             onClick={() => void openThread(message.id)}
             title="스레드에서 답글"
+            aria-label="스레드에서 답글"
           >
-            💬
+            <IconReply size={13} />
           </button>
         ) : null}
         {isMine ? (
           <>
-            <button type="button" onClick={() => setEditing(true)} title="수정">
-              ✏️
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              title="수정"
+              aria-label="수정"
+            >
+              <IconEdit size={13} />
             </button>
             <button
               type="button"
               onClick={() => void deleteMessage(message.id)}
               title="삭제"
+              aria-label="삭제"
             >
-              🗑
+              <IconTrash size={13} />
             </button>
           </>
         ) : null}

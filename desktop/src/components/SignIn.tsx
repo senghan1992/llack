@@ -38,9 +38,11 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
 
   return (
     <div className="signin">
-      <form className="signin-card" onSubmit={submit}>
-        <h1 className="signin-title">Llack</h1>
-        <p className="signin-subtitle">사내 협업 OS</p>
+      <form className="signin-plate" onSubmit={submit}>
+        <header className="signin-masthead">
+          <h1 className="signin-title">Llack</h1>
+          <p className="signin-subtitle">사내 협업 OS</p>
+        </header>
 
         <label>
           서버 주소
