@@ -1,0 +1,102 @@
+# Local production-shaped stack: Postgres + Redis + MinIO + the API.
+#
+# The API also runs with zero dependencies (SQLite, in-process pub/sub, local
+# files) — see `make dev`. This compose file is for exercising the same code
+# paths the real deployment uses.
+
+name: llack
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: llack
+      POSTGRES_PASSWORD: llack
+      POSTGRES_DB: llack
+      # Korean text sorts correctly with the C collation plus ICU at query
+      # time; the default here keeps initdb deterministic.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llack -d llack"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # S3-compatible storage, so the S3 code path is exercised locally.
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: llackminio
+      MINIO_ROOT_PASSWORD: llackminio-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 llackminio llackminio-secret &&
+      mc mb --ignore-existing local/llack-files &&
+      echo 'bucket ready'
+      "
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      LLACK_ENV: production
+      LLACK_SECRET_KEY: ${LLACK_SECRET_KEY:-change-me-before-any-real-deployment}
+      LLACK_DATABASE_URL: postgresql+asyncpg://llack:llack@postgres:5432/llack
+      LLACK_REDIS_URL: redis://redis:6379/0
+      LLACK_STORAGE_BACKEND: s3
+      LLACK_S3_BUCKET: llack-files
+      LLACK_S3_ENDPOINT_URL: http://minio:9000
+      LLACK_S3_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: llackminio
+      AWS_SECRET_ACCESS_KEY: llackminio-secret
+      LLACK_CORS_ORIGINS: "http://localhost:1420,tauri://localhost"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres-data:
+  minio-data:

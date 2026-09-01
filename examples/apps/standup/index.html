@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>데일리 스탠드업</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1b1725;
+        --muted: #6b6580;
+        --border: #e4e1ec;
+        --accent: #7c6aff;
+        --input-bg: #f7f6fb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1f1a26;
+          --fg: #ece9f2;
+          --muted: #a49fb4;
+          --border: rgba(255, 255, 255, 0.1);
+          --input-bg: #17131f;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 16px;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI",
+          "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      h1 { margin: 0 0 4px; font-size: 16px; }
+      p.sub { margin: 0 0 16px; font-size: 12px; color: var(--muted); }
+      label { display: block; margin-bottom: 12px; font-size: 12px; font-weight: 600; }
+      textarea {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+        padding: 8px 10px;
+        font: inherit;
+        font-weight: 400;
+        color: inherit;
+        background: var(--input-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        resize: vertical;
+      }
+      textarea:focus { border-color: var(--accent); outline: none; }
+      select {
+        width: 100%;
+        margin-top: 4px;
+        padding: 8px 10px;
+        font: inherit;
+        font-weight: 400;
+        color: inherit;
+        background: var(--input-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+      button {
+        width: 100%;
+        padding: 10px;
+        font: inherit;
+        font-weight: 700;
+        color: #fff;
+        background: var(--accent);
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .status { margin-top: 12px; font-size: 12px; color: var(--muted); }
+      .status.error { color: #d9484d; }
+      .status.ok { color: #1f9d63; }
+      .saved { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <h1>데일리 스탠드업</h1>
+    <p class="sub" id="who">불러오는 중…</p>
+
+    <label>
+      어제 한 일
+      <textarea id="yesterday" rows="3" placeholder="- 결제 모듈 리팩터링"></textarea>
+    </label>
+    <label>
+      오늘 할 일
+      <textarea id="today" rows="3" placeholder="- 배포 파이프라인 점검"></textarea>
+    </label>
+    <label>
+      막힌 것 (선택)
+      <textarea id="blockers" rows="2" placeholder="- 스테이징 DB 접근 권한 필요"></textarea>
+    </label>
+    <label>
+      올릴 채널
+      <select id="channel"></select>
+    </label>
+
+    <button id="submit" disabled>채널에 올리기</button>
+    <p class="status" id="status"></p>
+    <div class="saved" id="saved"></div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 백엔드 (lint + 테스트)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성 설치
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" asgi-lifespan anyio
+
+      - name: ruff
+        working-directory: backend
+        run: ruff check app tests scripts
+
+      - name: pytest
+        working-directory: backend
+        run: pytest -q
+
+      - name: 마이그레이션이 모델과 일치하는지 확인
+        working-directory: backend
+        env:
+          LLACK_DATABASE_URL: sqlite+aiosqlite:///./var/ci.db
+          LLACK_SECRET_KEY: ci-secret-value-not-used-in-production
+        run: |
+          mkdir -p var
+          alembic upgrade head
+          # An empty autogenerate diff proves no model change was left without
+          # a migration — the most common cause of a broken deploy.
+          alembic check
+
+  rust-core:
+    name: Rust 코어 (clippy + 테스트)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      # `llack-core` has no webview dependency on purpose, so it needs no
+      # system libraries here.
+      - name: clippy
+        working-directory: desktop
+        run: cargo clippy -p llack-core --all-targets -- -D warnings
+
+      - name: rustfmt
+        working-directory: desktop
+        run: cargo fmt -p llack-core -- --check
+
+      - name: cargo test
+        working-directory: desktop
+        run: cargo test -p llack-core
+
+  frontend:
+    name: 프론트엔드 (타입 + 빌드)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            packages/llack-app-sdk/package-lock.json
+
+      - name: SDK 빌드
+        working-directory: packages/llack-app-sdk
+        run: npm ci && npm run build
+
+      - name: 데스크톱 UI 타입 검사 및 빌드
+        working-directory: desktop
+        run: npm ci && npm run build
+
+  smoke:
+    name: 종단 검증 (실시간 + 미니앱)
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성 설치
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: 서버 실행 후 종단 검증
+        working-directory: backend
+        env:
+          # Redis is exercised here, so the multi-worker event path is covered.
+          LLACK_DATABASE_URL: sqlite+aiosqlite:///./var/smoke.db
+          LLACK_REDIS_URL: redis://localhost:6379/0
+          LLACK_SECRET_KEY: ci-secret-value-not-used-in-production
+        run: |
+          mkdir -p var
+          alembic upgrade head
+          python -m scripts.seed
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          python scripts/smoke_realtime.py
+          python scripts/smoke_apps.py
+
+  desktop-shell:
+    name: 데스크톱 셸 빌드 (${{ matrix.os }})
+    # The Tauri shell needs platform webview libraries, so it is built on the
+    # platforms it ships to rather than in the generic Linux job above.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - name: Linux webview 의존성
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev \
+            build-essential curl wget file patchelf
+
+      - name: 빌드
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run tauri build -- --no-bundle

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo --version)",
+      "Read(//usr/lib/**)",
+      "Bash(sudo -n true)",
+      "Read(//usr/bin/**)",
+      "Bash(dnf list *)",
+      "Bash(rpm -qa)"
+    ]
+  }
+}

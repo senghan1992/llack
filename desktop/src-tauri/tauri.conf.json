@@ -1,0 +1,91 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Llack",
+  "version": "0.1.0",
+  "identifier": "com.llack.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Llack",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 940,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "dragDropEnabled": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "img-src": "'self' data: blob: asset: http://asset.localhost https: http://localhost:8000",
+        "media-src": "'self' blob: asset: http://asset.localhost https:",
+        "connect-src": "'self' ipc: http://ipc.localhost http://localhost:8000 ws://localhost:8000 https: wss:",
+        "frame-src": "'self' https: http://localhost:*",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      },
+      "capabilities": ["default"]
+    },
+    "trayIcon": {
+      "id": "main",
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
+    },
+    "withGlobalTauri": false
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["llack"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app", "msi", "nsis", "deb", "rpm", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "© Llack",
+    "category": "Business",
+    "shortDescription": "사내 협업 OS",
+    "longDescription": "채팅, 파일 공유, 사내 앱 패널을 하나의 창에서 사용하는 팀 협업 데스크톱 앱입니다.",
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# ── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Node ────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+*.tsbuildinfo
+
+# ── Rust ────────────────────────────────────────────────────────────────
+target/
+**/gen/schemas/
+
+# ── Local data ──────────────────────────────────────────────────────────
+# The dev database, uploads and logs are all disposable.
+backend/var/
+*.db
+*.db-wal
+*.db-shm
+
+# ── Secrets ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Editors & OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

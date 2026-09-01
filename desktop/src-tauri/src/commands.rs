@@ -1,0 +1,719 @@
+//! Tauri commands — the IPC surface the UI calls.
+//!
+//! Every command is a thin adapter: validate, delegate to `llack-core`, and
+//! return a serialisable result. Business rules live in core so they can be
+//! tested without a running window.
+//!
+//! Read paths return cached data immediately and refresh in the background
+//! where it makes sense, so opening a channel never shows an empty pane while
+//! a request is in flight.
+
+use std::sync::Arc;
+
+use llack_core::error::{Error, Result};
+use llack_core::{
+    Channel, ChannelKind, ChannelMembership, DrainReport, Message, NewMessage, PanelSession,
+    RealtimeCommand, User, Workspace,
+};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::state::AppState;
+
+// ── Connection & auth ───────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct BootstrapResult {
+    pub server_url: Option<String>,
+    pub user: Option<User>,
+    /// True when a stored refresh token was exchanged successfully, so the UI
+    /// can go straight to the workspace instead of the sign-in screen.
+    pub resumed: bool,
+}
+
+/// Point the app at a server and try to resume a stored session.
+#[tauri::command]
+pub async fn bootstrap(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    server_url: String,
+) -> Result<BootstrapResult> {
+    let device_name = hostname_label();
+    let api = state.connect(&server_url, Some(device_name))?;
+
+    if !api.session().is_authenticated() {
+        return Ok(BootstrapResult {
+            server_url: Some(server_url),
+            user: None,
+            resumed: false,
+        });
+    }
+
+    match api.resume().await {
+        Ok(user) => {
+            state.install_sync(&user.id)?;
+            crate::realtime_task::start(app, state.inner().clone(), None);
+            Ok(BootstrapResult {
+                server_url: Some(server_url),
+                user: Some(user),
+                resumed: true,
+            })
+        }
+        Err(err) if err.requires_reauth() => {
+            // The stored token is dead; clear it so the UI shows sign-in
+            // rather than retrying forever.
+            let _ = api.session().clear();
+            Ok(BootstrapResult {
+                server_url: Some(server_url),
+                user: None,
+                resumed: false,
+            })
+        }
+        Err(err) => Err(err),
+    }
+}
+
+#[tauri::command]
+pub async fn login(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    email: String,
+    password: String,
+) -> Result<User> {
+    let api = state.api()?;
+    let auth = api.login(&email, &password).await?;
+    state.install_sync(&auth.user.id)?;
+    crate::realtime_task::start(app, state.inner().clone(), None);
+    Ok(auth.user)
+}
+
+#[tauri::command]
+pub async fn register(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    email: String,
+    password: String,
+    display_name: String,
+) -> Result<User> {
+    let api = state.api()?;
+    let auth = api.register(&email, &password, &display_name).await?;
+    state.install_sync(&auth.user.id)?;
+    crate::realtime_task::start(app, state.inner().clone(), None);
+    Ok(auth.user)
+}
+
+#[tauri::command]
+pub async fn logout(state: State<'_, Arc<AppState>>) -> Result<()> {
+    let api = state.api()?;
+    // Best-effort server call; local state is cleared regardless so the user
+    // is never left appearing signed in.
+    let server_result = api.logout().await;
+    state.reset()?;
+    match server_result {
+        Ok(()) => Ok(()),
+        Err(err) if err.is_retryable() => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+#[tauri::command]
+pub async fn current_user(state: State<'_, Arc<AppState>>) -> Result<Option<User>> {
+    Ok(state.session().ok().and_then(|s| s.user()))
+}
+
+// ── Workspaces ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_workspaces(state: State<'_, Arc<AppState>>) -> Result<Vec<Workspace>> {
+    state.api()?.list_workspaces().await
+}
+
+#[tauri::command]
+pub async fn select_workspace(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<Vec<Channel>> {
+    state.set_active_workspace(Some(workspace_id.clone()));
+
+    // Resubscribe the socket to this workspace's channels.
+    let channels = state.sync()?.refresh_channels(&workspace_id).await?;
+    if let Ok(realtime) = state.realtime() {
+        let _ = realtime.subscribe(channels.iter().map(|c| c.id.clone()).collect());
+    }
+    update_badge(&app, &state, &workspace_id);
+    Ok(channels)
+}
+
+#[tauri::command]
+pub async fn list_workspace_users(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    query: Option<String>,
+) -> Result<Vec<User>> {
+    state
+        .api()?
+        .list_workspace_users(&workspace_id, query.as_deref())
+        .await
+}
+
+// ── Channels ────────────────────────────────────────────────────────────────
+
+/// Cached channels, for an instant first paint.
+#[tauri::command]
+pub async fn cached_channels(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<Vec<Channel>> {
+    state.cache.channels(&workspace_id)
+}
+
+#[tauri::command]
+pub async fn refresh_channels(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<Vec<Channel>> {
+    let channels = state.sync()?.refresh_channels(&workspace_id).await?;
+    update_badge(&app, &state, &workspace_id);
+    Ok(channels)
+}
+
+#[tauri::command]
+pub async fn browse_channels(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    query: Option<String>,
+) -> Result<Vec<Channel>> {
+    state
+        .api()?
+        .browse_channels(&workspace_id, query.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn create_channel(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    name: String,
+    kind: ChannelKind,
+    member_ids: Vec<String>,
+) -> Result<Channel> {
+    let channel = state
+        .api()?
+        .create_channel(&workspace_id, &name, kind, &member_ids)
+        .await?;
+    state.cache.put_channels(std::slice::from_ref(&channel))?;
+    if let Ok(realtime) = state.realtime() {
+        let _ = realtime.subscribe(vec![channel.id.clone()]);
+    }
+    Ok(channel)
+}
+
+#[tauri::command]
+pub async fn open_dm(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    user_ids: Vec<String>,
+) -> Result<Channel> {
+    let channel = state.api()?.open_dm(&workspace_id, &user_ids).await?;
+    state.cache.put_channels(std::slice::from_ref(&channel))?;
+    if let Ok(realtime) = state.realtime() {
+        let _ = realtime.subscribe(vec![channel.id.clone()]);
+    }
+    Ok(channel)
+}
+
+#[tauri::command]
+pub async fn join_channel(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+) -> Result<Channel> {
+    let channel = state.api()?.join_channel(&channel_id).await?;
+    state.cache.put_channels(std::slice::from_ref(&channel))?;
+    if let Ok(realtime) = state.realtime() {
+        let _ = realtime.subscribe(vec![channel.id.clone()]);
+    }
+    Ok(channel)
+}
+
+#[tauri::command]
+pub async fn leave_channel(state: State<'_, Arc<AppState>>, channel_id: String) -> Result<()> {
+    state.api()?.leave_channel(&channel_id).await?;
+    state.cache.remove_channel(&channel_id)?;
+    if let Ok(realtime) = state.realtime() {
+        let _ = realtime.send(RealtimeCommand::Unsubscribe {
+            channel_ids: vec![channel_id],
+        });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_membership(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    patch: serde_json::Value,
+) -> Result<ChannelMembership> {
+    state.api()?.update_membership(&channel_id, patch).await
+}
+
+#[tauri::command]
+pub async fn mark_read(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    channel_id: String,
+    message_id: Option<String>,
+) -> Result<ChannelMembership> {
+    let membership = state
+        .api()?
+        .mark_read(&channel_id, message_id.as_deref())
+        .await?;
+    if let Some(workspace_id) = state.active_workspace() {
+        // The badge is derived from cached counters, so refresh them.
+        let _ = state.sync().and_then(|s| {
+            tauri::async_runtime::block_on(s.refresh_channels(&workspace_id))
+        });
+        update_badge(&app, &state, &workspace_id);
+    }
+    Ok(membership)
+}
+
+// ── Messages ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn cached_history(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    limit: Option<u32>,
+) -> Result<Vec<Message>> {
+    state.cache.channel_history(&channel_id, limit.unwrap_or(80))
+}
+
+#[tauri::command]
+pub async fn refresh_history(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    limit: Option<u32>,
+) -> Result<Vec<Message>> {
+    state
+        .sync()?
+        .refresh_history(&channel_id, limit.unwrap_or(80))
+        .await
+}
+
+#[tauri::command]
+pub async fn load_older_messages(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    before: String,
+    limit: Option<u32>,
+) -> Result<Vec<Message>> {
+    let page = state
+        .api()?
+        .history(&channel_id, limit.unwrap_or(50), Some(&before))
+        .await?;
+    state.cache.put_messages(&page.items)?;
+    let mut items = page.items;
+    items.reverse();
+    Ok(items)
+}
+
+#[tauri::command]
+pub async fn thread_replies(
+    state: State<'_, Arc<AppState>>,
+    message_id: String,
+) -> Result<Vec<Message>> {
+    let page = state.api()?.thread_replies(&message_id).await?;
+    state.cache.put_messages(&page.items)?;
+    Ok(page.items)
+}
+
+/// Send a message.
+///
+/// Always goes through the outbox: the message is queued with its
+/// `client_msg_id` first, then sent. If the send fails for a network reason it
+/// stays queued and is retried, and because the server treats
+/// `client_msg_id` as an idempotency key, a retry can never double-post.
+#[derive(serde::Serialize)]
+pub struct SendResult {
+    /// The server's message, when the send succeeded immediately.
+    pub message: Option<Message>,
+    /// The optimistic id to render while queued.
+    pub client_msg_id: String,
+    pub queued: bool,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn send_message(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    body: String,
+    parent_id: Option<String>,
+    also_send_to_channel: Option<bool>,
+    file_ids: Option<Vec<String>>,
+) -> Result<SendResult> {
+    let payload = NewMessage {
+        body,
+        blocks: None,
+        client_msg_id: Some(llack_core::ids::new_ulid()),
+        parent_id,
+        also_send_to_channel: also_send_to_channel.unwrap_or(false),
+        file_ids: file_ids.unwrap_or_default(),
+    };
+
+    let entry = state.cache.enqueue(&channel_id, payload)?;
+    state.cache.mark_sending(&entry.id)?;
+
+    match state.api()?.post_message(&channel_id, &entry.payload).await {
+        Ok(message) => {
+            state.cache.put_messages(std::slice::from_ref(&message))?;
+            state.cache.dequeue(&entry.id)?;
+            Ok(SendResult {
+                message: Some(message),
+                client_msg_id: entry.client_msg_id,
+                queued: false,
+                error: None,
+            })
+        }
+        Err(err) => {
+            let retryable = err.is_retryable();
+            state.cache.mark_result(&entry.id, &err.to_string(), retryable)?;
+            if retryable {
+                // Queued for the drain loop; the UI shows a pending bubble.
+                Ok(SendResult {
+                    message: None,
+                    client_msg_id: entry.client_msg_id,
+                    queued: true,
+                    error: Some(err.to_string()),
+                })
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn edit_message(
+    state: State<'_, Arc<AppState>>,
+    message_id: String,
+    body: String,
+) -> Result<Message> {
+    let message = state.api()?.edit_message(&message_id, &body).await?;
+    state.cache.put_messages(std::slice::from_ref(&message))?;
+    Ok(message)
+}
+
+#[tauri::command]
+pub async fn delete_message(
+    state: State<'_, Arc<AppState>>,
+    message_id: String,
+) -> Result<()> {
+    state.api()?.delete_message(&message_id).await?;
+    state.cache.remove_message(&message_id)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn toggle_reaction(
+    state: State<'_, Arc<AppState>>,
+    message_id: String,
+    emoji: String,
+    add: bool,
+) -> Result<()> {
+    let api = state.api()?;
+    if add {
+        api.add_reaction(&message_id, &emoji).await
+    } else {
+        api.remove_reaction(&message_id, &emoji).await
+    }
+}
+
+#[tauri::command]
+pub async fn typing(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    parent_id: Option<String>,
+) -> Result<()> {
+    state.realtime()?.typing(channel_id, parent_id)
+}
+
+// ── Outbox ──────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn pending_messages(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+) -> Result<Vec<llack_core::OutboxEntry>> {
+    state.cache.outbox_for_channel(&channel_id)
+}
+
+#[tauri::command]
+pub async fn drain_outbox(state: State<'_, Arc<AppState>>) -> Result<DrainReport> {
+    state.sync()?.drain_outbox().await
+}
+
+#[tauri::command]
+pub async fn retry_failed_messages(state: State<'_, Arc<AppState>>) -> Result<usize> {
+    state.cache.retry_failed()
+}
+
+#[tauri::command]
+pub async fn discard_pending_message(
+    state: State<'_, Arc<AppState>>,
+    entry_id: String,
+) -> Result<()> {
+    state.cache.discard(&entry_id)
+}
+
+// ── Search ──────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn search(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    query: String,
+) -> Result<serde_json::Value> {
+    if query.trim().is_empty() {
+        return Ok(serde_json::json!({
+            "query": query, "channels": [], "people": [], "apps": [], "messages": []
+        }));
+    }
+    state.api()?.search_everything(&workspace_id, &query).await
+}
+
+#[tauri::command]
+pub async fn search_messages(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    query: String,
+) -> Result<llack_core::SearchResponse> {
+    state.api()?.search_messages(&workspace_id, &query).await
+}
+
+// ── Files ───────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn upload_file(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    path: String,
+) -> Result<llack_core::FileRef> {
+    let file_path = std::path::PathBuf::from(&path);
+    let filename = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| Error::Other("could not read the file name".into()))?
+        .to_string();
+    let bytes = std::fs::read(&file_path)
+        .map_err(|e| Error::Other(format!("could not read {path}: {e}")))?;
+    let mime_type = guess_mime(&filename);
+
+    state
+        .api()?
+        .upload_file(&workspace_id, &filename, mime_type, bytes)
+        .await
+}
+
+#[tauri::command]
+pub async fn download_file(
+    state: State<'_, Arc<AppState>>,
+    file_id: String,
+    filename: String,
+) -> Result<String> {
+    let bytes = state.api()?.download_file(&file_id).await?;
+    let downloads = state.data_dir.join("downloads");
+    std::fs::create_dir_all(&downloads)
+        .map_err(|e| Error::Other(format!("could not create the download folder: {e}")))?;
+    let target = downloads.join(sanitise_download_name(&filename));
+    std::fs::write(&target, bytes)
+        .map_err(|e| Error::Other(format!("could not write {}: {e}", target.display())))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+// ── Mini-apps ───────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_installed_apps(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<Vec<llack_core::AppInstallation>> {
+    state.api()?.list_installed_apps(&workspace_id).await
+}
+
+#[tauri::command]
+pub async fn list_available_apps(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<Vec<llack_core::AppSummary>> {
+    state.api()?.list_available_apps(&workspace_id).await
+}
+
+#[tauri::command]
+pub async fn install_app(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    app_id: String,
+    granted_scopes: Option<Vec<String>>,
+) -> Result<llack_core::AppInstallation> {
+    state
+        .api()?
+        .install_app(&workspace_id, &app_id, granted_scopes.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn uninstall_app(
+    state: State<'_, Arc<AppState>>,
+    installation_id: String,
+) -> Result<()> {
+    state.api()?.uninstall_app(&installation_id).await
+}
+
+/// Mint a panel session for a mini-app webview.
+///
+/// The returned `bridge_token` is short-lived and scoped to the installation.
+/// The panel never receives the signed-in user's access token.
+#[tauri::command]
+pub async fn open_app_panel(
+    state: State<'_, Arc<AppState>>,
+    installation_id: String,
+    channel_id: Option<String>,
+) -> Result<PanelSession> {
+    state
+        .api()?
+        .create_panel_session(&installation_id, channel_id.as_deref())
+        .await
+}
+
+// ── Window & shell ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn set_presence(state: State<'_, Arc<AppState>>, presence: String) -> Result<()> {
+    state.realtime()?.set_presence(presence)
+}
+
+/// Force a reconnect — used when the window regains focus after a sleep, where
+/// the socket is often dead without having reported an error yet.
+#[tauri::command]
+pub async fn reconnect(state: State<'_, Arc<AppState>>) -> Result<()> {
+    state.realtime()?.reconnect()
+}
+
+#[tauri::command]
+pub async fn cache_stats(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value> {
+    let workspace_id = state.active_workspace();
+    Ok(serde_json::json!({
+        "data_dir": state.data_dir.to_string_lossy(),
+        "pending_sends": state.cache.pending(1000)?.len(),
+        "cached_channels": workspace_id
+            .as_deref()
+            .map(|id| state.cache.channels(id).map(|c| c.len()).unwrap_or(0))
+            .unwrap_or(0),
+    }))
+}
+
+/// Trim the local cache. Exposed so a user with a huge history can reclaim
+/// disk without reinstalling.
+#[tauri::command]
+pub async fn prune_cache(
+    state: State<'_, Arc<AppState>>,
+    keep_per_channel: Option<u32>,
+) -> Result<usize> {
+    state.cache.prune(keep_per_channel.unwrap_or(500))
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Recompute the dock/taskbar badge from cached unread counters.
+fn update_badge(app: &AppHandle, state: &Arc<AppState>, workspace_id: &str) {
+    let Ok(sync) = state.sync() else { return };
+    let Ok(total) = sync.badge_count(workspace_id) else { return };
+
+    // The UI also renders its own in-window badges.
+    let _ = app.emit("llack://badge", serde_json::json!({ "count": total }));
+
+    if let Some(window) = app.get_webview_window("main") {
+        let label = if total > 0 { Some(total.to_string()) } else { None };
+        // Not every platform supports a badge; ignore failures rather than
+        // surfacing an error the user cannot act on.
+        let _ = window.set_badge_label(label);
+    }
+}
+
+fn hostname_label() -> String {
+    std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| format!("{} desktop", std::env::consts::OS))
+}
+
+fn guess_mime(filename: &str) -> &'static str {
+    let extension = filename
+        .rsplit('.')
+        .next()
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "txt" | "log" => "text/plain; charset=utf-8",
+        "md" => "text/markdown; charset=utf-8",
+        "csv" => "text/csv; charset=utf-8",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Keep a downloaded file inside the downloads folder regardless of what the
+/// server called it.
+fn sanitise_download_name(filename: &str) -> String {
+    let basename = filename.replace('\\', "/");
+    let basename = basename.rsplit('/').next().unwrap_or("download");
+    let cleaned: String = basename
+        .chars()
+        .filter(|c| !matches!(c, '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .collect();
+    let trimmed = cleaned.trim_matches('.').trim();
+    if trimmed.is_empty() {
+        "download".into()
+    } else {
+        trimmed.chars().take(200).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mime_guessing_covers_the_common_office_and_image_types() {
+        assert_eq!(guess_mime("보고서.pdf"), "application/pdf");
+        assert_eq!(guess_mime("screenshot.PNG"), "image/png");
+        assert_eq!(
+            guess_mime("매출.xlsx"),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        assert_eq!(guess_mime("no-extension"), "application/octet-stream");
+    }
+
+    #[test]
+    fn download_names_cannot_escape_the_folder() {
+        assert_eq!(sanitise_download_name("../../etc/passwd"), "passwd");
+        assert_eq!(sanitise_download_name("..\\..\\win.ini"), "win.ini");
+        assert_eq!(sanitise_download_name("보고서.pdf"), "보고서.pdf");
+        assert_eq!(sanitise_download_name(".."), "download");
+        assert_eq!(sanitise_download_name(""), "download");
+        assert_eq!(sanitise_download_name("a:b?c*.txt"), "abc.txt");
+    }
+}
