@@ -353,3 +353,34 @@ async def test_a_non_member_cannot_post(alice: Actor, bob: Actor, workspace: dic
     response = await bob.post(f"/channels/{channel['id']}/messages", json={"body": "끼어들기"})
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "not_channel_member"
+
+
+def test_a_notification_preview_resolves_mentions_to_names() -> None:
+    """The canonical mention form must not survive into a notification body.
+
+    `<@ID>` used to reach the OS notification verbatim, minus its closing `>`,
+    because the Markdown strip removes `>`. Reads as `<@01J…` to the user.
+    """
+    from app.services.text import plain_text_preview
+
+    user_id = new_ulid()
+    body = f"<@{user_id}> 배포 확인 부탁드립니다"
+
+    resolved = plain_text_preview(body, names={user_id: "김앨리스"})
+    assert resolved == "@김앨리스 배포 확인 부탁드립니다"
+
+    # Without a name we still must not leak the id or a broken token.
+    anonymous = plain_text_preview(body)
+    assert anonymous == "@사용자 배포 확인 부탁드립니다"
+    assert user_id not in anonymous
+    assert "<@" not in anonymous
+
+
+def test_a_notification_preview_still_strips_markdown() -> None:
+    from app.services.text import plain_text_preview
+
+    # Inline code collapses to a placeholder like a fenced block does; that is
+    # the existing behaviour and a preview is not a place for code anyway.
+    assert plain_text_preview("**굵게** _기울임_ `코드`") == "굵게 기울임 [코드]"
+    assert plain_text_preview("> 인용문입니다") == "인용문입니다"
+    assert plain_text_preview("```\nprint(1)\n```") == "[코드]"

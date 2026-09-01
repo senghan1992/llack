@@ -22,6 +22,7 @@ import type {
   Id,
   Message,
   PendingMessage,
+  ServerFrame,
   Presence,
   User,
   UserBrief,
@@ -29,6 +30,25 @@ import type {
 } from "@/lib/types";
 
 export type Screen = "loading" | "signin" | "workspace";
+
+/**
+ * A toast waiting in the bottom-right stack.
+ *
+ * `kind` decides whether it carries the signal edge: something addressed to
+ * you (a mention, a direct message) does; a busy channel does not.
+ */
+export interface Notice {
+  id: string;
+  title: string;
+  body: string;
+  channelId: Id | null;
+  messageId: Id | null;
+  kind: "mention" | "dm" | "message";
+  at: number;
+}
+
+/** At most this many toasts are on screen; the oldest leaves first. */
+export const MAX_NOTICES = 3;
 
 export interface TypingEntry {
   userId: Id;
@@ -76,6 +96,10 @@ interface AppStateShape {
   // ── UI ────────────────────────────────────────────────────────────────
   paletteOpen: boolean;
   badge: number;
+  /** Bottom-right toast stack, newest last. */
+  notices: Notice[];
+  /** Ids of recently arrived messages that mention me — see `noteIncomingFrame`. */
+  mentionedMessageIds: Id[];
 }
 
 interface AppActions {
@@ -124,6 +148,14 @@ interface AppActions {
   applyTyping: (channelId: Id, userId: Id) => void;
   applyPresence: (userId: Id, presence: Presence) => void;
   setBadge: (count: number) => void;
+  pushNotice: (effect: {
+    title: string;
+    body: string;
+    channel_id?: Id | null;
+    message_id?: Id | null;
+  }) => void;
+  dismissNotice: (id: string) => void;
+  noteIncomingFrame: (frame: ServerFrame) => void;
   handleAuthLost: (message: string) => void;
 }
 
@@ -153,6 +185,8 @@ export const useApp = create<AppStore>((set, get) => ({
   loadingChannels: new Set(),
   hasOlder: new Map(),
   typing: new Map(),
+  notices: [],
+  mentionedMessageIds: [],
 
   openThreadId: null,
   threadReplies: new Map(),
@@ -290,6 +324,10 @@ export const useApp = create<AppStore>((set, get) => ({
   // ── Channels ──────────────────────────────────────────────────────────
 
   openChannel: async (channelId) => {
+    // Opening the channel is the answer to its toast.
+    set((state) => ({
+      notices: state.notices.filter((notice) => notice.channelId !== channelId),
+    }));
     set({ activeChannelId: channelId, openThreadId: null });
 
     // Paint from cache, then refresh.
@@ -677,6 +715,67 @@ export const useApp = create<AppStore>((set, get) => ({
     set((state) => ({ presence: new Map(state.presence).set(userId, presence) })),
 
   setBadge: (badge) => set({ badge }),
+
+  /**
+   * Remember which arriving messages are addressed to me.
+   *
+   * The gateway sends `message.created` before the matching `notification`,
+   * and only the former carries the mention targets — the notification payload
+   * is shared by every recipient, so it cannot say "this one is for you".
+   * Recording the id here lets the toast know. If the order ever changed the
+   * toast simply renders neutral, which is a downgrade rather than a break.
+   */
+  noteIncomingFrame: (frame) => {
+    if (frame.type !== "message.created") return;
+    const me = get().me;
+    if (!me) return;
+    const message = frame.data?.message as Message | undefined;
+    if (!message) return;
+    const forMe =
+      message.mentions_everyone || message.mentioned_user_ids.includes(me.id);
+    if (!forMe) return;
+    const seen = new Set(get().mentionedMessageIds);
+    seen.add(message.id);
+    // Bounded: this only has to survive the gap between two frames.
+    while (seen.size > 50) seen.delete(seen.values().next().value as string);
+    set({ mentionedMessageIds: [...seen] });
+  },
+
+  pushNotice: (effect) => {
+    const state = get();
+    const channelId = effect.channel_id ?? null;
+
+    // The channel already on screen needs no toast: the message is visible.
+    if (channelId && channelId === state.activeChannelId) return;
+
+    const channel = state.channels.find((candidate) => candidate.id === channelId);
+    const isDm = channel?.kind === "dm" || channel?.kind === "group_dm";
+    const isMention = effect.message_id
+      ? state.mentionedMessageIds.includes(effect.message_id)
+      : false;
+
+    const notice: Notice = {
+      id: effect.message_id ?? `notice-${Date.now()}-${state.notices.length}`,
+      title: effect.title,
+      body: effect.body,
+      channelId,
+      messageId: effect.message_id ?? null,
+      kind: isMention ? "mention" : isDm ? "dm" : "message",
+      at: Date.now(),
+    };
+
+    set({
+      notices: [
+        ...state.notices.filter((existing) => existing.id !== notice.id),
+        notice,
+      ].slice(-MAX_NOTICES),
+    });
+  },
+
+  dismissNotice: (id) =>
+    set((state) => ({
+      notices: state.notices.filter((notice) => notice.id !== id),
+    })),
 
   handleAuthLost: (message) =>
     set({

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Mapping
 
 # <@01J...>  — canonical mention
 MENTION_RE = re.compile(r"<@([0-9A-HJKMNP-TV-Z]{26})>")
@@ -103,11 +104,25 @@ def make_snippet(body: str, query: str, *, radius: int = 90) -> str:
     return ("…" if start > 0 else "") + highlighted + ("…" if end < len(body) else "")
 
 
-def plain_text_preview(body: str, *, limit: int = 120) -> str:
-    """Strip Markdown down to something usable in a sidebar or notification."""
+def plain_text_preview(
+    body: str, *, limit: int = 120, names: Mapping[str, str] | None = None
+) -> str:
+    """Strip Markdown down to something usable in a sidebar or notification.
+
+    `names` maps user ids to display names so a mention reads as `@김앨리스`.
+    Mentions are resolved *before* the Markdown strip below: the canonical form
+    is `<@ID>`, and that strip removes `>`, which used to leave a half-eaten
+    `<@01J…` in every notification that mentioned somebody.
+    """
     text = CODE_BLOCK_RE.sub("[코드]", body)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "[이미지]", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+
+    def _mention(match: re.Match[str]) -> str:
+        display = (names or {}).get(match.group(1))
+        return f"@{display}" if display else "@사용자"
+
+    text = MENTION_RE.sub(_mention, text)
     text = re.sub(r"[*_~>#|]+", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit] + ("…" if len(text) > limit else "")

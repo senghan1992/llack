@@ -170,6 +170,9 @@ async def create_message(
         db, message=message, channel=ctx.channel
     )
     if targets:
+        names = await message_service.mention_display_names(
+            db, message.mentioned_user_ids
+        )
         await emit_to_users(
             targets,
             "notification",
@@ -177,6 +180,7 @@ async def create_message(
                 message,
                 channel=ctx.channel,
                 author_name=ctx.user.display_name,
+                names=names,
             ),
             workspace_id=ctx.channel.workspace_id,
         )

@@ -1,0 +1,652 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-01T00:00:00Z",
+  "title": "Design System: Llack",
+  "extensions": {
+    "colorMeta": {
+      "signal": {
+        "role": "primary",
+        "displayName": "시그널 레드 (LG Red)",
+        "canonical": "#a50034",
+        "note": "표면의 유일한 유채색. 멘션·오류·포커스·주 동작·현재 위치 다섯 자리에만 등장. --field 위 7.2:1.",
+        "tonalRamp": [
+          "#2b000e",
+          "#4d0018",
+          "#6b0022",
+          "#86002a",
+          "#a50034",
+          "#c8114b",
+          "#e56d90",
+          "#fbf0f3"
+        ]
+      },
+      "board": {
+        "role": "neutral",
+        "displayName": "보드 (무광 안내판)",
+        "canonical": "#ededea",
+        "note": "--n3 의 별칭. 도크·레일·사인인 바탕.",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#dededa",
+          "#ededea",
+          "#ffffff"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "필드 (불 켜진 판)",
+        "canonical": "#fafaf9",
+        "note": "--n1 의 별칭. 전사록·스레드 시트·앱 패널 바탕.",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#e4e4e0",
+          "#f4f4f2",
+          "#fafaf9"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "페이퍼",
+        "canonical": "#ffffff",
+        "note": "--n0 의 별칭. 입력 가능한 것과 선택된 것에만.",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#ededea",
+          "#fafaf9",
+          "#ffffff"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "잉크",
+        "canonical": "#16171a",
+        "note": "--n10. 본문, 안 읽음 행, 선택 행.",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#dededa",
+          "#f4f4f2",
+          "#ffffff"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "罫線",
+        "canonical": "#c2c2bc",
+        "note": "--n6. 영역 분할과 순수 장식 경계 전용.",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#dededa",
+          "#ededea",
+          "#fafaf9"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "강한 罫線",
+        "canonical": "#8f8f89",
+        "note": "--n7. 조작·상태 경계. --field 위 3.1:1 (AA non-text).",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#dededa",
+          "#ededea",
+          "#ffffff"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "잉크 뮤티드",
+        "canonical": "#6a6a64",
+        "note": "가장 작은 글자 전부. 시스템의 모든 바탕에서 4.6:1 이상. 이보다 옅은 잉크 단계는 없음(--ink-faint 는 제거됨).",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#dededa",
+          "#f4f4f2",
+          "#ffffff"
+        ]
+      },
+      "tint-a": {
+        "role": "neutral",
+        "displayName": "플레이트 틴트 A–D",
+        "canonical": "#ededea",
+        "note": "아바타 판의 네 단계(--n3/--n4/--n5/--n6). 색상환이 아니라 램프의 네 칸.",
+        "tonalRamp": [
+          "#16171a",
+          "#55554f",
+          "#6a6a64",
+          "#8f8f89",
+          "#c2c2bc",
+          "#dededa",
+          "#e4e4e0",
+          "#ededea"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "사인인 화면의 제품명 한 곳. 제품 내부에는 등장하지 않습니다."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "채널 헤더의 h1. 제품 내 가장 큰 글자."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "메시지 본문·입력·행 라벨. max-width 72ch."
+      },
+      "body-strong": {
+        "displayName": "Body Strong",
+        "purpose": "작성자 이름, 안 읽음/선택 행."
+      },
+      "secondary": {
+        "displayName": "Secondary",
+        "purpose": "패널 헤더, 버튼 라벨, 보조 설명."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "시각, 개수, 토픽, 힌트."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "섹션 머리, 날짜 구분선, 팔레트 종류 칸. 대문자 트래킹은 이 단계에만 허용."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "인라인 코드·코드 블록, 그리고 보드의 [수치] 필드."
+      },
+      "field-name": {
+        "displayName": "Field name",
+        "purpose": "보드의 열 이름(안 읽음). 9px/600, 0.06em, --n7, 우측 정렬. 섹션 머리보다 한 단계 작고 옅어 이름표가 값보다 먼저 읽히지 않습니다."
+      },
+      "count": {
+        "displayName": "Count",
+        "purpose": "채널·도크 배지의 숫자. --font-mono + tabular-nums, 10px/600. 문장 안에서 읽히는 숫자(시각·상대시간)는 계속 본문 서체입니다."
+      }
+    },
+    "fonts": [
+      {
+        "family": "Pretendard",
+        "source": "self-hosted",
+        "file": "desktop/src/assets/PretendardVariable.woff2",
+        "format": "woff2-variations",
+        "weightRange": "300 800",
+        "fontDisplay": "swap",
+        "note": "오프라인 Tauri 창에서 CDN 이 해석되지 않으므로 자체 호스팅. 폴백 스택 맨 뒤에 이모지 패밀리를 두어 메시지 콘텐츠의 이모지가 .notdef 로 그려지지 않게 합니다."
+      }
+    ],
+    "shadows": [
+      {
+        "name": "floating-sheet",
+        "value": "0 16px 44px rgba(22, 23, 26, 0.16)",
+        "purpose": "커맨드 팔레트와 모달. 표면에서 유일한 진짜 고도."
+      },
+      {
+        "name": "popover",
+        "value": "0 6px 20px rgba(22, 23, 26, 0.1)",
+        "purpose": "컴포저 위 멘션 피커."
+      },
+      {
+        "name": "notice-float",
+        "value": "0 6px 20px rgba(22, 23, 26, 0.14)",
+        "purpose": "우하단 알림 토스트. 팝오버와 같은 오프셋+블러 문법, 값만 한 단계 진합니다."
+      },
+      {
+        "name": "notice-signal-edge",
+        "value": "inset 2px 0 0 -1px var(--signal), 0 6px 20px rgba(22, 23, 26, 0.14)",
+        "purpose": "나를 향한 토스트(.notice-mention / .notice-dm). 전사록의 멘션 행이 쓰는 왼쪽 1px 시그널 선을 그대로 물려받습니다. 일반 채널 알림(.notice-message)은 무채색으로 남습니다."
+      },
+      {
+        "name": "anchored-control",
+        "value": "0 2px 8px rgba(22, 23, 26, 0.08)",
+        "purpose": "전사록 위에 떠 있는 '최신으로' 버튼."
+      },
+      {
+        "name": "inset-boundary",
+        "value": "inset 0 0 0 1px var(--rule-strong)",
+        "purpose": "고도가 아닌 상태 경계. 선택된 행, 활성 도크 타일."
+      },
+      {
+        "name": "inset-signal-edge",
+        "value": "inset 1px 0 0 var(--signal)",
+        "purpose": "멘션 행과 팔레트 활성 행. 색만으로 상태를 말하지 않기 위한 동반 선(배너는 2px)."
+      },
+      {
+        "name": "avatar-hairline",
+        "value": "inset 0 0 0 1px rgba(22, 23, 26, 0.06)",
+        "purpose": "아바타 판을 바탕에서 아주 옅게 떼어냅니다."
+      },
+      {
+        "name": "modal-backdrop",
+        "value": "rgba(22, 23, 26, 0.28)",
+        "purpose": "모달 뒤 바탕. 블러 없음."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "표면의 유일한 이징."
+      },
+      {
+        "name": "dock-in",
+        "value": "200ms clip-path: inset(0 0 0 100%) → inset(0 0 0 0)",
+        "purpose": "유일한 authored 모션. 스레드/앱 패널이 전사록을 덮지 않고 옆으로 밀며 열립니다."
+      },
+      {
+        "name": "notice-in",
+        "value": "180ms var(--ease) opacity 0→1 + translateY(6px→0)",
+        "purpose": "두 번째 authored 모션. 토스트가 우하단에서 올라오며 나타납니다. dock-in 과 공통점은 '일을 덮지 않고 옆에 도착하는 것의 등장'이며, 그것이 새 모션의 허가 조건입니다."
+      },
+      {
+        "name": "flap-tick",
+        "value": "160ms var(--ease) rotateX(-88deg → 0) + opacity 0.4 → 1, transform-origin 50% 0, 1 iteration",
+        "purpose": "세 번째 authored 모션. 안내판이 칸을 넘겨 변화를 알리는 그 기계 장치이며, .badge 에만 씁니다. Sidebar.tsx 가 배지를 자기 값으로 키잉(key={`u${unread}`} / `m${mentions}`)해 리마운트하므로 값이 실제로 바뀔 때만 돌고 무관한 리렌더에서는 돌지 않습니다. reduced-motion 에서 0.001s."
+      },
+      {
+        "name": "sweep",
+        "value": "1.05s var(--ease) infinite translateX(-100% → 360%)",
+        "purpose": "부팅 표시. 페이지 로딩이 아니라 보드가 갱신되는 것으로 읽히게."
+      },
+      {
+        "name": "spin",
+        "value": "0.7s linear infinite rotate(360deg)",
+        "purpose": "업로드 진행 표시."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation/transition-duration: 1ms; 진행 표시 두 개만 1.1s 유지",
+        "purpose": "prefers-reduced-motion: reduce 대응."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sheets-narrow",
+        "value": "1180px",
+        "note": "--thread-w 300px, --panel-w 320px."
+      },
+      {
+        "name": "stack-sheets",
+        "value": "960px",
+        "note": "--rail-w 216px. 스레드+앱 패널이 오른쪽 288px 한 열에 명시 배치."
+      },
+      {
+        "name": "drop-topic",
+        "value": "860px",
+        "note": "채널 토픽만 숨김."
+      },
+      {
+        "name": "stack-shell",
+        "value": "720px",
+        "note": "셸 세로 스택, 채널 보드가 가로 스트립. Tauri 창의 minWidth 940 때문에 브라우저 리뷰 경로에서만 나타납니다."
+      }
+    ],
+    "layoutTokens": [
+      {
+        "name": "--dock-w",
+        "value": "52px"
+      },
+      {
+        "name": "--rail-w",
+        "value": "260px"
+      },
+      {
+        "name": "--thread-w",
+        "value": "340px"
+      },
+      {
+        "name": "--panel-w",
+        "value": "380px"
+      },
+      {
+        "name": "--header-h",
+        "value": "44px"
+      },
+      {
+        "name": "--gutter",
+        "value": "40px"
+      },
+      {
+        "name": "sidebar-item-tracks",
+        "value": "16px minmax(0, 1fr) auto"
+      },
+      {
+        "name": "shell-tracks",
+        "value": "var(--dock-w) var(--rail-w) minmax(0, 1fr) / minmax(0, 1fr)"
+      },
+      {
+        "name": "notices-stack",
+        "value": "position: fixed; right: 14px; z-index: 50; width: 320px; max-width: calc(100vw - 28px); gap: 8px"
+      },
+      {
+        "name": "notices-bottom",
+        "value": "measured: composer height + jump-to-latest height (+10) + 14px edge gap; CSS bottom: 14px is the pre-measurement fallback"
+      },
+      {
+        "name": "MAX_NOTICES",
+        "value": "3"
+      },
+      {
+        "name": "--count-w",
+        "value": "46px",
+        "note": "보드의 [수치] 필드. 고정 폭이어야 머리 행이 이 열에 이름을 붙일 수 있습니다."
+      },
+      {
+        "name": "--rail-tail",
+        "value": "18px",
+        "note": "행에서는 의도적으로 빈 꼬리 트랙. 채널 추가 컨트롤이 머리 행 오른쪽 끝에 앉으면서도 수치 열을 밀지 않게 합니다. ≤720px 에서 0px."
+      },
+      {
+        "name": "sidebar-item-tracks (updated)",
+        "value": "16px minmax(0, 1fr) var(--count-w) var(--rail-tail)",
+        "note": ".sidebar-item 과 .sidebar-section h2 가 같은 네 트랙을 공유합니다. 실측 정렬: 이름표 우변 = 배지 우변 = 274px(델타 0)."
+      }
+    ],
+    "iconography": {
+      "grid": "16",
+      "strokeWidth": 1.5,
+      "linecap": "round",
+      "linejoin": "round",
+      "fill": "none",
+      "stroke": "currentColor",
+      "source": "desktop/src/components/Icon.tsx (authored set: Bell, BellOff, Lock, Paperclip, Pin, Close, Plus, Search, File, Image, ArrowDown, Send, Reply, Edit, Trash, ChannelMark)",
+      "note": "이모지는 아이콘이 아닙니다. 사람이 고른 리액션 이모지만 콘텐츠로 자기 글리프를 유지합니다."
+    },
+    "themeBoundary": {
+      "implemented": [
+        "light"
+      ],
+      "note": "다크 테마는 이 빌드에 구현되지 않았습니다. 램프(--n0…--n10)가 반전 가능하게 authored 되어 있어 컴포넌트 규칙을 건드리지 않고 도입할 수 있다는 것은 경계이지 기능이 아닙니다."
+    },
+    "noticeBehaviour": {
+      "maxVisible": 3,
+      "autoDismissMs": 5000,
+      "pauseOnHover": "스택 위에 포인터가 있는 동안 보이는 모든 토스트의 타이머가 멈춥니다.",
+      "suppression": "화면에 열려 있는 채널은 토스트하지 않고(pushNotice 가 activeChannelId 일치 시 조기 반환), 채널을 열면 그 채널의 대기 토스트가 제거됩니다.",
+      "aria": "role=\"status\" (role=\"alert\" 아님 — 메시지 도착은 낭독을 끊을 사건이 아닙니다)",
+      "copy": "알림 본문은 백엔드 plain_text_preview 가 <@USER_ID> 를 @표시이름으로 해석한 뒤 Markdown 을 벗긴 결과입니다. 토스트는 두 줄 클램프로 가리키기만 합니다."
+    },
+    "miniAppBoundary": {
+      "panelInterior": "미니앱 패널 안쪽은 게스트의 자기 오리진입니다. 호스트 토큰을 주입하지 않고, 앱은 자기 스타일시트를 유지합니다.",
+      "hostSide": "패널 헤더의 상태 점은 앱이 신고한 accent_color 를 무시하고 --ink-muted 6px 원으로 렌더합니다.",
+      "referenceApp": "examples/apps/standup/index.html 는 앱 작성자가 복사해 가는 출발점이므로 하우스 팔레트/기하에서 시작합니다: --bg #fafaf9, --fg #16171a, --muted #6a6a64, --border #c2c2bc, --accent #a50034, --input-bg #ffffff, color-scheme: light, 반경 2px, 다크 블록 없음. 강제 규칙이 아니라 레퍼런스가 지켜야 할 경계입니다."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "주 동작 하나에만 쓰는 시그널 버튼 — 보내기, 로그인, 미니앱 설치.",
+      "html": "<button class=\"ds-btn-primary\">보내기</button>",
+      "css": ".ds-btn-primary { height: 26px; padding: 0 10px; font-family: Pretendard, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: -0.006em; color: #ffffff; background: #a50034; border: none; border-radius: 2px; cursor: pointer; } .ds-btn-primary:hover { background: #86002a; } .ds-btn-primary:focus-visible { outline: 2px solid #a50034; outline-offset: 1px; } .ds-btn-primary:disabled { color: #6a6a64; background: #e4e4e0; cursor: not-allowed; }"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "헤더·컴포저의 26px 아이콘 버튼. 테두리 없이 hover 에서만 잉크와 바탕이 올라옵니다.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"핀\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M6 2.6h4l-.5 4 2.2 2.2H4.3L6.5 6.6l-.5-4Z\"/><path d=\"M8 8.8v4.6\"/></svg></button>",
+      "css": ".ds-btn-icon { display: grid; width: 26px; height: 26px; place-items: center; color: #6a6a64; background: none; border: none; border-radius: 2px; cursor: pointer; } .ds-btn-icon:hover { color: #16171a; background: rgba(22, 23, 26, 0.045); } .ds-btn-icon:focus-visible { outline: 2px solid #a50034; outline-offset: 1px; }"
+    },
+    {
+      "name": "Channel Row",
+      "kind": "nav",
+      "refersTo": "row-channel",
+      "description": "안내판의 행. 섹션 머리가 열 이름 행을 겸하고, 그 아래 행들이 같은 네 트랙(표식 / 이름 / 수치 46px / 빈 꼬리 18px)을 공유합니다. 수치는 mono 로 세고 값이 바뀌면 한 번 넘어갑니다.",
+      "html": "<div class=\"ds-board\"><h2 class=\"ds-board-head\"><span></span><span>채널</span><span class=\"ds-field\">안 읽음</span><button class=\"ds-board-add\" aria-label=\"채널 추가\"><svg viewBox=\"0 0 16 16\" width=\"12\" height=\"12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M8 3.5v9M3.5 8h9\"/></svg></button></h2><button class=\"ds-row\"><span class=\"ds-row-mark\">#</span><span class=\"ds-row-label\">general</span><span class=\"ds-badge\">4</span><span></span></button><button class=\"ds-row ds-row--unread\"><span class=\"ds-row-mark\">#</span><span class=\"ds-row-label\">design-review</span><span class=\"ds-badge ds-badge--mention\">2</span><span></span></button><button class=\"ds-row ds-row--active\"><span class=\"ds-row-mark\">#</span><span class=\"ds-row-label\">plate-and-rule</span><span></span><span></span></button></div>",
+      "css": ".ds-board { display: flex; flex-direction: column; width: 260px; padding: 6px 0; background: #ededea; font-family: Pretendard, sans-serif; font-size: 13px; letter-spacing: -0.006em; --ds-count-w: 46px; --ds-rail-tail: 18px; } .ds-board-head { display: grid; height: 24px; grid-template-columns: 16px minmax(0, 1fr) var(--ds-count-w) var(--ds-rail-tail); align-items: center; gap: 8px; padding: 0 12px; margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #6a6a64; } .ds-field { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; color: #8f8f89; text-align: right; white-space: nowrap; text-transform: none; } .ds-board-add { display: grid; width: 18px; height: 18px; place-items: center; justify-self: end; color: #6a6a64; background: none; border: none; border-radius: 2px; cursor: pointer; } .ds-board-add:hover { color: #16171a; background: rgba(22, 23, 26, 0.045); } .ds-row { display: grid; width: 100%; height: 26px; grid-template-columns: 16px minmax(0, 1fr) var(--ds-count-w) var(--ds-rail-tail); align-items: center; gap: 8px; padding: 0 12px; color: #55554f; text-align: left; background: none; border: none; cursor: pointer; font-family: inherit; font-size: inherit; } .ds-row:hover { background: rgba(22, 23, 26, 0.045); } .ds-row-mark { display: grid; place-items: center; font-size: 12px; font-weight: 500; color: #6a6a64; } .ds-row-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .ds-row--unread { font-weight: 600; color: #16171a; } .ds-row--active { font-weight: 600; color: #16171a; background: #ffffff; box-shadow: inset 0 0 0 1px #8f8f89; } .ds-row--active .ds-row-mark { color: #a50034; } .ds-badge { justify-self: end; min-width: 18px; padding: 0 4px; font-family: ui-monospace, \"SF Mono\", Menlo, Consolas, monospace; font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 16px; text-align: center; color: #55554f; background: #dededa; border-radius: 2px; transform-origin: 50% 0; animation: ds-flap-tick 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-badge--mention { color: #ffffff; background: #a50034; } @keyframes ds-flap-tick { 0% { transform: rotateX(-88deg); opacity: 0.4; } 100% { transform: rotateX(0deg); opacity: 1; } } @media (prefers-reduced-motion: reduce) { .ds-badge { animation-duration: 0.001s; } }"
+    },
+    {
+      "name": "Composer Field",
+      "kind": "input",
+      "refersTo": "input-composer",
+      "description": "하단 고정 컴포저. 조작 경계는 --rule-strong, 포커스에서 테두리가 잉크로 올라가고 시그널 링이 안쪽에 그려집니다.",
+      "html": "<div class=\"ds-composer\"><div class=\"ds-composer-box\"><textarea class=\"ds-composer-input\" rows=\"1\" placeholder=\"#general 에 메시지 보내기\"></textarea><button class=\"ds-composer-send\">보내기</button></div><div class=\"ds-composer-hint\">Enter 로 전송 · Shift+Enter 로 줄바꿈</div></div>",
+      "css": ".ds-composer { padding: 10px 14px 8px; background: #fafaf9; border-top: 1px solid #c2c2bc; font-family: Pretendard, sans-serif; } .ds-composer-box { display: flex; align-items: flex-end; gap: 6px; padding: 6px 6px 6px 10px; background: #ffffff; border: 1px solid #8f8f89; border-radius: 2px; } .ds-composer-box:focus-within { border-color: #16171a; } .ds-composer-input { flex: 1; padding: 3px 0; font-family: inherit; font-size: 13px; line-height: 1.55; letter-spacing: -0.006em; color: #16171a; caret-color: #a50034; background: none; border: none; outline: none; resize: none; } .ds-composer-input::placeholder { color: #6a6a64; } .ds-composer-send { padding: 0 10px; height: 26px; font-family: inherit; font-size: 12px; font-weight: 600; color: #ffffff; background: #a50034; border: none; border-radius: 2px; cursor: pointer; } .ds-composer-send:hover { background: #86002a; } .ds-composer-hint { padding-top: 5px; font-size: 10px; color: #6a6a64; }"
+    },
+    {
+      "name": "Text Field (labelled row)",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "사인인 플레이트의 입력 행. 라벨 칸은 판 위에 남고, 값 칸만 채워진 셀로 서서 '입력 가능한 절반'이 그렇게 보입니다.",
+      "html": "<label class=\"ds-field\"><span>이메일</span><input class=\"ds-field-input\" type=\"email\" placeholder=\"you@company.com\" /></label>",
+      "css": ".ds-field { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 12px; padding: 0 28px; font-family: Pretendard, sans-serif; font-size: 12px; font-weight: 500; color: #55554f; background: #fafaf9; border-bottom: 1px solid #c2c2bc; } .ds-field-input { height: 42px; padding: 0 9px; margin: 5px 0; font-family: inherit; font-size: 13px; font-weight: 400; letter-spacing: -0.006em; color: #16171a; caret-color: #a50034; background: #ffffff; border: 1px solid #8f8f89; border-radius: 2px; } .ds-field-input::placeholder { color: #6a6a64; } .ds-field-input:focus { border-color: #16171a; outline: 2px solid #a50034; outline-offset: -2px; }"
+    },
+    {
+      "name": "Avatar Plate",
+      "kind": "custom",
+      "refersTo": "avatar-plate",
+      "description": "원이 아닌 정사각 판. 램프의 네 틴트 중 하나에 이니셜을 얹고, 프레즌스는 색조가 아니라 형태(채움/링/막힘)로 말합니다.",
+      "html": "<span class=\"ds-avatar\"><span class=\"ds-avatar-plate\">김</span><span class=\"ds-presence\"></span></span><span class=\"ds-avatar\"><span class=\"ds-avatar-plate ds-tint-c\">JS</span><span class=\"ds-presence ds-presence--away\"></span></span><span class=\"ds-avatar\"><span class=\"ds-avatar-plate ds-tint-d\">박</span><span class=\"ds-presence ds-presence--dnd\"></span></span>",
+      "css": ".ds-avatar { position: relative; display: inline-grid; width: 28px; height: 28px; place-items: center; margin-right: 10px; } .ds-avatar-plate { display: grid; width: 100%; height: 100%; place-items: center; font-family: Pretendard, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0; color: #55554f; background: #e4e4e0; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(22, 23, 26, 0.06); } .ds-tint-c { background: #dededa; } .ds-tint-d { background: #c2c2bc; } .ds-presence { position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; background: #16171a; border: 1.5px solid #fafaf9; border-radius: 50%; } .ds-presence--away { background: #fafaf9; box-shadow: inset 0 0 0 1.5px #55554f; } .ds-presence--dnd::after { position: absolute; top: 50%; right: 1px; left: 1px; height: 1.5px; content: \"\"; background: #fafaf9; transform: translateY(-50%); }"
+    },
+    {
+      "name": "Message Row",
+      "kind": "custom",
+      "refersTo": "row-channel",
+      "description": "40px 거터 + 본문 2트랙. 나를 향한 메시지는 시그널 워시 바탕과 왼쪽 inset 시그널 선을 함께 갖습니다 — 색만으로 말하지 않습니다.",
+      "html": "<div class=\"ds-msg\"><div class=\"ds-msg-gutter\"><span class=\"ds-avatar-sm\">김</span></div><div class=\"ds-msg-body\"><div class=\"ds-msg-head\"><strong>김서연</strong><time>14:22</time><span class=\"ds-tag\">BOT</span></div><p class=\"ds-msg-text\">배포 완료했습니다. 확인 부탁드립니다.</p></div></div><div class=\"ds-msg ds-msg--mention\"><div class=\"ds-msg-gutter\"><span class=\"ds-avatar-sm\">JS</span></div><div class=\"ds-msg-body\"><div class=\"ds-msg-head\"><strong>정승한</strong><time>14:25</time></div><p class=\"ds-msg-text\"><span class=\"ds-mention-me\">@나</span> 이 행은 저를 향한 것입니다.</p></div></div>",
+      "css": ".ds-msg { display: grid; grid-template-columns: 40px minmax(0, 1fr); padding: 2px 14px 2px 0; font-family: Pretendard, sans-serif; font-size: 13px; line-height: 1.55; letter-spacing: -0.006em; color: #16171a; background: #fafaf9; } .ds-msg:hover { background: rgba(22, 23, 26, 0.045); } .ds-msg-gutter { display: flex; justify-content: flex-end; padding-right: 12px; } .ds-avatar-sm { display: grid; width: 28px; height: 28px; place-items: center; font-size: 11px; font-weight: 600; color: #55554f; background: #ededea; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(22, 23, 26, 0.06); } .ds-msg-head { display: flex; align-items: baseline; gap: 7px; margin-bottom: 1px; } .ds-msg-head strong { font-size: 13px; font-weight: 600; letter-spacing: -0.012em; } .ds-msg-head time { font-size: 11px; color: #6a6a64; font-variant-numeric: tabular-nums; } .ds-tag { padding: 0 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: #6a6a64; border: 1px solid #8f8f89; border-radius: 2px; } .ds-msg-text { max-width: 72ch; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; } .ds-msg--mention { background: #fbf0f3; box-shadow: inset 1px 0 0 #a50034; } .ds-mention-me { padding: 0 2px; font-weight: 600; color: #ffffff; background: #a50034; border-radius: 2px; }"
+    },
+    {
+      "name": "Command Palette",
+      "kind": "card",
+      "refersTo": "palette-sheet",
+      "description": "표면에서 유일하게 진짜로 떠 있는 상자 — 반경 0, 오프셋+블러 그림자, 강한 罫線 테두리. 결과 행의 종류 칸은 고정 폭이라 라벨이 목록 아래로 정렬됩니다.",
+      "html": "<div class=\"ds-palette\"><input class=\"ds-palette-input\" placeholder=\"채널, 사람, 명령 검색\" /><ul class=\"ds-palette-results\"><li><button class=\"ds-palette-row is-active\"><span class=\"ds-palette-kind\">채널</span><span class=\"ds-palette-label\">plate-and-rule</span><span class=\"ds-palette-hint\">디자인 시스템 논의</span></button></li><li><button class=\"ds-palette-row\"><span class=\"ds-palette-kind\">사람</span><span class=\"ds-palette-label\">정승한</span><span class=\"ds-palette-hint\">방금</span></button></li></ul><div class=\"ds-palette-footer\"><kbd class=\"ds-kbd\">↑↓</kbd> 이동 <kbd class=\"ds-kbd\">Enter</kbd> 열기</div></div>",
+      "css": ".ds-palette { display: flex; flex-direction: column; width: min(620px, 92vw); max-height: 72vh; overflow: hidden; font-family: Pretendard, sans-serif; letter-spacing: -0.006em; color: #16171a; background: #ffffff; border: 1px solid #8f8f89; border-radius: 0; box-shadow: 0 16px 44px rgba(22, 23, 26, 0.16); } .ds-palette-input { width: 100%; height: 46px; padding: 0 14px; font-family: inherit; font-size: 15px; letter-spacing: -0.014em; color: #16171a; caret-color: #a50034; background: none; border: none; border-bottom: 1px solid #c2c2bc; outline: none; } .ds-palette-input::placeholder { color: #6a6a64; } .ds-palette-results { padding: 4px 0; margin: 0; list-style: none; } .ds-palette-row { display: flex; width: 100%; height: 30px; align-items: center; gap: 10px; padding: 0 14px; text-align: left; background: none; border: none; cursor: pointer; } .ds-palette-row:hover { background: rgba(22, 23, 26, 0.045); } .ds-palette-row.is-active { background: #f4f4f2; box-shadow: inset 1px 0 0 #a50034; } .ds-palette-kind { width: 38px; flex: none; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6a64; } .ds-palette-label { flex: 1; min-width: 0; overflow: hidden; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; } .ds-palette-hint { max-width: 45%; flex: none; overflow: hidden; font-size: 11px; color: #6a6a64; white-space: nowrap; text-overflow: ellipsis; } .ds-palette-footer { display: flex; height: 30px; align-items: center; gap: 5px; padding: 0 14px; font-size: 10px; color: #6a6a64; border-top: 1px solid #c2c2bc; } .ds-kbd { padding: 1px 4px; font-family: inherit; font-size: 10px; color: #6a6a64; background: #ffffff; border: 1px solid #c2c2bc; border-radius: 2px; }"
+    },
+    {
+      "name": "Banner",
+      "kind": "custom",
+      "refersTo": "banner-error",
+      "description": "영역 상단에 罫線으로 붙는 알림. 오류는 시그널 글자 + 워시 바탕 + 2px inset 시그널 선으로, 색 하나에만 의존하지 않습니다.",
+      "html": "<div class=\"ds-banner ds-banner--error\"><span>연결이 끊어졌습니다. 재시도 중입니다.</span><button class=\"ds-banner-close\" aria-label=\"닫기\"><svg viewBox=\"0 0 16 16\" width=\"13\" height=\"13\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M4 4l8 8M12 4l-8 8\"/></svg></button></div><div class=\"ds-banner ds-banner--info\"><span>오프라인에서 작성한 메시지 2건을 보냈습니다.</span><button class=\"ds-banner-close\" aria-label=\"닫기\"><svg viewBox=\"0 0 16 16\" width=\"13\" height=\"13\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M4 4l8 8M12 4l-8 8\"/></svg></button></div>",
+      "css": ".ds-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px 6px 14px; font-family: Pretendard, sans-serif; font-size: 12px; letter-spacing: -0.006em; border-bottom: 1px solid #c2c2bc; } .ds-banner--error { font-weight: 500; color: #a50034; background: #fbf0f3; box-shadow: inset 2px 0 0 #a50034; } .ds-banner--info { color: #55554f; background: #f4f4f2; } .ds-banner-close { display: grid; width: 20px; height: 20px; place-items: center; color: inherit; background: none; border: none; border-radius: 2px; opacity: 0.65; cursor: pointer; } .ds-banner-close:hover { opacity: 1; }"
+    },
+    {
+      "name": "Dock",
+      "kind": "nav",
+      "refersTo": "row-channel-active",
+      "description": "52px 무광 레일. 현재 위치는 타일이 페이퍼로 올라서고, 아래 14×2px 시그널 밑줄이 붙습니다. 배지는 보드 색 1px 테두리로 타일에서 떨어져 읽힙니다.",
+      "html": "<nav class=\"ds-dock\"><button class=\"ds-tile ds-tile--active\"><span>LL</span></button><button class=\"ds-tile\"><span>DS</span><i class=\"ds-dock-badge\">3</i></button><span class=\"ds-dock-divider\"></span><button class=\"ds-tile ds-tile--add\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M8 3.5v9M3.5 8h9\"/></svg></button></nav>",
+      "css": ".ds-dock { display: flex; width: 52px; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; background: #ededea; font-family: Pretendard, sans-serif; } .ds-tile { position: relative; display: grid; width: 34px; height: 34px; place-items: center; background: none; border: none; border-radius: 2px; cursor: pointer; color: #6a6a64; } .ds-tile > span { display: grid; width: 100%; height: 100%; place-items: center; font-size: 13px; font-weight: 600; color: #55554f; border-radius: 2px; } .ds-tile:hover { background: rgba(22, 23, 26, 0.045); } .ds-tile--active > span { color: #16171a; background: #ffffff; box-shadow: inset 0 0 0 1px #8f8f89; } .ds-tile--active::after { position: absolute; bottom: -4px; left: 50%; width: 14px; height: 2px; content: \"\"; background: #a50034; transform: translateX(-50%); } .ds-dock-badge { position: absolute; top: -2px; right: -2px; min-width: 16px; padding: 0 3px; font-size: 10px; font-style: normal; font-weight: 600; line-height: 15px; text-align: center; color: #ffffff; background: #a50034; border: 1px solid #ededea; border-radius: 2px; font-variant-numeric: tabular-nums; } .ds-dock-divider { width: 20px; height: 1px; margin: 4px 0; background: #c2c2bc; } .ds-tile--add:hover { color: #16171a; }"
+    },
+    {
+      "name": "Docked Sheet",
+      "kind": "custom",
+      "refersTo": "palette-sheet",
+      "description": "시그니처. 스레드/앱 패널이 전사록을 덮지 않고 옆으로 밀며 열립니다. clip-path 로 200ms 에 걸쳐 오른쪽 모서리에서 드러납니다.",
+      "html": "<aside class=\"ds-sheet\"><header class=\"ds-sheet-head\"><h2>스레드</h2><button class=\"ds-btn-icon-sm\" aria-label=\"닫기\"><svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M4 4l8 8M12 4l-8 8\"/></svg></button></header><div class=\"ds-sheet-body\"><p class=\"ds-sheet-divider\">답글 3</p></div></aside>",
+      "css": ".ds-sheet { display: flex; width: 340px; flex-direction: column; font-family: Pretendard, sans-serif; color: #16171a; background: #fafaf9; border-left: 1px solid #c2c2bc; animation: ds-dock-in 200ms cubic-bezier(0.16, 1, 0.3, 1); } @keyframes ds-dock-in { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } } .ds-sheet-head { display: flex; height: 44px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 0 14px; border-bottom: 1px solid #c2c2bc; } .ds-sheet-head h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; } .ds-btn-icon-sm { display: grid; width: 24px; height: 24px; place-items: center; color: #6a6a64; background: none; border: none; border-radius: 2px; cursor: pointer; } .ds-btn-icon-sm:hover { color: #16171a; background: rgba(22, 23, 26, 0.045); } .ds-sheet-body { padding: 10px 0; } .ds-sheet-divider { padding: 8px 14px 4px; margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #6a6a64; border-top: 1px solid #c2c2bc; } @media (prefers-reduced-motion: reduce) { .ds-sheet { animation-duration: 1ms; } }"
+    },
+    {
+      "name": "Notice Toast",
+      "kind": "custom",
+      "refersTo": "notice",
+      "description": "우하단 알림 스택. 네 번째 floater — 오프셋+블러 그림자, 2px 판, --rule-strong 테두리. 멘션/DM 만 왼쪽 1px 시그널 선을 얻고, 본문은 두 줄 클램프이며 카드 전체가 열기 대상입니다.",
+      "html": "<div class=\"ds-notices\"><article class=\"ds-notice ds-notice--mention\"><button class=\"ds-notice-open\"><strong class=\"ds-notice-title\">#design-review · 정승한</strong><span class=\"ds-notice-body\">@김서연 플레이트 반경 건은 다음 배포로 넘길까요? 오늘 리뷰에서 결론만 내면 됩니다.</span></button><button class=\"ds-notice-dismiss\" aria-label=\"알림 닫기\"><svg viewBox=\"0 0 16 16\" width=\"12\" height=\"12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M4 4l8 8M12 4l-8 8\"/></svg></button></article><article class=\"ds-notice\"><button class=\"ds-notice-open\"><strong class=\"ds-notice-title\">#general · 박도윤</strong><span class=\"ds-notice-body\">배포 창 30분 뒤에 엽니다.</span></button><button class=\"ds-notice-dismiss\" aria-label=\"알림 닫기\"><svg viewBox=\"0 0 16 16\" width=\"12\" height=\"12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M4 4l8 8M12 4l-8 8\"/></svg></button></article></div>",
+      "css": ".ds-notices { display: flex; width: 320px; max-width: calc(100vw - 28px); flex-direction: column; gap: 8px; font-family: Pretendard, sans-serif; letter-spacing: -0.006em; color: #16171a; } .ds-notice { display: flex; align-items: stretch; overflow: hidden; background: #ffffff; border: 1px solid #8f8f89; border-radius: 2px; box-shadow: 0 6px 20px rgba(22, 23, 26, 0.14); animation: ds-notice-in 180ms cubic-bezier(0.16, 1, 0.3, 1); } @keyframes ds-notice-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .ds-notice--mention { box-shadow: inset 2px 0 0 -1px #a50034, 0 6px 20px rgba(22, 23, 26, 0.14); } .ds-notice-open { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; padding: 9px 4px 10px 12px; text-align: left; background: none; border: none; cursor: pointer; font-family: inherit; color: inherit; } .ds-notice-open:hover { background: rgba(22, 23, 26, 0.045); } .ds-notice-title { overflow: hidden; font-size: 12px; font-weight: 600; letter-spacing: -0.008em; white-space: nowrap; text-overflow: ellipsis; } .ds-notice-body { display: -webkit-box; overflow: hidden; font-size: 12px; line-height: 1.45; color: #55554f; -webkit-box-orient: vertical; -webkit-line-clamp: 2; } .ds-notice-dismiss { display: grid; width: 26px; flex: none; padding-top: 9px; place-items: start center; color: #6a6a64; background: none; border: none; cursor: pointer; } .ds-notice-dismiss:hover { color: #16171a; background: rgba(22, 23, 26, 0.045); } .ds-notice-dismiss:focus-visible { outline: 2px solid #a50034; outline-offset: 1px; } @media (prefers-reduced-motion: reduce) { .ds-notice { animation-duration: 1ms; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "안내판(The Departure Board)",
+    "overview": "Llack 의 표면은 역·공항의 시각표입니다. 열은 절대 움직이지 않고 행만 살아 움직입니다. 채널 목록의 각 행은 [표식][이름][수치] 이라는 고정된 칸에 값을 넣는 자리이고, 채널 이름이 길어져도 안 읽음 숫자가 있던 자리는 그대로입니다. 하루 여덟 시간 켜두는 도구가 사용자에게 갚아야 할 것은 \"매번 같은 좌표\"이며, 이 시스템의 모든 결정은 그 한 문장에서 나옵니다.\n\n재질은 무광입니다. 카드가 없고, 둥근 패널이 없고, 쌓임(elevation)이 없습니다. 구획은 오로지 1px 罫線 하나로 합니다 — 헤더와 전사록, 레일과 본문, 컴포저와 스크롤 영역이 모두 같은 굵기의 선 한 줄로 나뉩니다. 예외는 정말로 떠 있는 물체들뿐입니다 — 커맨드 팔레트, 멘션 피커, \"최신으로\" 버튼, 그리고 우하단 알림 토스트가 진짜 오프셋+블러 그림자를 갖습니다. 색은 무채색 11단 램프 하나가 전부이고, 그 위에 LG Red(--signal) 한 색이 오직 \"나를 향한 것\"과 \"내가 지금 있는 곳\"에만 나타납니다. 표면이 붉어지는 순간은 언제나 볼 가치가 있는 순간입니다.\n\n밝은 사무실, 다른 밝은 사내 도구 옆에서 종일 쓰는 장면을 기준으로 light-first 로 만들었습니다. 다크 테마는 이 빌드에 없습니다 — 다만 램프가 반전 가능한 형태로 authored 되어 있어, 컴포넌트 규칙을 건드리지 않고 --n0…--n10 만 뒤집어 도입할 수 있습니다. 이는 구현된 기능이 아니라 지켜야 할 경계로 기록합니다.",
+    "keyCharacteristics": [
+      "11단 무채색 램프(--n0…--n10)가 유일한 톤 토큰. 램프에 없는 값은 버그입니다.",
+      "바탕은 두 값의 분할: --field(전사록·시트, --n1)와 --board(도크·레일·사인인, --n3).",
+      "1px 罫線이 유일한 구획 수단. 카드·둥근 패널·상시 그림자 없음.",
+      "신호색은 하나, 의미도 하나. 안 읽음은 색이 아니라 굵기입니다.",
+      "상태는 형태로 표현: 프레즌스는 채움/테두리/막힘, 색조를 쓰지 않습니다.",
+      "단일 자체 호스팅 서체(Pretendard variable), body 전역 tabular 숫자.",
+      "열은 고정 폭, 행만 변합니다. 스레드는 덮지 않고 옆으로 밀어 열립니다.",
+      "authored 모션은 셋: 도킹 시트(200ms) · 알림 진입(180ms) · 수치 플랩(160ms). 공통 조건은 \"도착을 알린다\" 하나입니다."
+    ],
+    "rules": [
+      {
+        "name": "The One Colour, One Meaning Rule",
+        "body": "--signal 은 \"당신을 향한 신호\"와 \"당신이 있는 곳\"만 뜻합니다. 멘션·오류·포커스·주 동작·현재 위치·나를 향한 토스트, 이 여섯 자리 밖에서 붉은색이 나오면 그것은 팔레트 누수입니다. 새 표면이 \"나를 향한 것\"을 표시할 때는 새 장치를 만들지 말고 전사록의 멘션 행이 쓰는 왼쪽 1px 시그널 선을 그대로 물려받으십시오 — 알림 토스트가 그렇게 했습니다.",
+        "section": "colors"
+      },
+      {
+        "name": "The Unread Is Weight Rule",
+        "body": "평범한 안 읽음은 색을 쓰지 않습니다. font-weight: 600 과 --ink 로만 표시합니다. 색을 쓰는 안 읽음은 나에게 온 멘션 하나뿐입니다.",
+        "section": "colors"
+      },
+      {
+        "name": "The Eleven Steps Rule",
+        "body": "모든 톤은 --n0…--n10 에서 나옵니다. 램프에 없는 회색 값을 새로 적는 것은 버그입니다(신호 계열 4개와 --hover 알파만 예외).",
+        "section": "colors"
+      },
+      {
+        "name": "The Reserved Hue Rule",
+        "body": "아바타·프레즌스·태그·상태는 유채색을 쓸 수 없습니다. 설치된 미니앱이 자신의 accent_color 를 신고해도 표면은 이를 의도적으로 무시하고 --ink-muted 점으로 렌더합니다.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Face Rule",
+        "body": "표면 전체가 Pretendard 한 얼굴입니다. 새로운 서체, 굵기 축 밖의 합성 볼드/이탤릭, 디스플레이용 두 번째 얼굴을 들이지 않습니다.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Cell Numbers Rule",
+        "body": "font-variant-numeric: tabular-nums 는 body 전역입니다. 안 읽음 숫자가 3 에서 12 로 바뀔 때 행의 어떤 것도 밀려서는 안 됩니다.",
+        "section": "typography"
+      },
+      {
+        "name": "The Counted Figures Set In Mono Rule",
+        "body": "보드의 [수치] 필드는 --font-mono 로 셉니다(배지 10px/600 + tabular-nums). 세는 숫자와 읽는 글이 같은 서체로 서면 열이 열로 읽히지 않습니다. 시각·상대시간처럼 문장 안에서 읽히는 숫자는 계속 본문 서체입니다.",
+        "section": "typography"
+      },
+      {
+        "name": "The Eight Steps Of Size Rule",
+        "body": "실제로 쓰이는 크기는 21 / 15(팔레트 입력) / 14 / 13 / 12 / 11 / 10 px 입니다. 그 사이의 새 크기를 만들지 말고 가장 가까운 단계를 쓰십시오.",
+        "section": "typography"
+      },
+      {
+        "name": "The Columns Never Move Rule",
+        "body": "열 폭은 토큰이고 행만 변합니다. 콘텐츠 길이에 따라 트랙 폭이 재계산되는 레이아웃(auto 열, 암시적 그리드 트랙)을 새로 만들지 마십시오.",
+        "section": "layout"
+      },
+      {
+        "name": "The Named Field Needs A Fixed Track Rule",
+        "body": "열에 이름을 붙이려면 그 트랙이 먼저 고정 폭이어야 합니다. 머리 행과 그 아래 행들은 서로 다른 그리드이므로 auto 트랙은 각자의 콘텐츠에 맞춰지고, 그러면 열 이름이 자기가 덮지 않는 열을 가리키게 됩니다. 이름표를 붙이는 검사는 한 줄입니다: 이름표의 우변과 값의 우변이 같은 px 인가.",
+        "section": "layout"
+      },
+      {
+        "name": "The Nothing Disappears Rule",
+        "body": "좁아질 때 기능을 숨겨 해결하지 않습니다. 스택하거나, 축을 바꾸거나, 폭을 줄입니다. 숨겨도 되는 것은 순수한 맥락 텍스트(토픽, 멤버 수)뿐입니다.",
+        "section": "layout"
+      },
+      {
+        "name": "The Push, Never Cover Rule",
+        "body": "스레드와 앱 패널은 전사록을 좁히며 옆에 섭니다. ≤720px 에서만 같은 모서리에서 도착해 덮으며, 그때도 자기 헤더에 닫기 컨트롤을 갖고 있습니다.",
+        "section": "layout"
+      },
+      {
+        "name": "The Rules, Not Cards Rule",
+        "body": "영역은 1px 罫線으로 나눕니다. 카드, 둥근 패널, 상시 그림자, 쌓인 컨테이너를 만들지 마십시오. 사인인 화면조차 카드가 아니라 보드에 붙은 플레이트입니다(위 --ink 선, 아래 --rule 선).",
+        "section": "elevation"
+      },
+      {
+        "name": "The Only Floaters Cast Shadows Rule",
+        "body": "그림자는 정말로 표면에서 떨어져 있는 것만 갖습니다 — 현재 넷입니다: 팔레트/모달, 멘션 피커, \"최신으로\" 버튼, 알림 토스트. 앉아 있는 것은 값과 선으로 구분됩니다. 다섯 번째를 더하려면 그것이 진짜로 떠 있는지 먼저 증명해야 하고, 그림자는 반드시 기존 오프셋+블러 문법을 재사용해야 합니다(헤일로·글로우·하드 오프셋 금지).",
+        "section": "elevation"
+      },
+      {
+        "name": "The Measured Bottom Rule",
+        "body": "하단 모서리에 붙는 floater 는 컴포저를 측정해서 피합니다. 컴포저는 여러 줄 초안에서 자라므로 고정 오프셋은 언젠가 보내기 버튼을 덮습니다. ResizeObserver 로 .main-transcript .composer 높이를 재고, \"최신으로\" 버튼이 떠 있으면 그 높이까지 더한 뒤 14px 모서리 여백을 붙여 bottom 을 계산합니다. CSS 의 bottom: 14px 는 측정 전 폴백일 뿐입니다.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Two Millimetre Rule",
+        "body": "반경은 --r(2px) 하나뿐입니다. 새 반경 값을 도입하지 말고, 원은 의미가 원(점·링)일 때만 쓰십시오.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Drawn Icon Rule",
+        "body": "아이콘은 16 그리드·1.5 스트로크·currentColor 로 직접 그립니다. 아이콘 폰트, 글리프/이모지 대용, 채색된 아이콘 팩을 들이지 마십시오.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Three Authored Motions Rule",
+        "body": "authored 모션은 셋이고, 공통 허가 조건은 하나입니다 — 모션은 도착을 알린다. dock-in(200ms): 시트가 일 옆에 도착합니다. notice-in(180ms): 토스트가 일 옆에 도착합니다. flap-tick(160ms): 수치가 보드에 도착합니다. 도착이 아닌 것(hover, 선택, 열림/닫힘, 색 전환)은 즉시 일어납니다. 그 밖의 애니메이션은 진행을 알리는 두 개(부팅 스윕, 업로드 스피너)뿐입니다. prefers-reduced-motion: reduce 에서 모든 지속시간이 1ms 로 내려가되(플랩은 0.001s) 두 진행 표시만 계속 돕니다.",
+        "section": "components"
+      },
+      {
+        "name": "The Flap Belongs To The Count Rule",
+        "body": "안내판이 변화를 알리는 방식은 칸을 넘기는 것이고, 표면에서 그 기계 장치를 쓸 자격이 있는 것은 단 하나 — 스스로 바뀌는 유일한 칸, 즉 수치 필드입니다. flap-tick 은 .badge 에만, 한 번만, 값이 실제로 바뀔 때만 돕니다. 다른 칸에 플랩을 확장하지 마십시오 — 값이 스스로 변하지 않는 칸이 넘어가면 그것은 장식입니다.",
+        "section": "components"
+      },
+      {
+        "name": "The State Is Also Form Rule",
+        "body": "어떤 상태도 색만으로 말하지 않습니다. 시그널이 등장할 때는 항상 굵기·형태·罫線 중 하나가 동반됩니다(멘션 행의 inset 선, 오류 배너의 inset 선, 활성 도크 타일의 판 상승).",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do 모든 톤을 --n0…--n10 에서 고르십시오. 램프 밖의 회색은 버그입니다.",
+      "Do 바탕을 역할대로 쓰십시오: --board 는 무광 판(도크·레일), --field 는 읽는 판(전사록·시트), --paper 는 입력 가능하거나 선택된 것.",
+      "Do 罫線을 역할대로 나누십시오: 영역 분할은 --rule, 조작·상태 경계는 --rule-strong.",
+      "Do 안 읽음은 font-weight: 600 과 --ink 로 표현하십시오.",
+      "Do 열 폭을 토큰으로 고정하고 행만 변하게 하십시오(--dock-w 52px, --rail-w 260px, --thread-w, --panel-w).",
+      "Do 숫자가 들어가는 자리에 min-width 를 주어 값이 바뀌어도 행이 밀리지 않게 하십시오.",
+      "Do 열에 이름을 붙일 때는 그 트랙을 먼저 고정 폭 토큰으로 만드십시오(--count-w). 이름표 우변과 값 우변이 같은 px 인지로 검사하십시오.",
+      "Do 세는 숫자는 --font-mono + tabular-nums 로 조판하십시오.",
+      "Do 새 아이콘은 16 그리드·1.5 스트로크·currentColor 로 직접 그리십시오.",
+      "Do 상태를 색과 형태로 이중 인코딩하십시오(색맹 사용자에게도 살아남아야 합니다).",
+      "Do 가장 작은 글자에 --ink-muted 를 쓰십시오. 이보다 옅은 잉크 단계는 시스템에 없습니다.",
+      "Do 하단 모서리에 붙는 floater 의 bottom 을 컴포저 실측값으로 계산하십시오. 고정 오프셋은 컴포저가 자라면 보내기 버튼을 덮습니다.",
+      "Do 알림처럼 임시로 뜨는 표면에서도 \"나를 향한 것\"은 전사록과 같은 왼쪽 1px 시그널 선으로 표시하십시오.",
+      "Do 좁아질 때 숨기는 대신 스택하거나 축을 바꾸십시오.",
+      "Do 다크 테마가 필요해지면 램프만 반전시키십시오. 컴포넌트 규칙은 손대지 않고 성립하도록 authored 되어 있습니다."
+    ],
+    "donts": [
+      "Don't --signal 을 멘션·오류·포커스·주 동작·현재 위치 밖에서 쓰지 마십시오. 두 번째 유채색을 추가하지 마십시오.",
+      "Don't 아바타·태그·프레즌스·앱 아이콘에 색상환을 도입하지 마십시오. 미니앱의 accent_color 도 존중하지 않습니다.",
+      "Don't 카드, 둥근 패널, 상시 그림자, 쌓인 컨테이너를 만들지 마십시오. 구획은 1px 선입니다.",
+      "Don't --r(2px) 밖의 모서리 반경을 도입하지 마십시오. pill 은 이 표면에 없습니다.",
+      "Don't 진짜로 떠 있지 않은 것에 그림자를 주지 마십시오. 하드 오프셋 그림자, 헤일로, 컬러 글로우는 금지입니다.",
+      "Don't hover 나 상태 전환에서 레이아웃을 밀지 마십시오. opacity 와 투명 테두리 예약으로 처리하십시오.",
+      "Don't 두 번째 서체나 새 글자 크기를 들이지 마십시오. 21/15/14/13/12/11/10px 밖의 값을 쓰지 마십시오.",
+      "Don't 10px 대문자 트래킹 라벨을 그 한 단계 밖으로 확장하지 마십시오(작은 대문자 눈썹/키커를 새로 만들지 마십시오).",
+      "Don't 아이콘 자리에 이모지를 대신 놓지 마십시오. 사람이 고른 리액션 이모지만 콘텐츠로 남습니다.",
+      "Don't 지금 화면에 있는 채널을 토스트하지 마십시오. 보이는 메시지를 알리는 것은 소음입니다.",
+      "Don't 토스트에 메시지 본문을 다 담지 마십시오(두 줄 클램프). 토스트는 포인터입니다.",
+      "Don't 스레드나 패널을 전사록 위에 덮지 마십시오(≤720px 의 강제 스택만 예외).",
+      "Don't dock-in·notice-in·flap-tick 외에 새 애니메이션을 authored 하지 마십시오. 새 모션은 \"도착을 알리는가\"라는 조건을 통과해야 합니다.",
+      "Don't 좁은 폭에서 사용자가 방금 연 시트를 조용히 제거하지 마십시오.",
+      "Don't flap-tick 을 수치 칸 밖으로 확장하지 마십시오. 스스로 바뀌지 않는 칸이 넘어가면 장식입니다.",
+      "Don't auto 트랙 위에 열 이름을 붙이지 마십시오. 머리 행과 데이터 행은 별개의 그리드이므로 정렬이 성립하지 않습니다.",
+      "Don't 미니앱 패널 안쪽에 호스트 토큰을 주입하지 마십시오. 게스트는 자기 오리진의 스타일을 유지하고, 하우스 스타일은 레퍼런스 앱으로 전파합니다."
+    ]
+  }
+}

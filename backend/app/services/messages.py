@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -507,7 +508,27 @@ def reactions_summary(message: Message, *, viewer_id: str | None) -> list[dict[s
     ]
 
 
-def notification_preview(message: Message, *, channel: Channel, author_name: str) -> dict[str, Any]:
+async def mention_display_names(
+    db: AsyncSession, user_ids: Sequence[str]
+) -> dict[str, str]:
+    """Display names for the ids a body mentions, for readable previews."""
+    if not user_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(User.id, User.display_name).where(User.id.in_(set(user_ids)))
+        )
+    ).all()
+    return {row.id: row.display_name for row in rows}
+
+
+def notification_preview(
+    message: Message,
+    *,
+    channel: Channel,
+    author_name: str,
+    names: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     """Payload for an OS-level desktop notification."""
     if channel.kind_enum.is_conversation:
         title = author_name
@@ -515,7 +536,7 @@ def notification_preview(message: Message, *, channel: Channel, author_name: str
         title = f"#{channel.name or channel.slug or ''} · {author_name}"
     return {
         "title": title,
-        "body": plain_text_preview(message.body) or "새 메시지",
+        "body": plain_text_preview(message.body, names=names) or "새 메시지",
         "channel_id": channel.id,
         "message_id": message.id,
         "thread_id": message.parent_id,

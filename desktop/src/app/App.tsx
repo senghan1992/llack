@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { AppDock } from "@/components/AppDock";
 import { AppPanel } from "@/components/AppPanel";
 import { Banner } from "@/components/Banner";
+import { Notices } from "@/components/Notices";
 import { ChannelHeader } from "@/components/ChannelHeader";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
@@ -63,6 +64,7 @@ export function App() {
         </div>
       </main>
       <CommandPalette />
+      <Notices />
     </div>
   );
 }
@@ -87,6 +89,11 @@ function useRealtimeBridge(setDefaultServer: (url: string) => void) {
 
     unlisteners.push(events.onConnection((status) => store().onConnection(status)));
 
+    // `message.created` carries the mention targets that the shared
+    // notification payload cannot; the store uses it to tell a mention from
+    // ordinary channel traffic.
+    unlisteners.push(events.onFrame((frame) => store().noteIncomingFrame(frame)));
+
     unlisteners.push(
       events.onSync((effect) => {
         switch (effect.kind) {
@@ -106,8 +113,10 @@ function useRealtimeBridge(setDefaultServer: (url: string) => void) {
             store().applyPresence(effect.user_id, effect.presence);
             break;
           case "notify":
-            // The OS notification is shown by the shell; the sidebar counters
-            // are what the UI needs to update.
+            // The shell also raises an OS notification, but only while the
+            // window is unfocused. This is the in-app half, and it is what a
+            // focused user reading another channel actually sees.
+            store().pushNotice(effect);
             void store().refreshSidebar();
             break;
           case "ignored":
