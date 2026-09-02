@@ -224,6 +224,49 @@ pub async fn open_dm(
 }
 
 #[tauri::command]
+pub async fn update_channel(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    patch: serde_json::Value,
+) -> Result<Channel> {
+    let channel = state.api()?.update_channel(&channel_id, patch).await?;
+    state.cache.put_channels(std::slice::from_ref(&channel))?;
+    Ok(channel)
+}
+
+#[tauri::command]
+pub async fn channel_members(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+) -> Result<Vec<llack_core::ChannelMemberEntry>> {
+    state.api()?.channel_members(&channel_id).await
+}
+
+#[tauri::command]
+pub async fn add_channel_members(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    user_ids: Vec<String>,
+) -> Result<Vec<String>> {
+    state
+        .api()?
+        .add_channel_members(&channel_id, &user_ids)
+        .await
+}
+
+#[tauri::command]
+pub async fn remove_channel_member(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    user_id: String,
+) -> Result<()> {
+    state
+        .api()?
+        .remove_channel_member(&channel_id, &user_id)
+        .await
+}
+
+#[tauri::command]
 pub async fn join_channel(state: State<'_, Arc<AppState>>, channel_id: String) -> Result<Channel> {
     let channel = state.api()?.join_channel(&channel_id).await?;
     state.cache.put_channels(std::slice::from_ref(&channel))?;

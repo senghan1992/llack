@@ -136,6 +136,31 @@ async def main() -> None:
         assert await share_buttons.count() > 0
         ok("ui: 메시지 공유 버튼 존재")
 
+        # ── 채널 설정: 구성원이 보이고, 주제가 저장된다 ──────────────────
+        await page.click('button[aria-label="채널 설정"]')
+        await page.wait_for_selector(".channel-settings", state="visible")
+        await page.wait_for_selector(".member-list li:not(.modal-empty)")
+        members = await page.locator(".member-list li").count()
+        assert members > 0, "구성원 목록이 비어 있으면 안 됩니다"
+        ok(f"ui: 채널 설정 모달 — 구성원 {members}명 로드")
+
+        topic_input = page.locator('.channel-settings label:has-text("주제") input')
+        stamp = "스모크가 다녀간 주제"
+        await topic_input.fill(stamp)
+        await page.click('.channel-settings button:has-text("저장")')
+        await page.wait_for_selector(f'.channel-topic:has-text("{stamp}")')
+        ok("ui: 주제 수정이 저장되고 머리글에 반영됨")
+        await page.keyboard.press("Escape")
+        await page.wait_for_selector(".channel-settings", state="detached")
+
+        # ── 환경설정: 기능 안내가 있다 ───────────────────────────────────
+        await page.click('button[aria-label="환경설정"]')
+        await page.wait_for_selector('.settings:has-text("기능 안내")')
+        guide_rows = await page.locator(".settings-guide dt").count()
+        assert guide_rows >= 8, f"기능 안내가 빈약합니다: {guide_rows}행"
+        ok(f"ui: 환경설정 기능 안내 {guide_rows}행")
+        await page.keyboard.press("Escape")
+
         await browser.close()
 
     print(f"\n{len(checks)}개 검사 통과")

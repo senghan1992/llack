@@ -196,3 +196,47 @@ async def _join_workspace(admin: Actor, guest: Actor, workspace: dict) -> None:
     token = invites.json()[0]["invite_url"].split("token=")[1].split("&")[0]
     accepted = await guest.post("/invites/accept", json={"token": token})
     assert accepted.status_code == 200
+
+
+async def test_only_a_channel_admin_can_remove_members(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    await _join_workspace(alice, bob, workspace)
+    channel = (
+        await alice.post(
+            f"/workspaces/{workspace['id']}/channels",
+            json={"name": "정리 대상", "member_ids": [bob.id]},
+        )
+    ).json()
+
+    # A plain member cannot remove anyone.
+    denied = await bob.delete(f"/channels/{channel['id']}/members/{alice.id}")
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "not_channel_admin"
+
+    # The admin cannot remove themselves — that is leave, and the events differ.
+    self_removal = await alice.delete(f"/channels/{channel['id']}/members/{alice.id}")
+    assert self_removal.status_code == 403
+    assert self_removal.json()["error"]["code"] == "cannot_remove_self"
+
+    # The admin removes bob; bob is out and can no longer post.
+    removed = await alice.delete(f"/channels/{channel['id']}/members/{bob.id}")
+    assert removed.status_code == 200
+    members = (await alice.get(f"/channels/{channel['id']}/members")).json()
+    assert bob.id not in {m["user"]["id"] for m in members}
+    blocked = await bob.post(f"/channels/{channel['id']}/messages", json={"body": "?"})
+    assert blocked.status_code == 403
+
+
+async def test_nobody_can_be_removed_from_a_dm(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    await _join_workspace(alice, bob, workspace)
+    dm = (
+        await alice.post(
+            f"/workspaces/{workspace['id']}/channels/dm", json={"user_ids": [bob.id]}
+        )
+    ).json()
+    response = await alice.delete(f"/channels/{dm['id']}/members/{bob.id}")
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "cannot_edit_dm"

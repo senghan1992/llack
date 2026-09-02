@@ -370,6 +370,27 @@ export async function demoRequest<T>(
   }
   if (seg(0) === "channels" && seg(2) === "membership") return ok(undefined);
 
+  // The member list is derived from the recorded user roster, so the channel
+  // settings screen renders with real-looking rows. Mutations stay honest:
+  // the demo has no server to change.
+  if (seg(0) === "channels" && seg(2) === "members" && method === "GET") {
+    const users = (data.responses[
+      `GET /workspaces/${demoWorkspaceId}/users?limit=200`
+    ] ?? []) as Array<{ id: string; display_name: string; handle: string }>;
+    return ok(
+      users.map((user, index) => ({
+        id: `demo-member-${user.id}`,
+        user,
+        role: index === 0 ? "admin" : "member",
+        joined_at: null,
+      })),
+    );
+  }
+  if (seg(0) === "channels" && seg(2) === "members") throw unsupported("구성원 변경");
+  if (seg(0) === "channels" && length === 2 && method === "PATCH") {
+    throw unsupported("채널 설정 변경");
+  }
+
   if (seg(0) === "workspaces" && seg(2) === "channels" && method === "POST") {
     const payload = (body ?? {}) as { name?: string; kind?: string };
     const created = {

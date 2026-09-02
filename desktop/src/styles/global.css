@@ -2834,6 +2834,225 @@ kbd {
   cursor: not-allowed;
 }
 
+/* Two sections in one dialog: a rule between them, not a second card. */
+.settings-section + .settings-section {
+  padding-top: 14px;
+  margin-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+/* ── 기능 안내: what-to-do → how-to-do-it rows ─────────────────────────── */
+
+.settings-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.settings-guide dt {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.settings-guide dd {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+}
+
+.settings-steps {
+  padding-left: 18px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+}
+
+.settings-steps a {
+  color: var(--signal);
+}
+
+/* ── 채널 설정 ──────────────────────────────────────────────────────────── */
+
+.channel-settings {
+  width: min(520px, calc(100vw - 48px));
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.settings-field span {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.settings-field input {
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--n1);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+}
+
+.settings-field input:disabled {
+  color: var(--ink-muted);
+  background: var(--n2);
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-primary {
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-inverse);
+  background: var(--signal);
+  border-radius: var(--r-md);
+}
+
+.settings-primary:hover:not(:disabled) {
+  background: var(--signal-press);
+}
+
+.settings-primary:disabled {
+  color: var(--ink-muted);
+  background: var(--n4);
+  cursor: not-allowed;
+}
+
+.member-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  padding: 0;
+  margin: 8px 0 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.member-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 4px;
+  font-size: 12px;
+}
+
+.member-list li + li {
+  border-top: 1px solid var(--rule);
+}
+
+/* Candidates sink like chips do: they are offers, not state. */
+.member-candidates {
+  max-height: 168px;
+  padding: 2px 6px;
+  margin-top: 6px;
+  background: var(--n2);
+  border-radius: var(--r-md);
+}
+
+.member-name {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.member-handle {
+  flex: 1;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-role {
+  padding: 2px 7px;
+  font-size: 10px;
+  color: var(--ink-secondary);
+  background: var(--n3);
+  border-radius: var(--r-xs);
+}
+
+.member-action {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-radius: var(--r-sm);
+}
+
+.member-action:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--n3);
+}
+
+.member-action.is-destructive:hover:not(:disabled) {
+  color: var(--signal);
+  background: var(--signal-wash);
+}
+
+/* ── 정리 (나가기·보관): consequences written next to the button ────────── */
+
+.settings-danger-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.settings-danger-row + .settings-danger-row {
+  border-top: 1px solid var(--rule);
+}
+
+.settings-danger-row strong {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.settings-danger-row p {
+  max-width: 330px;
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.settings-danger-row button {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-radius: var(--r-md);
+}
+
+.settings-danger-row button:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--n3);
+}
+
+.settings-danger-row button.is-destructive:hover:not(:disabled) {
+  color: var(--signal);
+  background: var(--signal-wash);
+}
+
+.settings-danger-row button:disabled {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
 /*
  * The palette's field is the palette's own top edge, so it is the one field
  * that is not a well: a well inside a 16px card with no padding would need a

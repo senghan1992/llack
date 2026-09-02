@@ -31,6 +31,7 @@ import type {
   BootstrapResult,
   Channel,
   ChannelKind,
+  ChannelMemberEntry,
   ChannelMembership,
   ConnectionStatus,
   DrainReport,
@@ -697,6 +698,18 @@ export const webApi = {
     request<Channel>("POST", `/workspaces/${workspaceId}/channels/dm`, {
       user_ids: userIds,
     }),
+
+  updateChannel: (channelId: Id, patch: { name?: string; topic?: string; is_archived?: boolean }) =>
+    request<Channel>("PATCH", `/channels/${channelId}`, patch),
+
+  channelMembers: (channelId: Id) =>
+    request<ChannelMemberEntry[]>("GET", `/channels/${channelId}/members`),
+
+  addChannelMembers: (channelId: Id, userIds: Id[]) =>
+    request<Id[]>("POST", `/channels/${channelId}/members`, { user_ids: userIds }),
+
+  removeChannelMember: (channelId: Id, userId: Id) =>
+    request<void>("DELETE", `/channels/${channelId}/members/${userId}`),
 
   joinChannel: async (channelId: Id): Promise<Channel> => {
     const channel = await request<Channel>("POST", `/channels/${channelId}/join`);

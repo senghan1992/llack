@@ -286,6 +286,38 @@ async def add_channel_members(
     return added
 
 
+@router.delete("/channels/{channel_id}/members/{user_id}", response_model=OkResponse)
+async def remove_channel_member(
+    user_id: str, ctx: ChannelCtx, db: DbSession
+) -> OkResponse:
+    """Remove someone from a channel. Channel-admin only.
+
+    Removing yourself is `leave` — routing it there keeps "I left" and "I was
+    removed" distinguishable in the emitted events and in any future audit.
+    """
+    membership = ctx.require_member()
+    if ctx.channel.kind_enum.is_conversation:
+        raise Forbidden(
+            "People cannot be removed from a direct message.", code="cannot_edit_dm"
+        )
+    if membership.role != ChannelRole.ADMIN.value:
+        raise Forbidden(
+            "Only a channel admin can remove members.", code="not_channel_admin"
+        )
+    if user_id == ctx.user.id:
+        raise Forbidden("Use leave to remove yourself.", code="cannot_remove_self")
+
+    await channel_service.leave_channel(db, channel=ctx.channel, user_id=user_id)
+    await db.commit()
+    await emit_to_channel(
+        ctx.channel.id,
+        ServerEvent.CHANNEL_MEMBER_LEFT,
+        {"channel_id": ctx.channel.id, "user_id": user_id},
+        workspace_id=ctx.channel.workspace_id,
+    )
+    return OkResponse()
+
+
 @router.patch("/channels/{channel_id}/membership", response_model=ChannelMembershipOut)
 async def update_my_membership(
     payload: UpdateMembershipRequest, ctx: ChannelCtx, db: DbSession

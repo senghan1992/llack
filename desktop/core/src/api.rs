@@ -347,6 +347,56 @@ impl ApiClient {
         .await
     }
 
+    /// Rename, retopic or archive a channel. `patch` carries only the fields
+    /// to change (`name` / `topic` / `is_archived`) — the server enforces who
+    /// may change what, so this stays a passthrough.
+    pub async fn update_channel(
+        &self,
+        channel_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<Channel> {
+        self.send(
+            Method::PATCH,
+            &format!("/channels/{channel_id}"),
+            Some(&patch),
+        )
+        .await
+    }
+
+    pub async fn channel_members(&self, channel_id: &str) -> Result<Vec<ChannelMemberEntry>> {
+        self.send::<(), _>(
+            Method::GET,
+            &format!("/channels/{channel_id}/members"),
+            None,
+        )
+        .await
+    }
+
+    /// Returns the ids actually added (already-present ids are skipped).
+    pub async fn add_channel_members(
+        &self,
+        channel_id: &str,
+        user_ids: &[String],
+    ) -> Result<Vec<String>> {
+        let payload = serde_json::json!({ "user_ids": user_ids });
+        self.send(
+            Method::POST,
+            &format!("/channels/{channel_id}/members"),
+            Some(&payload),
+        )
+        .await
+    }
+
+    pub async fn remove_channel_member(&self, channel_id: &str, user_id: &str) -> Result<()> {
+        self.send::<(), serde_json::Value>(
+            Method::DELETE,
+            &format!("/channels/{channel_id}/members/{user_id}"),
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
     pub async fn join_channel(&self, channel_id: &str) -> Result<Channel> {
         self.send::<(), _>(Method::POST, &format!("/channels/{channel_id}/join"), None)
             .await

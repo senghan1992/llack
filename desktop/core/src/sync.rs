@@ -533,6 +533,7 @@ mod tests {
             member_count: 1,
             peers: vec![],
             membership: Some(ChannelMembership {
+                role: None,
                 last_read_message_id: None,
                 unread_count: unread,
                 mention_count: mentions,

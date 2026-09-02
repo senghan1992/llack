@@ -22,6 +22,7 @@ import type {
   BootstrapResult,
   Channel,
   ChannelKind,
+  ChannelMemberEntry,
   ChannelMembership,
   ConnectionStatus,
   DrainReport,
@@ -114,6 +115,18 @@ const tauriApi = {
 
   openDm: (workspaceId: Id, userIds: Id[]) =>
     call<Channel>("open_dm", { workspaceId, userIds }),
+
+  updateChannel: (channelId: Id, patch: { name?: string; topic?: string; is_archived?: boolean }) =>
+    call<Channel>("update_channel", { channelId, patch }),
+
+  channelMembers: (channelId: Id) =>
+    call<ChannelMemberEntry[]>("channel_members", { channelId }),
+
+  addChannelMembers: (channelId: Id, userIds: Id[]) =>
+    call<Id[]>("add_channel_members", { channelId, userIds }),
+
+  removeChannelMember: (channelId: Id, userId: Id) =>
+    call<void>("remove_channel_member", { channelId, userId }),
 
   joinChannel: (channelId: Id) => call<Channel>("join_channel", { channelId }),
 

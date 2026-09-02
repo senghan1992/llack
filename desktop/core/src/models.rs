@@ -150,6 +150,10 @@ pub enum NotificationLevel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMembership {
+    /// "admin" or "member". The UI uses it to decide which channel-settings
+    /// controls to offer; the server re-checks every privileged change.
+    #[serde(default)]
+    pub role: Option<String>,
     #[serde(default)]
     pub last_read_message_id: Option<Id>,
     #[serde(default)]
@@ -236,6 +240,17 @@ impl Channel {
             None => 0,
         }
     }
+}
+
+/// One row of `GET /channels/{id}/members`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMemberEntry {
+    pub id: Id,
+    pub user: UserBrief,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub joined_at: Option<String>,
 }
 
 // ── Messages ────────────────────────────────────────────────────────────────

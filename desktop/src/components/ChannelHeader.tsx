@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 
 import { TYPING_TTL_MS, typingNames, useApp } from "@/store/app";
 
-import { ChannelMark, IconBell, IconBellOff, IconSearch } from "./Icon";
+import { ChannelSettings } from "./ChannelSettings";
+import { ChannelMark, IconBell, IconBellOff, IconGear, IconSearch } from "./Icon";
 
 export function ChannelHeader() {
   const channel = useApp((state) =>
@@ -17,6 +18,8 @@ export function ChannelHeader() {
   const toggleMute = useApp((state) => state.toggleMute);
   const setPalette = useApp((state) => state.setPalette);
   const connection = useApp((state) => state.connection);
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Entries expire by wall clock, so nudge a render when the newest one ages
   // out — otherwise "입력 중…" lingers until the next store change.
@@ -78,6 +81,19 @@ export function ChannelHeader() {
         >
           {muted ? <IconBellOff size={15} /> : <IconBell size={15} />}
         </button>
+        {/* DMs have nothing to configure (the server refuses too), so the
+            door simply is not drawn there. */}
+        {!isDm ? (
+          <button
+            type="button"
+            className="header-button"
+            onClick={() => setSettingsOpen(true)}
+            title="채널 설정 — 이름·주제·구성원·보관"
+            aria-label="채널 설정"
+          >
+            <IconGear size={15} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="palette-trigger"
@@ -88,6 +104,10 @@ export function ChannelHeader() {
           <kbd>⌘K</kbd>
         </button>
       </div>
+
+      {settingsOpen ? (
+        <ChannelSettings channel={channel} onClose={() => setSettingsOpen(false)} />
+      ) : null}
     </header>
   );
 }

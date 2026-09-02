@@ -43,6 +43,9 @@ export interface Workspace {
 }
 
 export interface ChannelMembership {
+  /** "admin" or "member". Decides which channel-settings controls to show;
+   *  the server re-checks every privileged change. */
+  role?: "admin" | "member" | null;
   last_read_message_id?: Id | null;
   unread_count: number;
   mention_count: number;
@@ -74,6 +77,14 @@ export interface Reaction {
   count: number;
   user_ids: Id[];
   me: boolean;
+}
+
+/** One row of the channel member list. */
+export interface ChannelMemberEntry {
+  id: Id;
+  user: UserBrief;
+  role?: "admin" | "member" | null;
+  joined_at?: string | null;
 }
 
 export interface FileRef {
