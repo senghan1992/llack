@@ -16,6 +16,7 @@ dist/
 # 소스이므로 커밋합니다.
 desktop/dist-demo/
 desktop/demo.html
+desktop/demo-standalone.html
 
 # ── Rust ────────────────────────────────────────────────────────────────
 target/
