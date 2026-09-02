@@ -13,6 +13,7 @@ import type { Channel } from "@/lib/types";
 import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
+import { NewDm } from "./NewDm";
 
 export function Sidebar() {
   const channels = useApp((state) => state.channels);
@@ -27,6 +28,7 @@ export function Sidebar() {
   );
 
   const [creating, setCreating] = useState(false);
+  const [startingDm, setStartingDm] = useState(false);
   const [newName, setNewName] = useState("");
 
   const groups = useMemo(() => {
@@ -172,13 +174,31 @@ export function Sidebar() {
             <span aria-hidden="true" />
             다이렉트 메시지
             <span className="sidebar-field">안 읽음</span>
-            <span aria-hidden="true" />
+            {/*
+              The control the section was missing. A DM could only be opened
+              through ⌘K — which needs you to already know the name and to know
+              that ⌘K finds people — so the section had a line of help text
+              where its add button should have been.
+            */}
+            <button
+              type="button"
+              className="sidebar-add"
+              onClick={() => setStartingDm(true)}
+              aria-label="새 대화"
+              title="새 대화"
+            >
+              <IconPlus size={13} />
+            </button>
           </h2>
           {groups.dms.map(renderChannel)}
           {groups.dms.length === 0 ? (
-            <p className="sidebar-empty">
-              ⌘K 로 사람을 찾아 대화를 시작하세요.
-            </p>
+            <button
+              type="button"
+              className="sidebar-empty-action"
+              onClick={() => setStartingDm(true)}
+            >
+              대화 시작하기
+            </button>
           ) : null}
         </section>
       </div>
@@ -201,6 +221,7 @@ export function Sidebar() {
         </footer>
       ) : null}
       <span className="sr-only">{people.size}명의 구성원</span>
+      {startingDm ? <NewDm onClose={() => setStartingDm(false)} /> : null}
     </nav>
   );
 }

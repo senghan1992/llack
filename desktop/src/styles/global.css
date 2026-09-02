@@ -1,26 +1,39 @@
 /*
- * Llack UI — the board.
+ * Llack UI — the ticket.
  *
- * The channel list is a departure board: columns never move, only rows live.
- * That gives the eye the same coordinates on every glance, which is what an
- * eight-hour tool owes its user.
+ * The board told you where to go; the ticket is the thing you hold. Every
+ * reading surface on this app is a white card die-cut with a soft corner,
+ * lifted a hair off a tinted ground. That is the whole material system, and it
+ * replaces the matte hard-edged plates this file used to carry.
  *
- * Three rules hold the whole surface together:
+ * Four rules hold the surface together:
  *
  *   1. ONE COLOUR, ONE MEANING. `--signal` (LG Red) marks 당신을 향한 신호 —
  *      a mention, an error, keyboard focus, and where you currently are. It
  *      appears nowhere else. Plain unread is weight, not colour; avatars,
  *      presence, tags and states spend the neutral ramp. So the moment red
  *      appears it is always worth looking at.
- *   2. RULES, NOT CARDS. Regions are divided by 1px hairlines. No cards, no
- *      shadows, no rounded panels — the one exception is the command palette,
- *      which genuinely floats and carries a real offset shadow.
+ *   2. ONE RADIUS RULE. A child inside a container with padding `p` takes the
+ *      container's radius minus `p`. Concentric corners are the detail that
+ *      separates software people pay for from software that merely rounded its
+ *      boxes: a 9px button centred in a 16px card with 5px of padding is the
+ *      only value that looks correct, and every step on `--r-xs`…`--r-xl`
+ *      exists so a derived value lands on the scale.
  *   3. ELEVEN STEPS, NOTHING BETWEEN. Every tone comes from `--n0`…`--n10`.
  *      A value not on the ramp is a bug.
+ *   4. SHADOWS COME IN PAIRS, AND ALWAYS WITH A HAIRLINE. Every elevation is
+ *      a tight contact shadow plus a wide soft one, and the hairline does the
+ *      work at the exact edge where a blur cannot. A single-layer shadow reads
+ *      as a drop shadow; two layers read as an object on a surface.
  *
- * Light-first: the use scene is a bright office, all day, next to other
- * bright corporate tooling. Dark is not implemented; the ramp is authored so a
- * dark theme can invert it without touching component rules.
+ * The ramp is biased a whisper toward the accent's own hue (336°) rather than
+ * being neutral or yellow-warm. A crimson accent over a yellow-grey ground is
+ * two palettes; this is one. The magnitude is deliberately under 2% saturation
+ * in the light steps — enough to agree, not enough to read as a colour cast.
+ *
+ * Light-first: the use scene is a bright office, all day, next to other bright
+ * corporate tooling. Dark is not implemented; the ramp is authored so a dark
+ * theme can invert it without touching component rules.
  */
 
 /*
@@ -40,68 +53,171 @@
 :root {
   color-scheme: light;
 
-  /* ── The eleven-step neutral ramp: the only tonal tokens ───────────── */
+  /*
+   * ── The eleven-step neutral ramp: the only tonal tokens ─────────────
+   *
+   * Computed, not picked: hue 336 at a saturation that peaks in the mid steps
+   * and falls off at both ends, because a tinted near-white reads as a cast
+   * and a tinted near-black reads as muddy. `--n0` is pure white on purpose —
+   * nothing tints the surface you read on.
+   *
+   * Measured against the three grounds (card / rail / ground):
+   *   n10  17.53 / 16.29 / 15.38    n9  7.72 / 7.17 / 6.77
+   *   n8    5.52 /  5.13 /  4.85    n7  3.58 / 3.32 / 3.14
+   * Every text step clears AA 4.5:1 on every ground; `--n7` clears the 3:1
+   * non-text floor on every ground, which is what lets one boundary token
+   * work everywhere.
+   */
   --n0: #ffffff;
-  --n1: #fafaf9;
-  --n2: #f4f4f2;
-  --n3: #ededea;
-  --n4: #e4e4e0;
-  --n5: #dededa;
-  --n6: #c2c2bc;
-  --n7: #8f8f89;   /* 3.1:1 on --field: interactive boundaries */
-  --n8: #6a6a64;
-  --n9: #55554f;
-  --n10: #16171a;
+  --n1: #fcfafb;
+  --n2: #f8f6f7;
+  --n3: #f3eff1;
+  --n4: #ece8ea;
+  --n5: #e1dbdd;
+  --n6: #cbc0c5;
+  --n7: #94838a;   /* 3.14:1 on the ground: interactive boundaries */
+  --n8: #73656b;
+  --n9: #5b5054;
+  --n10: #1d181a;
 
-  /* ── Surfaces ──────────────────────────────────────────────────────── */
-  --board: var(--n3);   /* dock and rail: the matte board */
-  --field: var(--n1);   /* transcript and panels: the lit plate */
-  --paper: var(--n0);   /* inputs, the selected row, the palette */
-  --hover: rgba(22, 23, 26, 0.045);
+  /*
+   * ── Surfaces ────────────────────────────────────────────────────────
+   *
+   * Three roles, and the relationship between them is the depth system:
+   * everything you read is a `--card` lifted off `--ground`. The lift measures
+   * 1.14:1 — too little to read on its own, which is exactly why the hairline
+   * and the paired shadow are not optional.
+   */
+  --ground: var(--n3);  /* what the cards float on: dock, rail, gutters */
+  --card: var(--n0);    /* every reading surface: transcript, sheets, inputs */
+
+  /*
+   * The dock and the rail share one ground rather than stepping apart, which
+   * was tried and reverted: a rail at `--n2` leaves the selected row's white
+   * card a 1.06:1 lift off it, and the row stops reading as lifted at all.
+   * The row's state is worth more than a tonal gradation across the frame.
+   */
+  --hover: rgba(29, 24, 26, 0.04);
+  /*
+   * The two remaining alpha tones. Tokenised because the ramp's own rule says
+   * every tone is a token, and two `rgba()` literals buried in components is
+   * exactly how that stops being true.
+   */
+  --inset-hairline: rgba(29, 24, 26, 0.05);
+  --scrim: rgba(29, 24, 26, 0.26);
 
   /* ── Ink ───────────────────────────────────────────────────────────── */
   --ink: var(--n10);
-  --ink-secondary: var(--n9);   /* 6.8:1 on --field */
-  --ink-muted: var(--n8);       /* 4.6:1 on --board, the darkest ground */
+  --ink-secondary: var(--n9);
+  --ink-muted: var(--n8);
   --ink-inverse: var(--n0);
 
   /*
-   * Division is the only structural device on this surface, so the rules have
-   * to be visible. `--n5` measured 1.29:1 on the field — present in the
-   * stylesheet and absent on screen, which made the board read as a plain
-   * minimal sidebar.
+   * Hairlines. `--edge` is the contact line every card carries at its own
+   * boundary — the pixel a blur cannot draw. `--rule` divides regions inside a
+   * card. `--rule-strong` is the only boundary that means "you can operate
+   * this", and it is the one step that clears 3:1 on all three grounds.
    */
-  --rule: var(--n6);        /* region division */
-  --rule-strong: var(--n7); /* control and state boundaries, AA non-text */
+  --edge: var(--n5);
+  --rule: var(--n4);
+  --rule-strong: var(--n7);
 
   /* ── The one colour ────────────────────────────────────────────────── */
-  --signal: #a50034;          /* LG Red — 7.2:1 on --field */
+  --signal: #a50034;          /* 7.93:1 on --card, 6.96:1 on --ground */
   --signal-press: #86002a;
-  --signal-wash: #fbf0f3;     /* the field a mention row sits on */
-  --signal-select: rgba(165, 0, 52, 0.14);
+  --signal-wash: #faf0f3;     /* signal at 6% over the card; muted stays 4.95:1 */
+  --signal-edge: rgba(165, 0, 52, 0.22);
+  --signal-select: rgba(165, 0, 52, 0.13);
+  --signal-ring: rgba(165, 0, 52, 0.18);
 
-  /* ── Avatar plate tints: four steps of the ramp, never a hue ───────── */
+  /*
+   * ── Avatar plate tints: four steps of the ramp, never a hue ─────────
+   *
+   * Consumed from TypeScript, not from this file: `colorForId` in
+   * `lib/format.ts` hashes an id to one of these four names, so a grep for
+   * `var(--tint-a)` inside the stylesheet finds nothing and the tokens are not
+   * dead. `--n1` is genuinely unspent right now, and stays — the ramp is a
+   * scale, and a scale with a hole in it is worse than a scale with a spare
+   * step.
+   */
   --tint-a: var(--n3);
   --tint-b: var(--n4);
   --tint-c: var(--n5);
   --tint-d: var(--n6);
 
-  /* ── Geometry: plates, not pills ───────────────────────────────────── */
-  --r: 2px;
-  --dock-w: 52px;
-  --rail-w: 260px;
-  --thread-w: 340px;
   /*
-   * One width for both docked sheets. They are mutually exclusive, so they
-   * occupy the same slot beside the thread, and a slot that changes width
-   * depending on which sheet is in it makes the transcript jump. An earlier
-   * pass gave the agent 420px on the argument that it holds argv and a fact
-   * table; measured at 1440px that cost the transcript 40px it could not
-   * spare, and the fact table scrolls instead.
+   * ── Radius: five steps, one rule ───────────────────────────────────
+   *
+   * The rule is concentric: `inner = outer - padding`. The steps are where
+   * those derived values land, so nothing has to invent a value. Worked
+   * example, the composer: card `--r-xl` (16px) with 5px padding, so the
+   * textarea and the send button take 11px — `--r-lg`.
+   *
+   * A full circle is still reserved for things whose meaning is a circle:
+   * presence dots, the status dot, the upload spinner.
    */
-  --panel-w: 380px;
-  --header-h: 44px;
-  --gutter: 40px;
+  --r-xs: 5px;   /* chips, badges, tags, reactions */
+  --r-sm: 7px;   /* icon buttons, avatar plates */
+  --r-md: 9px;   /* inputs, rail rows, buttons, message plates */
+  --r-lg: 12px;  /* dock tiles, notices, popovers, inner controls */
+  --r-xl: 16px;  /* cards that hold other things: main, composer, palette */
+
+  /*
+   * ── Elevation: paired shadows, hairline included ────────────────────
+   *
+   * Each is a tight contact shadow plus a wide soft one. The alphas are low
+   * because this surface is looked at for eight hours: shadow that reads on
+   * first sight reads as noise by the afternoon.
+   */
+  /*
+   * `--contact` is not an elevation and is deliberately single-layer: it is the
+   * line where an object meets the surface it rests on. The paired rule below
+   * governs things that *leave* the surface.
+   */
+  --contact: 0 1px 2px rgba(29, 24, 26, 0.05);
+  --e-2: 0 1px 2px rgba(29, 24, 26, 0.04), 0 4px 10px rgba(29, 24, 26, 0.04);
+  --e-3: 0 2px 4px rgba(29, 24, 26, 0.05), 0 10px 28px rgba(29, 24, 26, 0.07);
+  --e-4: 0 4px 10px rgba(29, 24, 26, 0.06), 0 28px 60px rgba(29, 24, 26, 0.16);
+
+  /*
+   * The accent's own shadow, tokenised. Seven literal copies of this value had
+   * accumulated across the primary buttons, each free to drift — which is how a
+   * "one recipe" claim in a token block turns out to be false in practice.
+   */
+  --e-signal: 0 1px 2px rgba(133, 0, 42, 0.24);
+  --e-signal-hover: 0 3px 10px rgba(133, 0, 42, 0.28);
+
+  /*
+   * ── Focus: one look, everywhere ──────────────────────────────────────
+   *
+   * The accent border plus this soft ring is the *only* focus treatment for
+   * anything a person types into. It had drifted into five: a hard 2px inset
+   * outline from the global rule, an `--ink` border on the composers, an accent
+   * border on the sign-in, nothing at all on the palette's field, and a
+   * `border-bottom` where the palette should have had a well. A field that
+   * looks different depending on which screen it is on is the detail that
+   * makes an app feel assembled instead of designed.
+   */
+  --focus-ring: 0 0 0 3px var(--signal-ring);
+
+  /*
+   * ── Density ─────────────────────────────────────────────────────────
+   *
+   * A step looser than the previous build throughout. Rounded corners need
+   * room on either side to read as corners rather than as chamfers, and a
+   * 32px row is where a 9px radius stops fighting its own height. The cost is
+   * about two channels per screen; the user chose to spend it.
+   */
+  --dock-w: 56px;
+  --rail-w: 264px;
+  --thread-w: 344px;
+  --panel-w: 384px;
+  --header-h: 48px;
+  --row-h: 32px;
+  --tile: 36px;
+  --gutter: 44px;
+  /* The gap the cards float in. Also the shell's own padding. */
+  --lift: 8px;
   /*
    * The count column is a fixed width, not `auto`. The header row and the rows
    * beneath it are separate grids, so an `auto` track sizes to each one's own
@@ -110,11 +226,11 @@
   --count-w: 46px;
   /* A trailing track the rows leave empty, so the add control can sit at the
      right of the header without pushing the count column out of line. */
-  --rail-tail: 18px;
+  --rail-tail: 20px;
 
   /* The single authored motion: a sheet docking beside the transcript. */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --dock-in: 200ms;
+  --dock-in: 220ms;
 
   /*
    * "Pretendard" is the self-hosted @font-face above; the platform faces are
@@ -122,6 +238,21 @@
    * come last on purpose: Pretendard has no emoji glyphs, so the browser falls
    * through per codepoint, and a message someone actually wrote 🙏 in must
    * render as an emoji rather than as Pretendard's .notdef box.
+   */
+  /*
+   * ── The type scale: six steps ────────────────────────────────────────
+   *
+   *   23     the wordmark, sign-in only
+   *   16.5   the biggest thing on a surface — channel name, palette field
+   *   13.5   body, author, every label at reading size
+   *   12     secondary: panel headers, button labels, help text
+   *   11     meta: member counts, topics, hints, presence
+   *   10     counted figures and column names, always mono + tabular
+   *
+   * The gaps narrow at the bottom because 1px is 9% of 11px and 4% of 23px.
+   * There were eleven steps in the previous pass, six of them inside a 2.5px
+   * band — which is not a scale, it is drift with a comment on top. Nothing
+   * between these values; the nearest step is always the right answer.
    */
   --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont,
     "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", "Malgun Gothic",
@@ -144,13 +275,22 @@ body,
 
 body {
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.55;
+  /*
+   * 13.5px, up half a step with the density.
+   *
+   * The previous pass loosened every box and left the type where it was, so
+   * the surface gained air around text that had not grown into it. Half a step
+   * rather than a full one because the measure is capped at 72ch: 14px would
+   * have narrowed the line to 66ch at the same pixel width and started
+   * breaking Korean sentences earlier.
+   */
+  font-size: 13.5px;
+  line-height: 1.6;
   /* Numbers sit in fixed cells: a changing unread count must not shift a row. */
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.006em;
   color: var(--ink);
-  background: var(--field);
+  background: var(--card);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overscroll-behavior: none;
@@ -164,10 +304,18 @@ body {
   background: var(--signal-select);
 }
 
+/*
+ * The keyboard ring follows the shape it rings.
+ *
+ * `border-radius: 1px` used to be forced here, which drew a nearly-square ring
+ * around 9px and 12px controls — the ring is the one part of a rounded
+ * interface a keyboard user sees most, and it was the last thing still square.
+ * Omitting the radius lets `outline` inherit the element's own corner, which
+ * every current browser does.
+ */
 :focus-visible {
   outline: 2px solid var(--signal);
-  outline-offset: 1px;
-  border-radius: 1px;
+  outline-offset: 2px;
 }
 
 /*
@@ -180,10 +328,95 @@ body {
   outline: none;
 }
 
+/*
+ * ── The field ────────────────────────────────────────────────────────────
+ *
+ * Every field in the app is this well, and every field focuses this way. Not a
+ * base that components override — the base *is* the look, and a component may
+ * only change size and layout.
+ *
+ * What this replaced: a hard 2px outline drawn inside the border here, an
+ * `--ink` border on the two composers, an accent border on the sign-in, no
+ * focus style at all on the palette's field, and a bare `border-bottom` where
+ * the palette should have had a well. Five treatments for one interaction.
+ */
+input,
+textarea,
+select {
+  padding: 0 11px;
+  color: var(--ink);
+  background: var(--n2);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition:
+    background 130ms var(--ease),
+    border-color 130ms var(--ease),
+    box-shadow 130ms var(--ease);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-muted);
+}
+
+input:hover:not(:focus):not(:disabled),
+textarea:hover:not(:focus):not(:disabled),
+select:hover:not(:focus) {
+  background: var(--n3);
+}
+
 input:focus,
-textarea:focus {
-  outline: 2px solid var(--signal);
-  outline-offset: -2px;
+textarea:focus,
+select:focus {
+  background: var(--card);
+  border-color: var(--signal);
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+input:disabled,
+textarea:disabled {
+  color: var(--ink-muted);
+  border-color: var(--rule);
+}
+
+/*
+ * A field that is a *container* — it holds buttons beside the text — is a card
+ * rather than a well, because a well with a filled button inside it reads as
+ * two nested boxes. Its focus is identical: accent border, same ring. That is
+ * the whole point of the token.
+ */
+.composer-box,
+.agent-composer-box,
+.new-dm-field {
+  background: var(--card);
+  border: 1px solid var(--edge);
+  box-shadow: var(--contact);
+  transition:
+    border-color 130ms var(--ease),
+    box-shadow 130ms var(--ease);
+}
+
+.composer-box:focus-within,
+.agent-composer-box:focus-within,
+.new-dm-field:focus-within {
+  border-color: var(--signal);
+  box-shadow: var(--focus-ring), var(--contact);
+}
+
+/* A field inside one of those containers is already inside a box: it carries
+   no well, no border and no ring of its own. */
+:is(.composer-box, .agent-composer-box, .new-dm-field) :is(input, textarea) {
+  padding: 3px 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+:is(.composer-box, .agent-composer-box, .new-dm-field) :is(input, textarea):focus {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 * {
@@ -259,9 +492,9 @@ kbd {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-muted);
-  background: var(--paper);
+  background: var(--card);
   border: 1px solid var(--rule);
-  border-radius: var(--r);
+  border-radius: var(--r-xs);
 }
 
 .sr-only {
@@ -281,7 +514,7 @@ kbd {
   display: grid;
   place-items: center;
   height: 100%;
-  background: var(--field);
+  background: var(--card);
 }
 
 /* A determinate-looking sweep rather than a spinner: it reads as a board
@@ -320,22 +553,55 @@ kbd {
      the whole window then scrolls instead of the panes scrolling inside it. */
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
-  background: var(--board);
+  background: var(--ground);
 }
 
+/*
+ * Every sheet is its own card.
+ *
+ * An earlier pass made the whole work area one card with hairlines dividing
+ * the sheets inside it, on the argument that separate cards cost horizontal
+ * width. That was true and it was the wrong trade: this product's one
+ * structural promise is that new work arrives *beside* your work, and a thing
+ * that arrives beside you is an object, not a region behind a rule. A hairline
+ * where a card edge belongs also erased the transcript's own right corners in
+ * the app's normal working state — the material disappeared exactly when two
+ * sheets were open, which is most of the time.
+ *
+ * The cost is 8px of transcript per open sheet, and it moves the three-column
+ * boundary from 1417px to 1433px. Measured, not estimated.
+ */
 .main {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  background: var(--field);
-  border-left: 1px solid var(--rule);
+  gap: var(--lift);
+  padding: var(--lift) var(--lift) var(--lift) 0;
 }
 
 .main-body {
   display: flex;
   min-height: 0;
   flex: 1;
+  gap: var(--lift);
+  /* The docking animation slides a sheet in from beyond this edge. */
+  overflow: hidden;
+}
+
+/*
+ * The card every sheet is. One recipe, so a new sheet cannot arrive looking
+ * like a different product — the hairline is not decoration: at a 1.14:1 lift
+ * off the ground the blur alone leaves the exact edge ambiguous.
+ */
+.main-transcript,
+.thread-pane,
+.app-panel,
+.agent-panel {
+  overflow: hidden;
+  background: var(--card);
+  border-radius: var(--r-xl);
+  box-shadow: 0 0 0 1px var(--edge), var(--e-2);
 }
 
 .main-transcript {
@@ -351,9 +617,9 @@ kbd {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0;
   gap: 6px;
-  background: var(--board);
+  background: var(--ground);
 }
 
 .dock-workspaces,
@@ -365,55 +631,95 @@ kbd {
 }
 
 .dock-divider {
-  width: 20px;
+  width: 18px;
   height: 1px;
-  margin: 4px 0;
-  background: var(--rule);
+  margin: 5px 0;
+  background: var(--n5);
 }
 
 .dock-tile {
   position: relative;
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: var(--tile);
+  height: var(--tile);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-lg);
+  transition: background 120ms var(--ease);
 }
 
+/*
+ * An inactive tile is a sunken plate, not a bare glyph.
+ *
+ * Rendered, a dock of unstyled initials on the ground read as text that had
+ * not been styled yet — the tiles had no object-ness at all until one was
+ * selected. A half-step-down fill gives every tile a body, and the active one
+ * still separates cleanly by going the other way: up to the card colour, with
+ * a contact shadow and the signal underline.
+ */
 .dock-tile > span,
 .dock-tile > img {
   display: grid;
   width: 100%;
   height: 100%;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink-secondary);
   place-items: center;
-  border-radius: var(--r);
+  background: var(--n4);
+  border-radius: var(--r-lg);
   object-fit: cover;
+  transition:
+    background 120ms var(--ease),
+    color 120ms var(--ease);
 }
 
-.dock-tile:hover {
-  background: var(--hover);
-}
-
-/* Current location is a plate that lifts to paper, not a colour. */
-.dock-tile.is-active > span,
-.dock-tile.is-active > img {
+.dock-tile:hover > span,
+.dock-tile:hover > img {
   color: var(--ink);
-  background: var(--paper);
-  box-shadow: inset 0 0 0 1px var(--rule-strong);
+  background: var(--n5);
 }
 
-/* The board's position marker, same signal as the selected row. */
+/*
+ * Current location is a card that lifts off the ground, not a colour.
+ *
+ * The tile itself takes the elevation so the plate inside it can be an `<img>`
+ * with no box of its own; an inset ring on the child would sit on top of the
+ * artwork instead of around the tile.
+ */
+/*
+ * Two states, and only one of them is allowed the colour.
+ *
+ * `is-active` is *where you are* — the workspace you are in. `is-open` is a
+ * panel you have opened beside where you are. Both lift to a card, because
+ * both are "this one, now"; only the location takes the signal underline. When
+ * they shared one class, an open agent panel put a second red position marker
+ * on screen and the one-colour rule broke inside the first viewport.
+ */
+.dock-tile.is-active,
+.dock-tile.is-open {
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--edge), var(--contact);
+}
+
+.dock-tile:is(.is-active, .is-open) > span,
+.dock-tile:is(.is-active, .is-open) > img,
+.dock-tile:is(.is-active, .is-open):hover > span,
+.dock-tile:is(.is-active, .is-open):hover > img {
+  color: var(--ink);
+  background: transparent;
+}
+
+/* The position marker, same signal as the selected row. Rounded, because a
+   square-ended 2px bar under a 12px corner is the one leftover hard edge. */
 .dock-tile.is-active::after {
   position: absolute;
-  bottom: -4px;
+  bottom: -5px;
   left: 50%;
-  width: 14px;
-  height: 2px;
+  width: 16px;
+  height: 2.5px;
   content: "";
   background: var(--signal);
+  border-radius: 2px;
   transform: translateX(-50%);
 }
 
@@ -421,12 +727,21 @@ kbd {
   font-size: 12px;
 }
 
-.dock-add {
+/*
+ * These two tiles hold a glyph or an authored SVG directly rather than a
+ * `<span>`/`<img>` plate, so the fill that gives the other tiles their bodies
+ * never reached them. They take it on the tile itself.
+ */
+.dock-add,
+.dock-tile.dock-agent {
   color: var(--ink-muted);
+  background: var(--n4);
 }
 
-.dock-add:hover {
+.dock-add:hover,
+.dock-tile.dock-agent:hover {
   color: var(--ink);
+  background: var(--n5);
 }
 
 .dock-badge {
@@ -444,8 +759,8 @@ kbd {
   color: var(--ink-inverse);
   text-align: center;
   background: var(--signal);
-  border: 1px solid var(--board);
-  border-radius: var(--r);
+  border: 1px solid var(--ground);
+  border-radius: var(--r-xs);
 }
 
 /* ── Sidebar: the board ──────────────────────────────────────────────── */
@@ -454,15 +769,19 @@ kbd {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  background: var(--board);
+  background: var(--ground);
 }
 
+/*
+ * No hairline under the rail's header. The rail is not a card, so a rule here
+ * would be the only line on the surface not dividing something inside a card —
+ * the header separates itself by the space beneath it instead.
+ */
 .sidebar-header {
   display: flex;
   height: var(--header-h);
   align-items: center;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--rule);
+  padding: 0 14px;
 }
 
 .sidebar-workspace {
@@ -474,7 +793,7 @@ kbd {
 
 .sidebar-workspace strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   letter-spacing: -0.012em;
   white-space: nowrap;
@@ -489,12 +808,12 @@ kbd {
 
 .sidebar-scroll {
   flex: 1;
-  padding: 6px 0 16px;
+  padding: 2px 4px 18px;
   overflow-y: auto;
 }
 
 .sidebar-section {
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 
 /*
@@ -509,20 +828,41 @@ kbd {
   grid-template-columns: 16px minmax(0, 1fr) var(--count-w) var(--rail-tail);
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
+  padding: 0 10px;
   margin: 0;
-  font-size: 10px;
+  /*
+   * 11.5px at neutral tracking, not a 10px uppercase micro-label.
+   *
+   * `text-transform: uppercase` does nothing to 채널 or 다이렉트 메시지, and
+   * +0.07em pulls Hangul syllable blocks apart against the body's -0.006em —
+   * so the device was borrowed from a Latin design system and paid for in the
+   * one script the app is written in. Weight and tone carry the hierarchy.
+   */
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: -0.004em;
   color: var(--ink-muted);
-  text-transform: uppercase;
 }
 
+/*
+ * The column's name. One step smaller than the section head and the same ink:
+ * `--n7` measured 3.32:1 here, which is under AA for 9px text. The hierarchy
+ * rests on size, which is enough — a label that has to be dimmer than legible
+ * to sit below its neighbour was the wrong hierarchy to begin with.
+ */
+/*
+ * The column's name, one step under the section head it sits beside.
+ *
+ * Was 9px at +0.06em in `--n7` — 3.32:1, under AA, and the only 9px in the
+ * app. A label that has to be both smaller than legible and dimmer than
+ * legible to rank below its neighbour was the wrong hierarchy; size alone does
+ * it at a size a person can read.
+ */
 .sidebar-section h2 .sidebar-field {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--n7);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: -0.002em;
+  color: var(--ink-muted);
   text-align: right;
   white-space: nowrap;
 }
@@ -538,7 +878,7 @@ kbd {
   height: 18px;
   color: var(--ink-muted);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
 }
 
 .sidebar-add:hover {
@@ -553,13 +893,20 @@ kbd {
 .sidebar-item {
   display: grid;
   width: 100%;
-  height: 26px;
+  height: var(--row-h);
   grid-template-columns: 16px minmax(0, 1fr) var(--count-w) var(--rail-tail);
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
+  /*
+   * The row's own box is inset from the rail's edge, not flush to it. A 9px
+   * corner needs ground on both sides to read as a corner; a row that touches
+   * the rail edge reads as a clipped rectangle.
+   */
+  padding: 0 10px;
   color: var(--ink-secondary);
   text-align: left;
+  border-radius: var(--r-md);
+  transition: background 110ms var(--ease);
 }
 
 .sidebar-item:hover {
@@ -602,8 +949,10 @@ kbd {
 .sidebar-item.is-active {
   font-weight: 600;
   color: var(--ink);
-  background: var(--paper);
-  box-shadow: inset 0 0 0 1px var(--rule-strong);
+  background: var(--card);
+  /* The same paired grammar as every other lifted thing, at the smallest
+     step: this card is 32px tall and sits inside a rail, not on the ground. */
+  box-shadow: 0 0 0 1px var(--edge), var(--contact);
 }
 
 /*
@@ -621,17 +970,17 @@ kbd {
  */
 .badge {
   justify-self: end;
-  min-width: 18px;
-  padding: 0 4px;
+  min-width: 19px;
+  padding: 0 5px;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 16px;
+  line-height: 17px;
   color: var(--ink-secondary);
   text-align: center;
-  background: var(--n5);
-  border-radius: var(--r);
+  background: var(--n4);
+  border-radius: var(--r-xs);
 }
 
 /* A count addressed to you is the one thing that earns the colour. */
@@ -677,19 +1026,15 @@ kbd {
 
 .sidebar-new input {
   width: 100%;
-  height: 26px;
-  padding: 0 7px;
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
+  height: var(--row-h);
+  padding: 0 10px;
 }
 
 .sidebar-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--rule);
+  gap: 9px;
+  padding: 10px 14px;
 }
 
 .sidebar-me {
@@ -724,7 +1069,7 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 14px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--rule);
 }
 
@@ -742,9 +1087,15 @@ kbd {
   gap: 5px;
   margin: 0;
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.014em;
+  /*
+   * 16.5/650. Nothing in the shell was above 14px, so the surface had no
+   * largest element — every screen read as one undifferentiated size class,
+   * which is most of what "너무 투박해" describes. This is the channel you are
+   * in; it earns being the biggest text on the page.
+   */
+  font-size: 16.5px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -777,11 +1128,14 @@ kbd {
 
 .header-button {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   color: var(--ink-muted);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
+  transition:
+    color 110ms var(--ease),
+    background 110ms var(--ease);
 }
 
 .header-button:hover {
@@ -789,22 +1143,30 @@ kbd {
   background: var(--hover);
 }
 
+/*
+ * Search reads as a well, not as a field. It is a button that opens the
+ * palette, so it sinks into the card instead of standing on it — an outlined
+ * box here would promise a cursor that never arrives.
+ */
 .palette-trigger {
   display: flex;
-  height: 26px;
+  height: 28px;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  gap: 7px;
+  padding: 0 9px;
   font-size: 12px;
   color: var(--ink-muted);
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
+  background: var(--n2);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition:
+    background 110ms var(--ease),
+    color 110ms var(--ease);
 }
 
 .palette-trigger:hover {
   color: var(--ink);
-  border-color: var(--rule-strong);
+  background: var(--n3);
 }
 
 .connection-chip {
@@ -813,13 +1175,39 @@ kbd {
   font-weight: 600;
   color: var(--signal);
   border: 1px solid currentcolor;
-  border-radius: var(--r);
+  border-radius: var(--r-xs);
 }
 
 .typing-indicator {
   font-size: 11px;
   color: var(--ink-muted);
   white-space: nowrap;
+}
+
+/*
+ * Rendered message HTML: the paragraph a line becomes.
+ *
+ * `renderMessage` wraps every line in `<p>`, and nothing reset the UA's 1em
+ * top and bottom margins. They were invisible for a long time because they
+ * collapsed straight out of `.message-body` and out of `.message-content`,
+ * neither of which had padding — so 27px of margin per message was escaping
+ * into the gap between rows and reading as "the transcript has generous
+ * spacing". The moment the mention plate gained padding they were trapped
+ * inside it, and an 80px plate was holding 44px of text.
+ *
+ * The transcript sets its own rhythm; a paragraph inside one line of chat has
+ * no business bringing its own.
+ */
+.message-body p,
+.thread-scroll .message-body p,
+.agent-text p {
+  margin: 0;
+}
+
+/* Between paragraphs in a genuinely multi-line message, a real gap. */
+.message-body p + p,
+.agent-text p + p {
+  margin-top: 0.55em;
 }
 
 /* ── Transcript ──────────────────────────────────────────────────────── */
@@ -843,7 +1231,7 @@ kbd {
   flex: 1;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 12px 0 8px;
+  padding: 14px 0 10px;
   overflow-y: auto;
   user-select: text;
 }
@@ -857,41 +1245,150 @@ kbd {
 .transcript-start,
 .transcript-empty,
 .transcript-loading {
-  padding: 10px 14px 14px;
+  padding: 10px 18px 14px;
   margin: 0;
   font-size: 11px;
   color: var(--ink-muted);
 }
 
 /* The date is a label on a rule, set left where the eye already is. */
+/*
+ * The date is a chip on a rule, not a tracked label on one.
+ *
+ * A label sitting on a hairline was the discarded world's only way of marking
+ * a break. A pill riding the rule is the same information as an object — and
+ * it is the one place a full round is right, because the shape means
+ * "interruption", not "container".
+ */
 .day-divider {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 14px 6px;
-  font-size: 10px;
+  gap: 0;
+  padding: 20px 18px 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: -0.004em;
   color: var(--ink-muted);
-  text-transform: uppercase;
 }
 
-.day-divider::before {
-  order: 2;
+.day-divider > span {
+  flex: none;
+  padding: 3px 10px;
+  background: var(--n2);
+  border-radius: 999px;
+}
+
+.day-divider::before,
+.day-divider::after {
   flex: 1;
   height: 1px;
   content: "";
   background: var(--rule);
 }
 
+.day-divider::before {
+  margin-right: 12px;
+}
+
+.day-divider::after {
+  margin-left: 12px;
+}
+
+/*
+ * A message is a plate, inset from the card's edge.
+ *
+ * The row used to bleed to both edges and take a flat hover tint. Inset and
+ * rounded, the hover state reads as picking one message up rather than as a
+ * band of colour crossing the window — and it is the difference the eye
+ * notices most in eight hours, because it is the state under the cursor all
+ * day. The inset also gives the mention plate corners to have.
+ */
+/*
+ * Where you left off.
+ *
+ * The one place `--signal` marks something that is neither a mention nor a
+ * navigation state — and it belongs, on the rule's own terms: "당신이 있는 곳"
+ * is exactly what this is, in the transcript rather than in the rail. Same
+ * chip-on-a-rule form as the day divider, so the two read as the same kind of
+ * interruption; the colour is the only thing that separates a date from the
+ * place you stopped reading.
+ */
+.unread-divider {
+  display: flex;
+  align-items: center;
+  padding: 12px 18px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.004em;
+  color: var(--signal);
+}
+
+.unread-divider > span {
+  flex: none;
+  padding: 3px 10px;
+  background: var(--signal-wash);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--signal-edge);
+}
+
+.unread-divider::before,
+.unread-divider::after {
+  flex: 1;
+  height: 1px;
+  content: "";
+  background: var(--signal-edge);
+}
+
+.unread-divider::before {
+  margin-right: 12px;
+}
+
+.unread-divider::after {
+  margin-left: 12px;
+}
+
 .message {
+  position: relative;
   display: grid;
   grid-template-columns: var(--gutter) minmax(0, 1fr);
-  padding: 2px 14px 2px 0;
+  /*
+   * `start`, not the grid default `stretch`. Stretched, `.message-content` grew
+   * to the row's full height — which is invisible while the content has no
+   * background, and became 35px of dead space the moment the mention plate
+   * gave it one. Measured: an 80px plate holding 45px of text.
+   */
+  align-items: start;
+  padding: 4px 10px 5px 0;
+  margin: 0 8px;
+  border-radius: var(--r-md);
+  transition: background 110ms var(--ease);
 }
 
 .message:hover {
   background: var(--hover);
+}
+
+/*
+ * The rhythm, set explicitly.
+ *
+ * It used to come from the `<p>` margins escaping the row, which meant the
+ * gap between two messages was a side effect of an unreset UA style and was
+ * identical whether the next message was the same person continuing or a new
+ * person starting. A new speaker gets air; a continuation does not.
+ */
+.message + .message:not(.is-grouped) {
+  margin-top: 8px;
+}
+
+.message.is-grouped {
+  padding-top: 1px;
+}
+
+/* A plate needs a little more room than a bare row, or its corners touch the
+   text above it. */
+.message + .message.is-mention,
+.message.is-mention + .message {
+  margin-top: 10px;
 }
 
 .message-gutter {
@@ -901,9 +1398,7 @@ kbd {
 }
 
 .message-hover-time {
-  font-size: 11px;
-  line-height: 1.7;
-  color: var(--ink-muted);
+  line-height: 1.9;
   opacity: 0;
 }
 
@@ -923,13 +1418,25 @@ kbd {
 }
 
 .message-header strong {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.012em;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.014em;
 }
 
-.message-header time {
-  font-size: 11px;
+/*
+ * Timestamps set in the mono face, like every other counted figure.
+ *
+ * These are the most repeated numbers on the surface and they were the one
+ * numeric field still in proportional sans — so a column of times down the
+ * transcript did not line up, which is the exact thing `tabular-nums` is in
+ * the body rule for.
+ */
+.message-header time,
+.message-hover-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   color: var(--ink-muted);
 }
 
@@ -940,11 +1447,38 @@ kbd {
   white-space: pre-wrap;
 }
 
-/* A message addressed to you: the field carries the signal, plus a 1px rule
-   so it survives without colour vision. */
-.message.is-mention {
+/*
+ * A message addressed to you.
+ *
+ * The plate stops at the message's own measure instead of running the full
+ * width of the transcript. Measured at 1440 with no sheets open, a full-bleed
+ * plate was marking ~1075px of surface to carry ~230px of ink — so the mark
+ * got *louder* the wider the window, which is backwards: a mention is not
+ * more urgent on a big monitor.
+ *
+ * The ring is also the non-colour half of the cue. No other row on the surface
+ * has a border at all, so the state survives without colour vision.
+ */
+.message.is-mention .message-content {
+  align-self: start;
+  max-width: calc(72ch + 22px);
+  padding: 5px 11px;
+  margin: -3px 0 -1px -11px;
   background: var(--signal-wash);
-  box-shadow: inset 1px 0 0 var(--signal);
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--signal-edge);
+}
+
+/*
+ * Hover still works on it.
+ *
+ * It was suppressed to keep the wash clean, which removed the affordance from
+ * the one row a person is most likely to act on — you hover a mention to reply
+ * to it. The hover lands on the row outside the plate, so the plate stays the
+ * colour it needs to be.
+ */
+.message.is-mention:hover {
+  background: var(--hover);
 }
 
 .message.is-app .message-body {
@@ -970,13 +1504,24 @@ kbd {
   font-weight: 600;
   color: var(--ink);
   background: var(--n4);
-  border-radius: var(--r);
+  border-radius: var(--r-xs);
 }
 
+/*
+ * A mention of you is accent ink. Nothing else.
+ *
+ * It was solid `--signal` with inverse text — the sign-in button's treatment,
+ * the loudest thing the palette has — spent on a name label *inside* a plate
+ * that already carries a wash and a ring. Giving the token its own wash and
+ * ring instead just moved the repetition rather than removing it. Two
+ * encodings is the right number and they divide the work cleanly: the plate
+ * says "this row is for you", the ink says "here is your name in it".
+ */
 .mention-me,
 .mention-broadcast {
-  color: var(--ink-inverse);
-  background: var(--signal);
+  font-weight: 650;
+  color: var(--signal);
+  background: none;
 }
 
 .code-inline {
@@ -984,7 +1529,7 @@ kbd {
   font-family: var(--font-mono);
   font-size: 12px;
   background: var(--n3);
-  border-radius: var(--r);
+  border-radius: var(--r-xs);
 }
 
 .code-block {
@@ -995,7 +1540,7 @@ kbd {
   font-size: 12px;
   line-height: 1.5;
   background: var(--n2);
-  border-left: 1px solid var(--rule-strong);
+  border-radius: var(--r-sm);
 }
 
 .md-list {
@@ -1008,14 +1553,14 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 0 4px;
+  padding: 1px 5px;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: -0.002em;
   color: var(--ink-muted);
-  text-transform: uppercase;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
+  background: var(--n2);
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
 }
 
 .attachments,
@@ -1029,20 +1574,31 @@ kbd {
   list-style: none;
 }
 
+/*
+ * Chips sink into the card instead of standing on it.
+ *
+ * White on white held together by a hairline is a box you cannot see; the same
+ * chip a half-step down needs no border at all. This is the one place the
+ * depth system runs inward — everything else lifts, a chip recesses, and the
+ * distinction is what keeps a reaction from reading as a button.
+ */
 .attachment {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 7px;
+  padding: 4px 8px;
   color: var(--ink-secondary);
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
+  background: var(--n2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  transition:
+    background 110ms var(--ease),
+    color 110ms var(--ease);
 }
 
 .attachment:hover {
   color: var(--ink);
-  border-color: var(--rule-strong);
+  background: var(--n3);
 }
 
 .attachment-icon {
@@ -1063,50 +1619,97 @@ kbd {
 .reaction {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-width: 34px;
-  padding: 1px 6px;
+  gap: 5px;
+  min-width: 36px;
+  padding: 2px 7px;
   font-size: 12px;
   color: var(--ink-secondary);
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
+  background: var(--n2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  transition:
+    background 110ms var(--ease),
+    border-color 110ms var(--ease);
 }
 
 .reaction:hover {
-  border-color: var(--rule-strong);
+  background: var(--n3);
 }
 
-/* Mine is marked by the rule and weight, not by a second colour. */
+/*
+ * Mine is weight and a boundary, not a second colour. `--signal` would be
+ * wrong here on the rule's own terms: it means "addressed to you" and "where
+ * you are", and a reaction I pressed is neither.
+ */
 .reaction.is-mine {
   font-weight: 600;
   color: var(--ink);
-  border-color: var(--ink);
+  background: var(--n3);
+  border-color: var(--n6);
 }
 
+/*
+ * The hover actions float at the plate's top-right; they reserve no space.
+ *
+ * This group is the third child of a two-column grid, so it was auto-placing
+ * into an implicit third row — a full-width invisible band under *every*
+ * message. Measured, that band was 40px of the plate's 75px height: three
+ * quarters of a mention plate was empty space reserved for buttons nobody was
+ * hovering. Taking it out of flow is what makes a one-line message read as one
+ * line, and it is why the rounded plate now fits its content.
+ *
+ * Still `opacity`, not `display`, so the group can be reached by keyboard and
+ * nothing shifts when it appears.
+ */
 .message-actions {
+  position: absolute;
+  top: -12px;
+  right: 8px;
+  z-index: 2;
   display: flex;
-  gap: 2px;
-  margin-top: 3px;
+  gap: 1px;
+  padding: 2px;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-2);
   opacity: 0;
+  pointer-events: none;
+  transition: opacity 110ms var(--ease);
 }
 
 .message:hover .message-actions,
 .message-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 
+/*
+ * Hover on a hover-revealed control is a plate, not an outline appearing.
+ * The transparent border stays so nothing shifts when the group fades in.
+ */
 .message-actions button {
-  padding: 1px 5px;
+  padding: 2px 6px;
   font-size: 11px;
   color: var(--ink-muted);
   border: 1px solid transparent;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
+  transition:
+    background 110ms var(--ease),
+    color 110ms var(--ease);
 }
 
 .message-actions button:hover {
   color: var(--ink);
-  border-color: var(--rule-strong);
+  background: var(--n3);
+}
+
+/*
+ * The first message in a channel has no plate above it for the bar to overlap,
+ * so it drops inside instead of clipping against the transcript's top edge.
+ */
+.message:first-of-type .message-actions {
+  top: 2px;
 }
 
 .message-status,
@@ -1142,18 +1745,22 @@ kbd {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 9px;
+  padding: 5px 11px;
   font-size: 11px;
   font-weight: 600;
   color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
-  box-shadow: 0 2px 8px rgba(22, 23, 26, 0.08);
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-2);
+  transition:
+    border-color 110ms var(--ease),
+    box-shadow 110ms var(--ease);
 }
 
 .jump-to-latest:hover {
-  border-color: var(--ink);
+  border-color: var(--n6);
+  box-shadow: var(--e-3);
 }
 
 /* ── Avatar: a plate, not a pill ─────────────────────────────────────── */
@@ -1166,26 +1773,38 @@ kbd {
 }
 
 /*
- * A plate at the geometry token, not a rounded pill: the radius used to be set
- * inline per size (~8px at 28px), which quietly opted avatars out of the one
- * radius the rest of the surface obeys. A bot squares off completely — the
- * only geometric distinction the system spends.
+ * A bot takes the tightest radius on the scale, not a hard square.
+ *
+ * The square corner was this system's one geometric distinction, and it was
+ * also the last hard corner anywhere on the surface — which made it read as an
+ * unfinished element rather than as a signal. `--r-xs` still reads as "less
+ * rounded than a person", and the `BOT` tag in the transcript carries the
+ * distinction in words where it actually matters.
  */
 .avatar-fallback.is-bot {
-  border-radius: 0;
+  border-radius: var(--r-xs);
 }
 
+/*
+ * Initials sit in `--ink`, not `--ink-secondary`.
+ *
+ * Measured: `--ink-secondary` on the darkest plate tint (`--tint-d`) came out
+ * at 4.37:1 — under AA at 11px. The alternatives were to lighten the tints,
+ * which costs the four steps their separation, or to darken the ink, which
+ * costs nothing: initials are a person's identity in a 20px box and have no
+ * business being subordinate.
+ */
 .avatar img,
 .avatar-fallback {
   display: grid;
   width: 100%;
   height: 100%;
   font-weight: 600;
-  color: var(--ink-secondary);
+  color: var(--ink);
   letter-spacing: 0;
   place-items: center;
-  border-radius: var(--r);
-  box-shadow: inset 0 0 0 1px rgba(22, 23, 26, 0.06);
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 1px var(--inset-hairline);
   object-fit: cover;
 }
 
@@ -1200,12 +1819,12 @@ kbd {
   width: 8px;
   height: 8px;
   background: var(--ink);
-  border: 1.5px solid var(--field);
+  border: 1.5px solid var(--card);
   border-radius: 50%;
 }
 
 .presence-away {
-  background: var(--field);
+  background: var(--card);
   box-shadow: inset 0 0 0 1.5px var(--ink-secondary);
 }
 
@@ -1216,51 +1835,56 @@ kbd {
   left: 1px;
   height: 1.5px;
   content: "";
-  background: var(--field);
+  background: var(--card);
   transform: translateY(-50%);
 }
 
 .sidebar-footer .presence-dot,
 .sidebar-item .presence-dot {
-  border-color: var(--board);
+  border-color: var(--ground);
 }
 
 .sidebar-footer .presence-away,
 .sidebar-item .presence-away {
-  background: var(--board);
+  background: var(--ground);
 }
 
 .sidebar-footer .presence-dnd::after,
 .sidebar-item .presence-dnd::after {
-  background: var(--board);
+  background: var(--ground);
 }
 
 /* ── Composer ────────────────────────────────────────────────────────── */
 
+/*
+ * The composer needs no rule above it.
+ *
+ * Its own card boundary already separates it from the transcript, and a
+ * hairline plus a card edge two pixels apart is the doubled boundary that
+ * makes an interface look assembled. The space does the dividing.
+ */
 .composer {
   position: relative;
   flex: none;
-  padding: 10px 14px 8px;
-  border-top: 1px solid var(--rule);
+  padding: 6px 12px 12px;
 }
 
+/*
+ * Worked example of the concentric rule: 16px outer, 5px padding, so everything
+ * inside takes 11px — `--r-lg`.
+ */
 .composer-box {
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding: 6px 6px 6px 10px;
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
-}
-
-.composer-box:focus-within {
-  border-color: var(--ink);
+  padding: 5px 5px 5px 12px;
+  border-radius: var(--r-xl);
 }
 
 .composer-box.is-disabled {
   background: var(--n2);
   border-color: var(--rule);
+  box-shadow: none;
 }
 
 .composer-box textarea {
@@ -1283,11 +1907,14 @@ kbd {
 
 .composer-actions button {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   color: var(--ink-muted);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-lg);
+  transition:
+    background 110ms var(--ease),
+    color 110ms var(--ease);
 }
 
 .composer-actions button:hover:not(:disabled) {
@@ -1316,33 +1943,72 @@ kbd {
   }
 }
 
+/*
+ * The one primary action on the surface.
+ *
+ * A press shadow rather than a transform: the button sits inside a card with
+ * 5px of padding, so lifting it on hover would break the concentric fit the
+ * radius rule set up. The `!important` is inherited from the shared
+ * `.composer-actions button` rule this specialises.
+ */
 .composer-send {
   width: auto !important;
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-inverse) !important;
   background: var(--signal) !important;
-  border-radius: var(--r);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-signal);
+  transition:
+    background 110ms var(--ease),
+    box-shadow 110ms var(--ease);
 }
 
 .composer-send:hover:not(:disabled) {
   background: var(--signal-press) !important;
+  box-shadow: var(--e-signal-hover);
+}
+
+.composer-send:active:not(:disabled) {
+  box-shadow: none;
 }
 
 .composer-send:disabled {
   color: var(--ink-muted) !important;
   background: var(--n4) !important;
+  box-shadow: none;
 }
 
+/*
+ * The keyboard legend appears when the composer has focus, and not before.
+ *
+ * It was permanent, and it sat *below* the composer's card on the ground — so
+ * the card no longer terminated the surface and the last thing in the window
+ * was a 10px shortcut list. Nobody reads a legend they have seen ten thousand
+ * times; the person who needs it is the person whose cursor is in the field.
+ */
 .composer-hint {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  padding-top: 5px;
+  height: 0;
+  padding-top: 0;
+  overflow: hidden;
   font-size: 10px;
   color: var(--ink-muted);
+  opacity: 0;
+  transition:
+    height 140ms var(--ease),
+    opacity 140ms var(--ease),
+    padding-top 140ms var(--ease);
+}
+
+.composer:has(.composer-box:focus-within) .composer-hint {
+  height: 20px;
+  padding-top: 6px;
+  opacity: 1;
 }
 
 .composer-also {
@@ -1364,12 +2030,12 @@ kbd {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 4px 2px 7px;
+  padding: 3px 4px 3px 8px;
   font-size: 11px;
   color: var(--ink-secondary);
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
+  background: var(--n2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
 }
 
 .composer-attachments button {
@@ -1378,25 +2044,30 @@ kbd {
   height: 16px;
   color: var(--ink-muted);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-xs);
 }
 
 .composer-attachments button:hover {
   color: var(--signal);
 }
 
+/*
+ * A real floater: it leaves the surface, so it takes the paired shadow and the
+ * hairline rather than the heavy single-layer one it used to carry.
+ */
 .mention-picker {
   position: absolute;
-  bottom: calc(100% - 6px);
-  left: 14px;
+  bottom: calc(100% - 4px);
+  left: 12px;
   z-index: 5;
-  width: 260px;
-  padding: 3px;
+  width: 264px;
+  padding: 4px;
   margin: 0;
   list-style: none;
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  box-shadow: 0 6px 20px rgba(22, 23, 26, 0.1);
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-3);
 }
 
 .mention-picker button {
@@ -1406,11 +2077,11 @@ kbd {
   gap: 7px;
   padding: 4px 6px;
   text-align: left;
-  border-radius: var(--r);
+  border-radius: var(--r-md);
 }
 
 .mention-picker button.is-active {
-  background: var(--n2);
+  background: var(--n3);
 }
 
 .mention-picker strong {
@@ -1431,14 +2102,21 @@ kbd {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  background: var(--field);
-  border-left: 1px solid var(--rule);
   /*
    * The sheet slides in from the edge and pushes the transcript narrower; it
    * never covers it. This is the product's one structural promise, so it is
    * also the only place motion is spent.
    */
   animation: dock-in var(--dock-in) var(--ease);
+}
+
+.thread-pane {
+  --sheet-w: var(--thread-w);
+}
+
+.app-panel,
+.agent-panel {
+  --sheet-w: var(--panel-w);
 }
 
 .thread-pane {
@@ -1460,12 +2138,25 @@ kbd {
   flex: none;
 }
 
+/*
+ * The push, and it is an actual push.
+ *
+ * This used to be `clip-path: inset(0 0 0 100%)` → `inset(0)`: a wipe. The
+ * transcript's flex width snapped in one frame while the reveal ran for 220ms,
+ * so the promise "옆으로 밀어 열린다" rendered as a curtain over a layout that
+ * had already moved. Animating a negative `margin-right` instead takes the
+ * sheet out of the row's width budget and gives it back over the duration, so
+ * the transcript narrows in step — and because the sheet's own border box
+ * never changes size, none of its content reflows while it travels.
+ */
 @keyframes dock-in {
   from {
-    clip-path: inset(0 0 0 100%);
+    margin-right: calc(-1 * var(--sheet-w));
+    opacity: 0;
   }
   to {
-    clip-path: inset(0 0 0 0);
+    margin-right: 0;
+    opacity: 1;
   }
 }
 
@@ -1494,7 +2185,7 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 10px 0 14px;
+  padding: 0 11px 0 16px;
   border-bottom: 1px solid var(--rule);
 }
 
@@ -1513,12 +2204,12 @@ kbd {
 
 :is(.thread-header, .app-panel-header, .agent-panel-header) button {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   flex: none;
   color: var(--ink-muted);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
 }
 
 :is(.thread-header, .app-panel-header, .agent-panel-header) button:hover {
@@ -1534,12 +2225,11 @@ kbd {
 }
 
 .thread-divider {
-  padding: 8px 14px 4px;
-  font-size: 10px;
+  padding: 12px 16px 6px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: -0.004em;
   color: var(--ink-muted);
-  text-transform: uppercase;
   border-top: 1px solid var(--rule);
 }
 
@@ -1562,7 +2252,7 @@ kbd {
   flex: 1;
   width: 100%;
   border: none;
-  background: var(--paper);
+  background: var(--card);
 }
 
 .app-panel-loading,
@@ -1595,14 +2285,19 @@ kbd {
   inset: 0;
   z-index: 40;
   display: grid;
-  padding-top: 12vh;
-  background: rgba(22, 23, 26, 0.28);
+  padding-top: 11vh;
+  /* Tinted from the ink, and a touch lighter than before: the palette now
+     carries a two-layer shadow of its own, so the scrim no longer has to do
+     the separating on its own. */
+  background: var(--scrim);
   justify-items: center;
   /* Grid items stretch by default, which gave the palette a tall empty tail
      below its own results. It sizes to its content instead. */
   align-items: start;
 }
 
+/* The highest thing on the surface, so the widest radius and the deepest of
+   the four elevations. */
 .modal,
 .palette {
   width: min(620px, 92vw);
@@ -1610,10 +2305,10 @@ kbd {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  /* The only real elevation on the surface: offset plus blur, no halo. */
-  box-shadow: 0 16px 44px rgba(22, 23, 26, 0.16);
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-xl);
+  box-shadow: var(--e-4);
 }
 
 .modal-header {
@@ -1622,12 +2317,12 @@ kbd {
   flex: none;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px 0 14px;
+  padding: 0 11px 0 16px;
   border-bottom: 1px solid var(--rule);
 }
 
 .modal-header strong {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
@@ -1637,7 +2332,7 @@ kbd {
   height: 24px;
   color: var(--ink-muted);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
 }
 
 .modal-header button:hover {
@@ -1652,27 +2347,41 @@ kbd {
 
 .modal-empty,
 .palette-empty {
-  padding: 18px 14px;
+  padding: 22px 16px;
   margin: 0;
   font-size: 12px;
   color: var(--ink-muted);
   text-align: center;
 }
 
+/*
+ * The palette's field is the palette's own top edge, so it is the one field
+ * that is not a well: a well inside a 16px card with no padding would need a
+ * radius it cannot have. It keeps the hairline under it and takes the accent
+ * ring on focus like everything else — which it previously had no focus style
+ * for at all.
+ */
 .palette input {
   width: 100%;
-  height: 46px;
-  padding: 0 14px;
-  font-size: 15px;
+  height: 52px;
+  padding: 0 18px;
+  font-size: 16.5px;
   letter-spacing: -0.014em;
   background: none;
   border: none;
   border-bottom: 1px solid var(--rule);
-  outline: none;
+  border-radius: 0;
+}
+
+.palette input:focus {
+  background: none;
+  border-color: var(--rule);
+  border-bottom-color: var(--signal);
+  box-shadow: none;
 }
 
 .palette-results {
-  padding: 4px 0;
+  padding: 5px;
   margin: 0;
   overflow-y: auto;
   list-style: none;
@@ -1689,31 +2398,40 @@ kbd {
   width: 100%;
   align-items: center;
   gap: 10px;
-  height: 30px;
-  padding: 0 14px;
+  height: 34px;
+  padding: 0 10px;
   text-align: left;
+  border-radius: var(--r-md);
 }
 
+/*
+ * The keyboard cursor. A plate rather than the old mitred left edge, and the
+ * signal moves to the label's own left mark so the row still says "here" by
+ * form as well as tone.
+ */
 .palette-results button.is-active {
-  background: var(--n2);
-  box-shadow: inset 1px 0 0 var(--signal);
+  background: var(--signal-wash);
+  box-shadow: inset 0 0 0 1px var(--signal-edge);
+}
+
+.palette-results button.is-active .palette-kind {
+  color: var(--signal);
 }
 
 .palette-kind {
-  width: 38px;
+  width: 40px;
   flex: none;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: -0.004em;
   color: var(--ink-muted);
-  text-transform: uppercase;
 }
 
 .palette-label {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 13.5px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1760,7 +2478,7 @@ kbd {
 }
 
 .app-list-info strong {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
@@ -1781,22 +2499,26 @@ kbd {
 }
 
 .scope-list li {
-  padding: 1px 6px;
+  padding: 2px 7px;
   font-size: 11px;
   color: var(--ink-secondary);
   background: var(--n2);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
 }
 
 .app-list button {
   flex: none;
-  padding: 4px 10px;
+  padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-inverse);
   background: var(--signal);
-  border-radius: var(--r);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-signal);
+  transition:
+    background 110ms var(--ease),
+    box-shadow 110ms var(--ease);
 }
 
 .app-list button:hover {
@@ -1807,6 +2529,203 @@ kbd {
   flex: none;
   font-size: 11px;
   color: var(--ink-muted);
+}
+
+/* ── New conversation ────────────────────────────────────────────────── */
+
+.new-dm {
+  width: min(468px, 92vw);
+}
+
+/*
+ * The recipient line.
+ *
+ * Chips and the field share one container, so the people you have chosen read
+ * as the address of the message you are about to start — not as a list living
+ * somewhere else in the dialog. Takes the shared container-field grammar, so
+ * its focus is the same accent ring as every other field in the app.
+ */
+.new-dm-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  margin: 12px 14px 0;
+  border-radius: var(--r-lg);
+}
+
+.new-dm-search {
+  flex: none;
+  color: var(--ink-muted);
+}
+
+.new-dm-field input {
+  min-width: 120px;
+  flex: 1;
+  height: 24px;
+  font-size: 13.5px;
+}
+
+.new-dm-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 3px 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--n3);
+  border-radius: var(--r-xs);
+}
+
+.new-dm-chip button {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  color: var(--ink-muted);
+  place-items: center;
+  border-radius: var(--r-xs);
+}
+
+.new-dm-chip button:hover {
+  color: var(--ink);
+  background: var(--n4);
+}
+
+.new-dm-body {
+  min-height: 200px;
+  max-height: 46vh;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.new-dm-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.new-dm-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  text-align: left;
+  border-radius: var(--r-md);
+  transition: background 100ms var(--ease);
+}
+
+/*
+ * One highlight for both the pointer and the keyboard: the cursor follows the
+ * mouse on hover, so there is never a second, competing highlight on screen.
+ */
+.new-dm-row.is-active {
+  background: var(--n2);
+}
+
+.new-dm-row.is-picked {
+  background: var(--signal-wash);
+  box-shadow: inset 0 0 0 1px var(--signal-edge);
+}
+
+.new-dm-name {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.new-dm-name strong {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.new-dm-name > span {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Someone you already have a conversation with: the row still works, it just
+   says the button will move you rather than start something. */
+.new-dm-note {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.new-dm-check {
+  display: grid;
+  flex: none;
+  color: var(--signal);
+  place-items: center;
+}
+
+.new-dm-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px 13px;
+  font-size: 11px;
+  color: var(--ink-muted);
+  border-top: 1px solid var(--rule);
+}
+
+.new-dm-start {
+  flex: none;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-inverse);
+  background: var(--signal);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-signal);
+  transition:
+    background 110ms var(--ease),
+    box-shadow 110ms var(--ease);
+}
+
+.new-dm-start:hover:not(:disabled) {
+  background: var(--signal-press);
+  box-shadow: var(--e-signal-hover);
+}
+
+.new-dm-start:disabled {
+  color: var(--ink-muted);
+  background: var(--n4);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* The empty DM section's own call to action, where a line of help text used
+   to tell people to go find a keyboard shortcut. */
+.sidebar-empty-action {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  text-align: left;
+  border-radius: var(--r-md);
+  transition:
+    background 110ms var(--ease),
+    color 110ms var(--ease);
+}
+
+.sidebar-empty-action:hover {
+  color: var(--ink);
+  background: var(--hover);
 }
 
 /* ── Banner ──────────────────────────────────────────────────────────── */
@@ -1829,7 +2748,7 @@ kbd {
   flex: none;
   color: inherit;
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   opacity: 0.65;
 }
 
@@ -1842,8 +2761,12 @@ kbd {
   background: var(--n2);
 }
 
-/* An error names the problem in the signal colour and adds a rule, so it is
-   not colour alone. */
+/*
+ * An error names the problem in the signal colour and keeps a 2px edge, so it
+ * is not colour alone. The banner spans the card's full width rather than
+ * being a plate inside it — it reports on the whole channel, so it divides
+ * with a rule and takes no radius of its own.
+ */
 .banner-error {
   font-weight: 500;
   color: var(--signal);
@@ -1861,25 +2784,25 @@ kbd {
  */
 .notices {
   position: fixed;
-  right: 14px;
-  bottom: 14px;
+  right: 16px;
+  bottom: 16px;
   z-index: 50;
   display: flex;
-  width: 320px;
-  max-width: calc(100vw - 28px);
+  width: 328px;
+  max-width: calc(100vw - 32px);
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
 }
 
 .notice {
   display: flex;
   align-items: stretch;
   overflow: hidden;
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
-  box-shadow: 0 6px 20px rgba(22, 23, 26, 0.14);
-  animation: notice-in 180ms var(--ease);
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-3);
+  animation: notice-in 200ms var(--ease);
 }
 
 @keyframes notice-in {
@@ -1893,12 +2816,20 @@ kbd {
   }
 }
 
-/* Addressed to you: the same 1px signal edge a mention row wears upstream. */
+/*
+ * Addressed to you: the same signal ring a mention plate wears upstream.
+ *
+ * A ring rather than the old left-edge sliver, for the same reason the mention
+ * plate changed — an inset edge line on a 12px corner mitres into a wedge. The
+ * ring composes with the elevation instead of replacing it, which the previous
+ * rule got wrong by restating the shadow.
+ */
 .notice-mention,
 .notice-dm {
+  border-color: transparent;
   box-shadow:
-    inset 2px 0 0 -1px var(--signal),
-    0 6px 20px rgba(22, 23, 26, 0.14);
+    inset 0 0 0 1px var(--signal-edge),
+    var(--e-3);
 }
 
 .notice-open {
@@ -1907,7 +2838,7 @@ kbd {
   flex: 1;
   flex-direction: column;
   gap: 1px;
-  padding: 9px 4px 10px 12px;
+  padding: 10px 5px 11px 13px;
   text-align: left;
 }
 
@@ -1952,82 +2883,71 @@ kbd {
 /* ── Sign in ─────────────────────────────────────────────────────────── */
 
 /*
- * Not a card. The plate is flush on the board and divided by the same
- * hairlines as the rest of the surface, because the shell refuses card stacks
- * and the sign-in is the first thing that has to prove it.
+ * The first surface, and the one that has to prove the world in one viewport.
+ *
+ * It was a flush plate ruled into an 88px label column and a value cell — a
+ * government form, which is exactly the "투박함" this pass exists to remove.
+ * Now it is one lifted card, the labels sit above their fields, and the fields
+ * are wells rather than outlined boxes. The rows lose their hairlines: a form
+ * with a rule under every row is a table of records, and this is three
+ * questions.
  */
 .signin {
   display: grid;
   height: 100%;
+  padding: 24px;
   place-items: center;
-  background: var(--board);
+  background: var(--ground);
 }
 
 .signin-plate {
   display: flex;
-  width: min(400px, 92vw);
+  width: min(392px, 100%);
   flex-direction: column;
-  background: var(--field);
-  border-top: 1px solid var(--ink);
-  border-bottom: 1px solid var(--rule);
+  gap: 14px;
+  padding: 30px 30px 24px;
+  background: var(--card);
+  border-radius: var(--r-xl);
+  box-shadow: 0 0 0 1px var(--edge), var(--e-3);
 }
 
 .signin-masthead {
-  padding: 22px 28px 18px;
-  border-bottom: 1px solid var(--rule);
+  padding: 0 0 4px;
 }
 
 .signin-title {
   margin: 0;
-  font-size: 21px;
+  font-size: 23px;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  /* The one place tracking goes this tight; it is a wordmark, not running text. */
+  letter-spacing: -0.035em;
 }
 
 .signin-subtitle {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   color: var(--ink-muted);
 }
 
 .signin-plate label {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 0 28px;
-  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--ink-secondary);
-  border-bottom: 1px solid var(--rule);
 }
 
-/*
- * The value cell is a filled, bounded cell inside the ruled row — the label
- * column stays on the plate, the enterable half looks enterable.
- */
+/* Size and weight only — the well and its focus come from the field grammar. */
 .signin-plate input {
   height: 42px;
-  padding: 0 9px;
-  margin: 5px 0;
-  font-size: 13px;
+  padding: 0 13px;
+  font-size: 13.5px;
   font-weight: 400;
   letter-spacing: -0.006em;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
-}
-
-.signin-plate input:focus {
-  border-color: var(--ink);
-  outline: 2px solid var(--signal);
-  outline-offset: -2px;
 }
 
 .signin-plate small {
-  grid-column: 2;
-  padding-bottom: 6px;
   font-size: 11px;
   font-weight: 400;
   color: var(--ink-muted);
@@ -2035,33 +2955,56 @@ kbd {
 
 .signin-submit {
   height: 42px;
-  font-size: 13px;
+  margin-top: 2px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink-inverse);
   background: var(--signal);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-signal);
+  transition:
+    background 120ms var(--ease),
+    box-shadow 120ms var(--ease);
 }
 
 .signin-submit:hover:not(:disabled) {
   background: var(--signal-press);
+  box-shadow: var(--e-signal-hover);
+}
+
+.signin-submit:active:not(:disabled) {
+  box-shadow: none;
 }
 
 .signin-submit:disabled {
   color: var(--ink-muted);
   background: var(--n4);
   cursor: default;
+  box-shadow: none;
 }
 
 .signin-switch {
-  padding: 12px 0 14px;
+  padding: 2px 0 0;
   font-size: 12px;
   color: var(--ink-muted);
+  text-align: center;
 }
 
 .signin-switch:hover {
   color: var(--ink);
   text-decoration: underline;
-  text-decoration-color: var(--rule-strong);
-  text-underline-offset: 2px;
+  text-decoration-color: var(--n6);
+  text-underline-offset: 3px;
+}
+
+/* The demo build's one added element: what this page is, before you use it. */
+.signin-demo {
+  padding: 11px 13px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-radius: var(--r-md);
 }
 
 /* ── The crash screen ────────────────────────────────────────────────── */
@@ -2070,7 +3013,7 @@ kbd {
   display: grid;
   min-height: 100vh;
   padding: 24px;
-  background: var(--board);
+  background: var(--ground);
   place-items: center;
 }
 
@@ -2080,30 +3023,31 @@ kbd {
   max-width: 420px;
   flex-direction: column;
   gap: 12px;
-  padding: 24px;
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
+  padding: 26px;
+  background: var(--card);
+  border-radius: var(--r-xl);
+  box-shadow: 0 0 0 1px var(--edge), var(--e-3);
 }
 
 .crash-plate h1 {
-  font-size: 15px;
+  font-size: 16.5px;
   font-weight: 600;
 }
 
 .crash-plate p {
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--ink-secondary);
 }
 
 .crash-plate button {
-  padding: 8px 0;
+  padding: 10px 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-inverse);
   background: var(--signal);
-  border-radius: var(--r);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-signal);
 }
 
 .crash-plate button:hover {
@@ -2111,7 +3055,7 @@ kbd {
 }
 
 .crash-plate details {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-muted);
 }
 
@@ -2121,24 +3065,14 @@ kbd {
 }
 
 .crash-plate pre {
-  padding: 8px 10px;
-  margin-top: 6px;
+  padding: 9px 11px;
+  margin-top: 7px;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 11px;
   white-space: pre-wrap;
   background: var(--n2);
-  border-left: 2px solid var(--rule-strong);
-}
-
-/* The demo build's one added element: what this page is, before you use it. */
-.signin-demo {
-  padding: 9px 11px;
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--ink-secondary);
-  background: var(--n2);
-  border-left: 2px solid var(--rule-strong);
+  border-radius: var(--r-sm);
 }
 
 /* ── The agent sheet ─────────────────────────────────────────────────────
@@ -2169,7 +3103,7 @@ kbd {
 .agent-model {
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 400;
   color: var(--ink-muted);
   text-overflow: ellipsis;
@@ -2185,11 +3119,11 @@ kbd {
   flex: none;
   padding: 2px 6px;
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--ink-muted);
   background: var(--n2);
   border: 1px solid var(--rule);
-  border-radius: var(--r);
+  border-radius: var(--r-xs);
   cursor: help;
 }
 
@@ -2215,13 +3149,26 @@ kbd {
 
 /* ── Empty state ─────────────────────────────────────────────────────── */
 
+/*
+ * `margin-top: auto`, not `auto 0`: the examples belong beside the composer
+ * they are examples for, not floating in the middle of an empty panel.
+ */
 .agent-empty {
-  margin: auto 0;
-  font-size: 12.5px;
+  margin-top: auto;
+  font-size: 12px;
+}
+
+.agent-empty h3 {
+  margin: 0 0 9px;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.014em;
+  color: var(--ink);
 }
 
 .agent-empty > p {
-  margin-bottom: 10px;
+  margin: 11px 0 0;
+  font-size: 11px;
   color: var(--ink-muted);
 }
 
@@ -2239,16 +3186,16 @@ kbd {
  * here can end at an approval prompt.
  */
 .agent-empty li {
-  padding: 7px 10px;
+  padding: 9px 12px;
   color: var(--ink-secondary);
-  background: var(--field);
-  border-left: 2px solid var(--rule);
+  background: var(--n2);
+  border-radius: var(--r-md);
 }
 
 /* ── Turns ───────────────────────────────────────────────────────────── */
 
 .agent-turn {
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.62;
 }
 
@@ -2263,7 +3210,7 @@ kbd {
   color: var(--ink-secondary);
   white-space: pre-wrap;
   background: var(--n2);
-  border-radius: var(--r);
+  border-radius: var(--r-md);
 }
 
 .agent-turn-assistant {
@@ -2290,9 +3237,11 @@ kbd {
   user-select: none;
 }
 
+/* Thinking stays a quiet aside, so it keeps a hairline rather than becoming a
+   fourth plate in a turn that already has text and tool cards. */
 .agent-thinking p {
-  padding-left: 9px;
-  margin-top: 5px;
+  padding-left: 10px;
+  margin-top: 6px;
   white-space: pre-wrap;
   border-left: 1px solid var(--rule);
 }
@@ -2314,28 +3263,46 @@ kbd {
 }
 
 .agent-turn-error {
-  padding: 7px 10px;
-  margin-top: 8px;
+  padding: 9px 11px;
+  margin-top: 9px;
   font-size: 12px;
   color: var(--ink-secondary);
   background: var(--n2);
-  border-left: 2px solid var(--rule-strong);
+  border-radius: var(--r-md);
 }
 
 /* ── Tool runs ───────────────────────────────────────────────────────── */
 
+/*
+ * A tool run sinks into the turn, and its state is a dot rather than a
+ * thickened left edge.
+ *
+ * The 2px left border was the old world's state channel; on a 9px corner it
+ * mitres, and it was also the reason the card needed a border on all four
+ * sides to look deliberate. A 5px dot at the head of the row reads faster,
+ * survives without colour vision (the denied state also strikes through), and
+ * leaves the plate clean.
+ */
 .agent-tool {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  padding: 6px 9px;
-  margin: 8px 0;
-  font-size: 11.5px;
+  gap: 8px;
+  padding: 7px 10px;
+  margin: 9px 0;
+  font-size: 11px;
   color: var(--ink-muted);
-  background: var(--field);
-  border: 1px solid var(--rule);
-  border-left-width: 2px;
-  border-radius: var(--r);
+  background: var(--n2);
+  border-radius: var(--r-md);
+}
+
+.agent-tool::before {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  align-self: center;
+  content: "";
+  background: var(--n7);
+  border-radius: 50%;
 }
 
 .agent-tool code {
@@ -2351,26 +3318,37 @@ kbd {
   white-space: nowrap;
 }
 
-/* State on the left edge only — a full-card tint on every tool run would make
-   a transcript of six calls look like six alerts. */
-.agent-tool-running {
-  border-left-color: var(--rule-strong);
+/* The dot carries state — a full-card tint on every tool run would make a
+   transcript of six calls look like six alerts. */
+.agent-tool-running::before {
+  background: var(--n6);
+  animation: tool-pulse 1.1s var(--ease) infinite;
 }
 
-.agent-tool-ok {
-  border-left-color: var(--n8);
+@keyframes tool-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
-.agent-tool-error,
-.agent-tool-refused {
-  border-left-color: var(--signal);
+.agent-tool-ok::before {
+  background: var(--n8);
 }
 
-/* Denied is the user's own decision, not a fault: it gets no alarm colour. */
+.agent-tool-error::before,
+.agent-tool-refused::before {
+  background: var(--signal);
+}
+
+/* Denied is the user's own decision, not a fault: it gets no alarm colour, and
+   the strike-through is the non-colour half of the cue. */
 .agent-tool-denied {
-  border-left-color: var(--rule-strong);
   text-decoration: line-through;
-  text-decoration-color: var(--rule-strong);
+  text-decoration-color: var(--n6);
+}
+
+.agent-tool-denied::before {
+  background: var(--n6);
 }
 
 .agent-tool-artifact {
@@ -2381,17 +3359,27 @@ kbd {
 
 /* ── The approval card ───────────────────────────────────────────────── */
 
+/*
+ * The one place on the surface where a wrong click runs a command, so it is
+ * the one plate that gets its own elevation inside a sheet.
+ *
+ * It used to be a full-width strip separated by a top rule. Lifted, it reads
+ * as a thing that arrived and is waiting — which is what it is — instead of as
+ * another region of the panel.
+ */
 .agent-approval {
   flex: none;
-  padding: 12px 14px;
-  background: var(--paper);
-  border-top: 1px solid var(--ink);
+  padding: 13px 14px;
+  margin: 0 12px 12px;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: 0 0 0 1px var(--n6), var(--e-2);
   outline: none;
 }
 
 /* High risk — `host.exec`, posting as me, MCP — gets the one colour. */
 .agent-approval-high {
-  border-top-color: var(--signal);
+  box-shadow: 0 0 0 1px var(--signal-edge), var(--e-2);
 }
 
 .agent-approval-head {
@@ -2403,13 +3391,13 @@ kbd {
 }
 
 .agent-approval-head strong {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .agent-approval-risk {
   flex: none;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--ink-muted);
   text-transform: none;
@@ -2423,7 +3411,7 @@ kbd {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 4px 12px;
-  font-size: 11.5px;
+  font-size: 11px;
 }
 
 .agent-approval-facts > div {
@@ -2450,7 +3438,7 @@ kbd {
 
 .agent-approval-rationale {
   margin-top: 9px;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-muted);
 }
 
@@ -2460,14 +3448,18 @@ kbd {
 }
 
 .agent-approval-rationale p {
-  padding: 6px 9px;
-  margin-top: 5px;
+  padding: 7px 10px;
+  margin-top: 6px;
   /* Untrusted text, held at arm's length: the model wrote this, and whoever
      wrote the channel message the agent read may have written it through the
      model. Dashed, muted, and never adjacent to the buttons. */
   white-space: pre-wrap;
   background: var(--n2);
-  border: 1px dashed var(--rule-strong);
+  /* Dashed on purpose, and the one dashed edge on the surface: it is the
+     visual grammar for "provisional", and this text is the only thing here
+     that is not to be trusted. */
+  border: 1px dashed var(--n6);
+  border-radius: var(--r-sm);
 }
 
 .agent-approval-remember {
@@ -2475,7 +3467,7 @@ kbd {
   align-items: center;
   gap: 6px;
   margin-top: 10px;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-secondary);
 }
 
@@ -2493,17 +3485,21 @@ kbd {
  */
 .agent-approval-actions button {
   flex: 1;
-  padding: 7px 0;
+  padding: 9px 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
+  background: var(--n2);
+  border: 1px solid var(--n6);
+  border-radius: var(--r-md);
+  transition:
+    background 110ms var(--ease),
+    border-color 110ms var(--ease);
 }
 
 .agent-approval-actions button:hover {
-  background: var(--n2);
+  background: var(--n3);
+  border-color: var(--n7);
 }
 
 .agent-approval-actions button:focus-visible {
@@ -2514,29 +3510,25 @@ kbd {
 
 /* ── Composer ────────────────────────────────────────────────────────── */
 
+/* Same grammar as the chat composer: no rule above it, its own card edge does
+   the dividing. */
 .agent-composer {
   flex: none;
-  padding: 10px 14px 8px;
-  border-top: 1px solid var(--rule);
+  padding: 6px 12px 12px;
 }
 
 .agent-composer-box {
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding: 6px 6px 6px 10px;
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
-}
-
-.agent-composer-box:focus-within {
-  border-color: var(--ink);
+  padding: 5px 5px 5px 12px;
+  border-radius: var(--r-xl);
 }
 
 .agent-composer-box:has(textarea:disabled) {
   background: var(--n2);
   border-color: var(--rule);
+  box-shadow: none;
 }
 
 .agent-composer-box textarea {
@@ -2544,7 +3536,7 @@ kbd {
   max-height: 32vh;
   padding: 3px 0;
   overflow-y: auto;
-  font-size: 13px;
+  font-size: 13.5px;
   resize: none;
   background: none;
   border: none;
@@ -2554,39 +3546,49 @@ kbd {
 .agent-send {
   display: grid;
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   color: var(--ink-inverse);
   background: var(--signal);
   place-items: center;
-  border-radius: var(--r);
+  border-radius: var(--r-lg);
+}
+
+.agent-send {
+  box-shadow: var(--e-signal);
+  transition:
+    background 110ms var(--ease),
+    box-shadow 110ms var(--ease);
 }
 
 .agent-send:hover:not(:disabled) {
   background: var(--signal-press);
+  box-shadow: var(--e-signal-hover);
 }
 
 .agent-send:disabled {
   color: var(--ink-muted);
   background: var(--n4);
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 /*
- * Stop sits in the same 26px slot as send, and takes the plate rather than the
- * one colour: red would read as "something went wrong", and stopping a turn is
- * an ordinary thing to want.
+ * Stop sits in the same slot as send, and takes the plate rather than the one
+ * colour: red would read as "something went wrong", and stopping a turn is an
+ * ordinary thing to want.
  */
 .agent-stop {
   display: grid;
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   color: var(--ink);
   background: var(--n3);
   place-items: center;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
+  border: 1px solid var(--n6);
+  border-radius: var(--r-lg);
+  transition: background 110ms var(--ease);
 }
 
 .agent-stop:hover {
@@ -2606,7 +3608,7 @@ kbd {
   margin: auto 0;
   flex-direction: column;
   gap: 10px;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .agent-setup-lead {
@@ -2617,25 +3619,16 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-muted);
 }
 
+/* An API key is a token, so it sets in mono. Everything else is the grammar. */
 .agent-setup input,
 .agent-setup select {
-  padding: 7px 9px;
+  padding: 9px 11px;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r);
-}
-
-.agent-setup input:focus,
-.agent-setup select:focus {
-  border-color: var(--ink);
-  outline: none;
 }
 
 .agent-setup-note {
@@ -2645,20 +3638,25 @@ kbd {
 }
 
 .agent-setup-error {
-  padding: 7px 9px;
-  font-size: 11.5px;
+  padding: 9px 11px;
+  font-size: 11px;
   color: var(--ink);
   background: var(--signal-wash);
-  border-left: 2px solid var(--signal);
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--signal-edge);
 }
 
 .agent-setup-submit {
-  padding: 8px 0;
+  padding: 10px 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-inverse);
   background: var(--signal);
-  border-radius: var(--r);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-signal);
+  transition:
+    background 110ms var(--ease),
+    box-shadow 110ms var(--ease);
 }
 
 .agent-setup-submit:hover:not(:disabled) {
@@ -2680,32 +3678,35 @@ kbd {
  * Without this the agent would be the one tile in the rail that does not look
  * selected when it is.
  */
-.dock-tile.dock-agent {
-  color: var(--ink-muted);
-}
-
-.dock-tile.dock-agent:hover {
+.dock-tile.dock-agent:is(.is-active, .is-open),
+.dock-tile.dock-agent:is(.is-active, .is-open):hover {
   color: var(--ink);
-}
-
-.dock-tile.dock-agent.is-active {
-  color: var(--ink);
-  background: var(--paper);
-  box-shadow: inset 0 0 0 1px var(--rule-strong);
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--edge), var(--contact);
 }
 
 /* ── Narrow windows ──────────────────────────────────────────────────── */
 
 @media (max-width: 1180px) {
   :root {
-    --thread-w: 300px;
-    --panel-w: 320px;
+    --thread-w: 304px;
+    --panel-w: 324px;
   }
 }
 
-@media (max-width: 960px) {
+/*
+ * The rail narrows at 991, not 960.
+ *
+ * Measured: stacked, the transcript is `W − 632` with the wide rail and
+ * `W − 588` with the narrow one. A 360px floor therefore needs 992px with the
+ * wide rail and 948px with the narrow one — so narrowing at 960 left a hole
+ * from 961 to 991 where the wide rail was back but the window was not wide
+ * enough for it, and the transcript fell to 329px. The two numbers have to be
+ * chosen together or the bands do not meet.
+ */
+@media (max-width: 991px) {
   :root {
-    --rail-w: 216px;
+    --rail-w: 220px;
   }
 }
 
@@ -2715,23 +3716,31 @@ kbd {
  * sheet the user just opened, with no route back, broke the promise that
  * entering a thread never loses your place.
  *
- * ## Why the band, and why 1400
+ * ## Why the band, and why these numbers
  *
- * The upper bound is arithmetic, not taste. Three columns need the dock and
- * rail (313px) plus a transcript that can still hold a sentence (~360px) plus
- * both sheets (340 + 380), which is 1393px. Measured at 1180px the old 960px
- * bound left the transcript **227px** — about twelve Korean characters a line.
- * That was already true of thread + mini-app before the agent existed; the
- * agent is only what made someone measure it.
+ * All four bounds are arithmetic, then measured, then corrected by the
+ * measurement. Every input moved in this pass: the dock is 56, the rail 264
+ * (220 narrow), the sheets 344 and 384, and each sheet is now its own card
+ * with an 8px gap.
  *
- * The lower bound is the same arithmetic from the other end: the stacked column
- * is a fixed 288px, so a ~360px transcript needs 648px of body, which with the
- * narrow rail (dock 52 + rail 216, plus the main border) is 917px of window —
- * measured, not assumed: at 916px it came out one pixel short at 359px.
- * Measured at 721px the stacked layout left the
- * transcript **164px**. Below this the two sheets cover the transcript instead
- * (next block) — the Tauri window's 940px floor means only browser mode ever
- * gets there, but "only in the browser" is not the same as "not shipped".
+ * Three columns:  transcript = W − 1072.  360px floor → **1433**.
+ * Stacked, wide rail:   transcript = W − 632.  → 992.
+ * Stacked, narrow rail: transcript = W − 588.  → **948**.
+ *
+ * The rail's own breakpoint has to be chosen with these: narrowing at 960
+ * (where it used to) left 961–991 with the wide rail back and the window still
+ * too narrow for it, and the transcript measured 329px in that hole. The rail
+ * now narrows at 991 so the two stacked cases meet without a gap.
+ *
+ * Below 948 the two sheets cover the transcript instead, and below 721 the
+ * shell stacks entirely. The Tauri window's 940px floor sits in the cover
+ * band; only browser mode reaches below that, and "only in the browser" is not
+ * the same as "not shipped".
+ *
+ * Every number here is asserted by a sweep that walks 720→1600 in 20px steps
+ * and fails if the transcript ever drops under 360px. The last two passes each
+ * found a real hole by measurement that the arithmetic had missed, which is
+ * why the sweep exists and the comment is not the authority.
  *
  * Bounding the band on both sides also fixes a latent bug: without `min-width`
  * these rules kept winning on specificity inside the overlay blocks below, and
@@ -2739,13 +3748,13 @@ kbd {
  * overlay — so the "full-bleed" sheet was in fact pinned to a 288px grid cell.
  * Mutually exclusive bands fix that without stacking another override on top.
  */
-@media (min-width: 917px) and (max-width: 1400px) {
+@media (min-width: 948px) and (max-width: 1432px) {
   .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) {
     display: grid;
     /* Every track is explicit and every item is placed. Left implicit, the
        app panel auto-placed into a third column and overflowed the window,
        and `1fr` rows grew to their content instead of sharing the height. */
-    grid-template-columns: minmax(0, 1fr) 288px;
+    grid-template-columns: minmax(0, 1fr) 296px;
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
 
@@ -2783,7 +3792,7 @@ kbd {
  * Covering rather than crushing, and rather than hiding one: the transcript is
  * still there behind, one close away, and neither sheet is silently discarded.
  */
-@media (min-width: 721px) and (max-width: 916px) {
+@media (min-width: 721px) and (max-width: 947px) {
   .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) {
     position: relative;
   }
@@ -2796,17 +3805,16 @@ kbd {
     width: auto;
     min-width: 0;
     overflow: hidden;
-    border-left: none;
+    animation: none;
   }
 
   .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) .thread-pane {
-    inset: 0 0 50% 0;
+    inset: 0 0 calc(50% + var(--lift) / 2) 0;
   }
 
   .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel))
     :is(.app-panel, .agent-panel) {
-    inset: 50% 0 0 0;
-    border-top: 1px solid var(--rule);
+    inset: calc(50% + var(--lift) / 2) 0 0 0;
   }
 }
 
@@ -2836,8 +3844,7 @@ kbd {
 
   .dock {
     flex-direction: row;
-    padding: 0 8px;
-    border-bottom: 1px solid var(--rule);
+    padding: 0 10px;
   }
 
   .dock-workspaces,
@@ -2852,8 +3859,8 @@ kbd {
   }
 
   .dock-tile {
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
   }
 
   .dock-tile.is-active::after {
@@ -2861,7 +3868,7 @@ kbd {
   }
 
   .sidebar {
-    border-bottom: 1px solid var(--rule);
+    background: var(--ground);
   }
 
   .sidebar-header,
@@ -2903,19 +3910,36 @@ kbd {
 
   .sidebar-item {
     width: auto;
-    height: 28px;
+    height: 30px;
     grid-template-columns: auto auto auto;
-    padding: 0 9px;
-    background: var(--paper);
-    box-shadow: inset 0 0 0 1px var(--rule);
+    padding: 0 11px;
+    background: var(--card);
+    box-shadow: 0 0 0 1px var(--edge), var(--contact);
   }
 
   .sidebar-label {
     max-width: 12ch;
   }
 
+  /*
+   * Stacked, the card's side margins would leave a gutter on a phone-width
+   * screen where every pixel is transcript. It keeps its top margin and its
+   * corners, and loses the sides.
+   */
+  /*
+   * Stacked, the side gutters would eat a phone-width screen where every pixel
+   * is transcript. The cards keep their top corners and lose the sides.
+   */
   .main {
-    border-left: none;
+    padding: 0;
+    gap: 0;
+  }
+
+  .main-transcript,
+  .thread-pane,
+  .app-panel,
+  .agent-panel {
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
   }
 
   .channel-meta {
@@ -2931,7 +3955,7 @@ kbd {
     inset: 0;
     z-index: 6;
     width: auto;
-    border-left: none;
+    animation: none;
   }
 
   .main-body {

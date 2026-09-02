@@ -112,11 +112,26 @@ export function channelPrefix(kind: string): string {
 
 /** Group consecutive messages from the same author within a few minutes. */
 export function shouldGroupWithPrevious(
-  current: { author?: { id: string } | null; created_at: string; parent_id?: string | null },
+  current: {
+    author?: { id: string } | null;
+    created_at: string;
+    parent_id?: string | null;
+    addressedToMe?: boolean;
+  },
   previous: { author?: { id: string } | null; created_at: string } | undefined,
   windowMinutes = 5,
 ): boolean {
   if (!previous) return false;
+  /*
+   * A message addressed to you never groups.
+   *
+   * Grouping drops the author and the timestamp, which is right for a
+   * follow-on line in someone's train of thought. But a mention renders as its
+   * own plate, and a plate with no name on it is an object the reader cannot
+   * attribute — "who is asking me this, and when?" is exactly what you need
+   * from the one message you have to answer.
+   */
+  if (current.addressedToMe) return false;
   const sameAuthor = (current.author?.id ?? null) === (previous.author?.id ?? null);
   if (!sameAuthor || !current.author) return false;
   const gap = new Date(current.created_at).getTime() - new Date(previous.created_at).getTime();

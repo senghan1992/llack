@@ -73,6 +73,16 @@ interface AppStateShape {
   // ── Directory ─────────────────────────────────────────────────────────
   /** Everyone in the active workspace, for mentions and the DM picker. */
   people: Map<Id, User>;
+  /**
+   * Where you had read up to when you opened each channel, kept for as long as
+   * the channel stays open.
+   *
+   * Captured *before* `markRead` runs, because opening a channel marks it read
+   * and would otherwise erase the only record of where you stopped. Held for
+   * the session rather than derived on every render so the divider does not
+   * jump to the bottom the moment a new message arrives while you are reading.
+   */
+  unreadMarkers: Map<Id, Id>;
   presence: Map<Id, Presence>;
 
   // ── Channels ──────────────────────────────────────────────────────────
@@ -176,6 +186,7 @@ export const useApp = create<AppStore>((set, get) => ({
   activeWorkspaceId: null,
 
   people: new Map(),
+  unreadMarkers: new Map(),
   presence: new Map(),
 
   channels: [],
@@ -256,6 +267,7 @@ export const useApp = create<AppStore>((set, get) => ({
         messages: new Map(),
         pending: new Map(),
         people: new Map(),
+        unreadMarkers: new Map(),
         presence: new Map(),
         installations: [],
         openPanelInstallationId: null,
@@ -345,7 +357,26 @@ export const useApp = create<AppStore>((set, get) => ({
     await get().refreshChannel(channelId);
     void get().openThread(null);
 
-    // Opening a channel marks it read.
+    /*
+     * Remember where the reader stopped, then mark the channel read.
+     *
+     * Order matters and it is the whole reason this exists: `markRead` moves
+     * `last_read_message_id` to the newest message, so after it runs there is
+     * nothing left to say "you had read up to here". The marker is only set if
+     * there was actually something unread and it is not already set for this
+     * channel — coming back to a channel you have already been in this session
+     * must not move the line you were using.
+     */
+    const state = get();
+    const channel = state.channels.find((candidate) => candidate.id === channelId);
+    const lastRead = channel?.membership?.last_read_message_id ?? null;
+    const unread = channel?.membership?.unread_count ?? 0;
+    if (lastRead && unread > 0 && !state.unreadMarkers.has(channelId)) {
+      set((current) => ({
+        unreadMarkers: new Map(current.unreadMarkers).set(channelId, lastRead),
+      }));
+    }
+
     const latest = latestMessageId(get().messages.get(channelId));
     try {
       const membership = await api.markRead(channelId, latest ?? undefined);

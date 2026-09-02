@@ -15,7 +15,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 import { formatDayHeading, formatTime, shouldGroupWithPrevious } from "@/lib/format";
 import { api } from "@/lib/ipc";
-import type { Message, PendingMessage } from "@/lib/types";
+import type { Id, Message, PendingMessage } from "@/lib/types";
 import { orderedMessages, useApp } from "@/store/app";
 
 import { MessageRow } from "./MessageRow";
@@ -32,6 +32,13 @@ export function MessageList() {
     channelId ? state.loadingChannels.has(channelId) : false,
   );
   const loadOlder = useApp((state) => state.loadOlder);
+  const me = useApp((state) => state.me);
+  const unreadMarkers = useApp((state) => state.unreadMarkers);
+  const marker = channelId ? unreadMarkers.get(channelId) : undefined;
+  const unread = useApp((state) =>
+    state.channels.find((candidate) => candidate.id === state.activeChannelId)
+      ?.membership?.unread_count ?? 0,
+  );
 
   const messages = orderedMessages({ messages: messagesByChannel }, channelId);
   const pending = (channelId && pendingByChannel.get(channelId)) || [];
@@ -107,7 +114,7 @@ export function MessageList() {
     );
   }
 
-  const rows = buildRows(messages, pending);
+  const rows = buildRows(messages, pending, me?.id, unreadAfter(messages, marker, unread));
 
   return (
     <div className="transcript-wrapper">
@@ -125,6 +132,13 @@ export function MessageList() {
             return (
               <div className="day-divider" key={`day-${row.key}`}>
                 <span>{row.label}</span>
+              </div>
+            );
+          }
+          if (row.type === "unread") {
+            return (
+              <div className="unread-divider" key="unread" role="separator">
+                <span>여기까지 읽으셨습니다</span>
               </div>
             );
           }
@@ -221,13 +235,48 @@ function PendingRow({ entry }: { entry: PendingMessage }) {
   );
 }
 
+/**
+ * Which message the unread line goes after.
+ *
+ * The stored marker is the truth when there is one. When there is not — a
+ * channel you have never opened has no read position at all — the count still
+ * says how many messages are new, so the line goes that many messages back
+ * from the end. Slack does the same thing, and it is the difference between
+ * "3 of these 40 are new" being answerable at a glance or not.
+ *
+ * Deliberately returns nothing when *every* message is unread: a line at the
+ * very top of a channel separates nothing from everything, and drawing it
+ * there would put a red rule on every channel a person has not visited yet.
+ */
+function unreadAfter(
+  messages: Message[],
+  marker: Id | undefined,
+  unread: number,
+): Id | undefined {
+  if (marker) return marker;
+  if (unread <= 0 || unread >= messages.length) return undefined;
+  return messages[messages.length - unread - 1]?.id;
+}
+
 type Row =
   | { type: "day"; key: string; label: string }
+  | { type: "unread" }
   | { type: "message"; message: Message; grouped: boolean }
   | { type: "pending"; entry: PendingMessage };
 
-/** Interleave day dividers and pending bubbles into the message sequence. */
-function buildRows(messages: Message[], pending: PendingMessage[]): Row[] {
+/**
+ * Interleave day dividers and pending bubbles into the message sequence.
+ *
+ * `viewerId` is only used to stop a message addressed to the viewer from
+ * grouping — see `shouldGroupWithPrevious`. It is threaded in rather than read
+ * from the store here so `buildRows` stays a pure function of its arguments.
+ */
+function buildRows(
+  messages: Message[],
+  pending: PendingMessage[],
+  viewerId: Id | undefined,
+  unreadAfter: Id | undefined,
+): Row[] {
   const rows: Row[] = [];
   let lastDay = "";
   let previous: Message | undefined;
@@ -242,9 +291,33 @@ function buildRows(messages: Message[], pending: PendingMessage[]): Row[] {
     rows.push({
       type: "message",
       message,
-      grouped: shouldGroupWithPrevious(message, previous),
+      grouped: shouldGroupWithPrevious(
+        {
+          ...message,
+          // The same predicate `MessageRow` uses for `.is-mention`, so the
+          // plate and the grouping decision can never disagree.
+          addressedToMe:
+            Boolean(viewerId) &&
+            (message.mentions_everyone ||
+              message.mentioned_user_ids.includes(viewerId as string)),
+        },
+        previous,
+      ),
     });
     previous = message;
+
+    /*
+     * The line goes after the last message you had read, not before the first
+     * one you had not — those are the same place unless the message you
+     * stopped at has since been deleted, and this way the line still lands
+     * correctly when it has.
+     */
+    if (unreadAfter && message.id === unreadAfter) {
+      rows.push({ type: "unread" });
+      // A new speaker after the line always gets a header: the first unread
+      // message is the one you are looking for, so it says who and when.
+      previous = undefined;
+    }
   }
 
   // Anything unsent belongs at the very bottom, in composition order.

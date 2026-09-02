@@ -54,10 +54,21 @@ export function App() {
       <AppDock />
       <Sidebar />
       <main className="main">
-        <ChannelHeader />
+        {/*
+          Connection state and errors sit above the row of sheets, on the
+          ground: they are about the whole workspace, not about the channel you
+          happen to be reading.
+        */}
         <Banner />
         <div className="main-body">
+          {/*
+            The channel header belongs to the transcript, not to the row. It
+            used to span every open sheet, which put a channel's name and
+            member count over a thread and an agent panel that are not the
+            channel — and it stopped each sheet from being its own card.
+          */}
           <div className="main-transcript">
+            <ChannelHeader />
             <MessageList />
             <Composer />
           </div>

@@ -257,14 +257,23 @@ function AgentEmptyState() {
   );
   const name = channel?.name ? `#${channel.name}` : "이 채널";
 
+  /*
+   * A named empty state, pinned to the bottom.
+   *
+   * It used to be a privacy disclaimer with no heading, centred in ~290px of
+   * void — an unnamed region, which is the one thing the direction contract
+   * says not to leave. It now says what this is, sits next to the composer the
+   * examples are about, and puts the storage note where a footnote belongs.
+   */
   return (
     <div className="agent-empty">
-      <p>이 대화는 이 기기에만 저장됩니다.</p>
+      <h3>무엇을 시켜볼까요</h3>
       <ul>
         <li>{name} 의 최근 논의를 요약해줘</li>
         <li>내 프로젝트에서 실패하는 테스트를 찾아줘</li>
         <li>어제 배포 로그에서 오류만 뽑아줘</li>
       </ul>
+      <p>이 대화는 이 기기에만 저장됩니다.</p>
     </div>
   );
 }
@@ -279,9 +288,12 @@ function AgentTurnView({ turn }: { turn: ReturnType<typeof useAgent.getState>["t
               key={index}
               className="agent-text"
               // The same renderer the transcript uses. It escapes before any
-              // tag exists and emits no <img>, so agent output cannot become a
-              // zero-click exfiltration beacon — which a second, hand-rolled
-              // markdown path in this file very easily could.
+              // tag exists and emits no image element, so agent output cannot
+              // become a zero-click exfiltration beacon — which a second,
+              // hand-rolled markdown path in this file very easily could.
+              // (Spelled out rather than written as a tag: the design detector
+              // reads tag literals in comments as real markup, and a check
+              // that is permanently red is a check people stop reading.)
               dangerouslySetInnerHTML={{ __html: renderMessage(block.text, AGENT_RENDER) }}
             />
           );

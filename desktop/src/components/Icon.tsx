@@ -227,3 +227,12 @@ export function IconStop(props: IconProps) {
     </Svg>
   );
 }
+
+/** A check. Two strokes, one joint, on the same grid as the rest. */
+export function IconCheck(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3.2 8.6 6.1 11.5 12.8 4.8" />
+    </Svg>
+  );
+}

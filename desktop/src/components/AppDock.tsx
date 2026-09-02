@@ -66,7 +66,7 @@ export function AppDock() {
             key={installation.id}
             type="button"
             className={`dock-tile dock-app ${
-              installation.id === openPanelInstallationId ? "is-active" : ""
+              installation.id === openPanelInstallationId ? "is-open" : ""
             }`}
             onClick={() =>
               openAppPanel(
@@ -95,9 +95,18 @@ export function AppDock() {
           of the things you can dock beside a channel, not a place you go. The
           divider separates "where I am" from "what I can open here".
         */}
+        {/*
+          `is-open`, not `is-active`.
+          
+          `is-active` carries the signal underline, which means "where you
+          are" — a location. The agent is a panel you open beside where you
+          are, so borrowing that state put two red position markers on screen
+          at once and made the one colour mean two things inside the first
+          viewport. Open is a lifted card and nothing else.
+        */}
         <button
           type="button"
-          className={`dock-tile dock-agent ${agentOpen ? "is-active" : ""}`}
+          className={`dock-tile dock-agent ${agentOpen ? "is-open" : ""}`}
           onClick={() => setAgentOpen(!agentOpen)}
           title="에이전트"
           aria-label="에이전트"

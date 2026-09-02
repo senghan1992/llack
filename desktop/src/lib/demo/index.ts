@@ -131,6 +131,53 @@ function allChannels(): Array<{ id: Id; name: string }> {
     []) as Array<{ id: Id; name: string }>;
 }
 
+/**
+ * States the recording did not happen to capture.
+ *
+ * The dump is one moment, and in that moment the account had read every
+ * channel that has history — so the demo could never show an unread run or
+ * the "여기까지 읽으셨습니다" line, which is a state the product has and a
+ * reviewer should see. This applies it at read time rather than editing
+ * `fixture.json`, so the recording stays a recording.
+ *
+ * Only ever *adds* a state to a channel the recording left neutral; it never
+ * contradicts what the server said.
+ */
+const DEMO_UNREAD = 3;
+
+function withDemoStates(channels: unknown[]): unknown[] {
+  return channels.map((entry) => {
+    const channel = entry as {
+      id: Id;
+      name?: string | null;
+      membership?: { unread_count: number; last_read_message_id?: Id | null } | null;
+    };
+    if (channel.name !== "개발" || !channel.membership) return entry;
+    if (channel.membership.unread_count > 0) return entry;
+
+    /*
+     * The count and the read cursor have to agree.
+     *
+     * Setting only `unread_count` left `last_read_message_id` pointing at the
+     * newest message — which is what the recording captured, because the
+     * account had read everything — and the line then landed below the last
+     * message, marking nothing. Both fields move together: the cursor goes
+     * back `DEMO_UNREAD` messages, which is the state it would actually be in.
+     */
+    const page = messagesFor(channel.id);
+    const cursor = page[DEMO_UNREAD]?.id ?? null;
+    if (!cursor) return entry;
+    return {
+      ...channel,
+      membership: {
+        ...channel.membership,
+        unread_count: DEMO_UNREAD,
+        last_read_message_id: cursor,
+      },
+    };
+  });
+}
+
 function findMessage(messageId: Id): Message | null {
   for (const list of channelMessages.values()) {
     const hit = list.find((m) => m.id === messageId);
@@ -377,6 +424,10 @@ export async function demoRequest<T>(
   }
   if (seg(0) === "app-installations" && method === "DELETE") return ok(undefined);
   if (seg(0) === "workspaces" && seg(3) === "install") throw unsupported("앱 설치");
+
+  if (seg(0) === "workspaces" && seg(2) === "channels" && length === 3) {
+    return ok(withDemoStates(allChannels() as unknown[]));
+  }
 
   // ── Everything else: the recording ───────────────────────────────────
   const recorded = data.responses[`${method} ${path}`];

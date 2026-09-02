@@ -263,7 +263,16 @@ export function CommandPalette() {
             <kbd>↑</kbd>
             <kbd>↓</kbd> 이동 · <kbd>Enter</kbd> 열기 · <kbd>Esc</kbd> 닫기
           </span>
-          {remote?.took_ms !== undefined ? <span>{remote.took_ms}ms</span> : null}
+          {/*
+            The server's `took_ms` used to be printed here. "2ms" is a number
+            for whoever is tuning the query, not for whoever is looking for a
+            channel — and a latency readout in a shipping product's search box
+            reads as a debug build. It stays available on the response for
+            anyone profiling.
+          */}
+          {/* The count comes from the rendered list, not from a field the
+              envelope does not carry. */}
+          {entries.length > 0 ? <span>{entries.length}건</span> : null}
         </footer>
       </div>
     </div>
