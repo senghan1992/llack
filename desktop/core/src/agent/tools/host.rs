@@ -48,6 +48,21 @@ pub(super) fn specs() -> Vec<ToolSpec> {
             source: ToolSource::Builtin,
         },
         ToolSpec {
+            name: "host.write_file".into(),
+            description: "이 컴퓨터에 파일을 씁니다. 이미 있으면 통째로 덮어씁니다. \
+                          상위 디렉터리는 미리 존재해야 합니다. 매번 사용자 승인을 \
+                          받으며, 승인 카드에 경로·크기·내용 미리보기가 보입니다."
+                .into(),
+            input_schema: schema(
+                serde_json::json!({
+                    "path": { "type": "string", "description": "절대 경로" },
+                    "content": { "type": "string", "description": "파일 전체 내용 (UTF-8)" },
+                }),
+                &["path", "content"],
+            ),
+            source: ToolSource::Builtin,
+        },
+        ToolSpec {
             name: "host.list_dir".into(),
             description: "이 컴퓨터의 디렉터리 목록을 봅니다.".into(),
             input_schema: schema(
@@ -109,6 +124,18 @@ pub(super) async fn read_file(ctx: &ToolContext<'_>, path: &Path) -> Result<Tool
     )?;
     let content = serde_json::to_value(&preview).unwrap_or(serde_json::Value::Null);
     Ok(ToolOutput::with_artifact(content, preview.handle))
+}
+
+pub(super) async fn write_file(
+    ctx: &ToolContext<'_>,
+    path: &Path,
+    content: &str,
+) -> Result<ToolOutput> {
+    ctx.host.write_file(path, content.as_bytes()).await?;
+    Ok(ToolOutput::ok(serde_json::json!({
+        "path": path.display().to_string(),
+        "bytes_written": content.len(),
+    })))
 }
 
 pub(super) async fn list_dir(ctx: &ToolContext<'_>, path: &Path) -> Result<ToolOutput> {

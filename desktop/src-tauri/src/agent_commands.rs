@@ -165,6 +165,36 @@ impl ToolHost for DesktopHost {
         Ok(bytes)
     }
 
+    /// Write a file, replacing what was there.
+    ///
+    /// The parent directory must already exist: `mkdir -p` on an approved
+    /// *file* path would create directories the user never saw on the card.
+    /// An existing directory at the path is a refusal, not a truncation.
+    async fn write_file(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        if let Ok(metadata) = tokio::fs::metadata(path).await {
+            if metadata.is_dir() {
+                return Err(Error::Other(format!(
+                    "{} 은 디렉터리입니다.",
+                    path.display()
+                )));
+            }
+        }
+        match path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => {
+                if tokio::fs::metadata(parent).await.is_err() {
+                    return Err(Error::Other(format!(
+                        "상위 디렉터리가 없습니다: {}",
+                        parent.display()
+                    )));
+                }
+            }
+            _ => {}
+        }
+        tokio::fs::write(path, bytes)
+            .await
+            .map_err(|e| Error::Other(format!("{} 에 쓸 수 없습니다: {e}", path.display())))
+    }
+
     async fn list_dir(&self, path: &Path) -> Result<Vec<String>> {
         let mut entries = tokio::fs::read_dir(path)
             .await

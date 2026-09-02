@@ -71,8 +71,10 @@ pub enum ToolCall {
     HostReadFile { path: PathBuf },
     /// List a directory on the user's machine.
     HostListDir { path: PathBuf },
-    /// Write a file on the user's machine.
-    HostWriteFile { path: PathBuf, bytes: u64 },
+    /// Write a file on the user's machine. Carries the content so the
+    /// approval card can show what is about to land on disk — the audit log
+    /// still records only the byte count (see `redact_args`).
+    HostWriteFile { path: PathBuf, content: String },
     /// A tool contributed by a connected MCP server.
     Mcp { server: String, tool: String },
     /// A name the catalog does not know.
@@ -365,17 +367,18 @@ pub fn classify(call: &ToolCall, ctx: &SessionContext) -> Decision {
         },
 
         // ── Writes on the host ──────────────────────────────────────────
-        ToolCall::HostWriteFile { path, bytes } => {
+        ToolCall::HostWriteFile { path, content } => {
             match classify_path(path, Access::Write, ctx) {
                 PathVerdict::Refuse { rule, reason } => Decision::Refuse { rule, reason },
                 // A write is never automatic, even inside a chosen root.
                 PathVerdict::InRoot | PathVerdict::Allowed => approve(
                     escalate(Risk::Moderate, ctx),
                     grain_for_path(path, ctx),
-                    "이 파일을 덮어씁니다",
+                    "이 파일을 씁니다 (있으면 덮어씀)",
                     vec![
                         fact("경로", path.display().to_string()),
-                        fact("크기", format!("{bytes} 바이트")),
+                        fact("크기", format!("{} 바이트", content.len())),
+                        fact("내용", preview(content, 400)),
                     ],
                 ),
             }
@@ -865,7 +868,7 @@ mod tests {
     fn write(path: &str) -> ToolCall {
         ToolCall::HostWriteFile {
             path: PathBuf::from(path),
-            bytes: 10,
+            content: "새 내용 열 자".into(),
         }
     }
 

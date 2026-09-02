@@ -155,6 +155,10 @@ pub trait ToolHost: Send + Sync {
     async fn exec(&self, argv: &[String], cwd: &std::path::Path) -> Result<ExecOutput>;
     /// Read a file, refusing anything over `cap` bytes.
     async fn read_file(&self, path: &std::path::Path, cap: u64) -> Result<Vec<u8>>;
+    /// Write a file, replacing what was there. The parent directory must
+    /// already exist — creating directories is a separate decision the user
+    /// never approved.
+    async fn write_file(&self, path: &std::path::Path, bytes: &[u8]) -> Result<()>;
     /// List a directory, names only.
     async fn list_dir(&self, path: &std::path::Path) -> Result<Vec<String>>;
     /// Fetch channel history through the signed-in session.
@@ -474,6 +478,17 @@ fn parse_call(name: &str, args: &serde_json::Value, catalog: &ToolCatalog) -> To
             None => unknown(),
         },
 
+        "host.write_file" => match (
+            args.get("path").and_then(|v| v.as_str()),
+            args.get("content").and_then(|v| v.as_str()),
+        ) {
+            (Some(path), Some(content)) => ToolCall::HostWriteFile {
+                path: std::path::PathBuf::from(path),
+                content: content.to_string(),
+            },
+            _ => unknown(),
+        },
+
         _ => unknown(),
     }
 }
@@ -506,13 +521,7 @@ async fn dispatch(
         ToolCall::HostExec { argv, cwd } => host::exec(ctx, argv, cwd).await,
         ToolCall::HostReadFile { path } => host::read_file(ctx, path).await,
         ToolCall::HostListDir { path } => host::list_dir(ctx, path).await,
-        // The policy classifies writes already, but v1 exposes no write tool,
-        // so `parse_call` cannot produce this and there is nothing to run. The
-        // arm is explicit rather than a catch-all so that adding the tool later
-        // is a compile error here instead of a silent no-op.
-        ToolCall::HostWriteFile { .. } => Err(Error::Other(
-            "파일 쓰기 도구는 아직 제공되지 않습니다.".into(),
-        )),
+        ToolCall::HostWriteFile { path, content } => host::write_file(ctx, path, content).await,
         // Refused by the policy before it can reach here.
         ToolCall::Mcp { .. } | ToolCall::Unknown { .. } => {
             Err(Error::Other("이 도구는 실행할 수 없습니다.".into()))
@@ -550,9 +559,9 @@ fn redact_args(call: &ToolCall) -> serde_json::Value {
         ToolCall::HostReadFile { path } | ToolCall::HostListDir { path } => {
             serde_json::json!({ "path": path.display().to_string() })
         }
-        ToolCall::HostWriteFile { path, bytes } => serde_json::json!({
+        ToolCall::HostWriteFile { path, content } => serde_json::json!({
             "path": path.display().to_string(),
-            "bytes": bytes,
+            "bytes": content.len(),
         }),
         ToolCall::Mcp { server, tool } => serde_json::json!({ "server": server, "tool": tool }),
         ToolCall::Unknown { name } => serde_json::json!({ "name": name }),
@@ -588,6 +597,7 @@ pub(crate) mod testing {
         pub exec_calls: Mutex<Vec<Vec<String>>>,
         pub posted: Mutex<Vec<(String, String)>>,
         pub reads: Mutex<Vec<std::path::PathBuf>>,
+        pub writes: Mutex<Vec<(std::path::PathBuf, Vec<u8>)>>,
         pub history: Mutex<Vec<ChatLine>>,
         pub exec_stdout: Mutex<String>,
         pub fail_next: Mutex<bool>,
@@ -628,6 +638,13 @@ pub(crate) mod testing {
         async fn read_file(&self, path: &std::path::Path, _cap: u64) -> Result<Vec<u8>> {
             self.reads.lock().push(path.to_path_buf());
             Ok(b"file contents".to_vec())
+        }
+
+        async fn write_file(&self, path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+            self.writes
+                .lock()
+                .push((path.to_path_buf(), bytes.to_vec()));
+            Ok(())
         }
 
         async fn list_dir(&self, _path: &std::path::Path) -> Result<Vec<String>> {
@@ -959,6 +976,120 @@ mod tests {
             "the middle of a large log must stay out of the context"
         );
         assert!(h.store.artifact(&handle).unwrap().is_some());
+    }
+
+    // ── host.write_file: never automatic, gated like everything else ────
+
+    #[tokio::test]
+    async fn a_write_asks_even_inside_a_chosen_root_and_lands_only_after_approval() {
+        let host = Arc::new(FakeHost::default());
+        let h = harness(host.clone());
+        let answer = AutoAnswer::new(true);
+        let broker = Arc::new(ApprovalBroker::new(answer.clone()));
+        *answer.broker.lock() = Some(broker.clone());
+
+        let outcome = h
+            .run(
+                &broker,
+                &session(),
+                "host.write_file",
+                serde_json::json!({ "path": "/home/me/app/README.md", "content": "# 새 문서" }),
+            )
+            .await;
+
+        assert!(!outcome.output.is_error, "{:?}", outcome.output);
+        assert_eq!(outcome.verdict, Verdict::Approved);
+        assert_eq!(
+            answer.seen.lock().len(),
+            1,
+            "a write inside a chosen root must still ask"
+        );
+        let card = &answer.seen.lock()[0];
+        assert_eq!(card.facts.title, "이 파일을 씁니다 (있으면 덮어씀)");
+        assert!(
+            card.facts
+                .facts
+                .iter()
+                .any(|row| row.value.contains("새 문서")),
+            "the card must show what is about to land on disk"
+        );
+        let writes = host.writes.lock();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].0, PathBuf::from("/home/me/app/README.md"));
+        assert_eq!(writes[0].1, "# 새 문서".as_bytes());
+    }
+
+    #[tokio::test]
+    async fn a_denied_write_never_touches_the_disk() {
+        let host = Arc::new(FakeHost::default());
+        let h = harness(host.clone());
+        let answer = AutoAnswer::new(false);
+        let broker = Arc::new(ApprovalBroker::new(answer.clone()));
+        *answer.broker.lock() = Some(broker.clone());
+
+        let outcome = h
+            .run(
+                &broker,
+                &session(),
+                "host.write_file",
+                serde_json::json!({ "path": "/home/me/app/README.md", "content": "x" }),
+            )
+            .await;
+
+        assert!(outcome.output.is_error);
+        assert_eq!(outcome.verdict, Verdict::Denied);
+        assert!(host.writes.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_write_into_credentials_is_refused_before_reaching_the_host() {
+        let host = Arc::new(FakeHost::default());
+        let h = harness(host.clone());
+        let broker = ApprovalBroker::new(Arc::new(SilentNotifier));
+
+        let outcome = h
+            .run(
+                &broker,
+                &session(),
+                "host.write_file",
+                serde_json::json!({ "path": "/home/me/.ssh/config", "content": "Host *" }),
+            )
+            .await;
+
+        assert_eq!(outcome.verdict, Verdict::Refused);
+        assert!(host.writes.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_audit_log_records_a_write_byte_count_but_not_its_content() {
+        let host = Arc::new(FakeHost::default());
+        let h = harness(host);
+        let answer = AutoAnswer::new(true);
+        let broker = Arc::new(ApprovalBroker::new(answer.clone()));
+        *answer.broker.lock() = Some(broker.clone());
+
+        h.run(
+            &broker,
+            &session(),
+            "host.write_file",
+            serde_json::json!({ "path": "/home/me/app/notes.md", "content": "내부 비밀 메모" }),
+        )
+        .await;
+
+        let raw = std::fs::read_to_string(
+            std::fs::read_dir(&h.audit_dir)
+                .unwrap()
+                .next()
+                .unwrap()
+                .unwrap()
+                .path(),
+        )
+        .unwrap();
+        assert!(
+            !raw.contains("내부 비밀"),
+            "the log must record a byte count, not the file's content"
+        );
+        assert!(raw.contains("bytes"));
     }
 
     #[tokio::test]
