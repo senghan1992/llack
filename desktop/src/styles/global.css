@@ -118,7 +118,10 @@
    * card. `--rule-strong` is the only boundary that means "you can operate
    * this", and it is the one step that clears 3:1 on all three grounds.
    */
-  --edge: var(--n5);
+  /* One step lighter than it used to be (--n5): with the wider shadow blur
+     doing more of the separating, the contour can whisper. --n5 read as a
+     drafted outline around every card — precise, and hard. */
+  --edge: var(--n4);
   --rule: var(--n4);
   --rule-strong: var(--n7);
 
@@ -126,7 +129,7 @@
   --signal: #a50034;          /* 7.93:1 on --card, 6.96:1 on --ground */
   --signal-press: #86002a;
   --signal-wash: #faf0f3;     /* signal at 6% over the card; muted stays 4.95:1 */
-  --signal-edge: rgba(165, 0, 52, 0.22);
+  --signal-edge: rgba(165, 0, 52, 0.15);
   --signal-select: rgba(165, 0, 52, 0.13);
   --signal-ring: rgba(165, 0, 52, 0.18);
 
@@ -150,17 +153,23 @@
    *
    * The rule is concentric: `inner = outer - padding`. The steps are where
    * those derived values land, so nothing has to invent a value. Worked
-   * example, the composer: card `--r-xl` (16px) with 5px padding, so the
-   * textarea and the send button take 11px — `--r-lg`.
+   * example, the composer: card `--r-xl` (20px) with 5px padding, so the
+   * textarea and the send button take 15px — `--r-lg`.
+   *
+   * The whole scale sits one step rounder than it used to (5/7/9/12/16).
+   * The ticket material read as drafted — precise corners, precise lines —
+   * and eight hours next to it feels like sitting at a drawing board. Rounder
+   * corners are the cheapest way to soften that without touching the ramp,
+   * the hairline logic or a single component rule.
    *
    * A full circle is still reserved for things whose meaning is a circle:
    * presence dots, the status dot, the upload spinner.
    */
-  --r-xs: 5px;   /* chips, badges, tags, reactions */
-  --r-sm: 7px;   /* icon buttons, avatar plates */
-  --r-md: 9px;   /* inputs, rail rows, buttons, message plates */
-  --r-lg: 12px;  /* dock tiles, notices, popovers, inner controls */
-  --r-xl: 16px;  /* cards that hold other things: main, composer, palette */
+  --r-xs: 7px;   /* chips, badges, tags, reactions */
+  --r-sm: 9px;   /* icon buttons, avatar plates */
+  --r-md: 12px;  /* inputs, rail rows, buttons, message plates */
+  --r-lg: 15px;  /* dock tiles, notices, popovers, inner controls */
+  --r-xl: 20px;  /* cards that hold other things: main, composer, palette */
 
   /*
    * ── Elevation: paired shadows, hairline included ────────────────────
@@ -174,18 +183,21 @@
    * line where an object meets the surface it rests on. The paired rule below
    * governs things that *leave* the surface.
    */
-  --contact: 0 1px 2px rgba(29, 24, 26, 0.05);
-  --e-2: 0 1px 2px rgba(29, 24, 26, 0.04), 0 4px 10px rgba(29, 24, 26, 0.04);
-  --e-3: 0 2px 4px rgba(29, 24, 26, 0.05), 0 10px 28px rgba(29, 24, 26, 0.07);
-  --e-4: 0 4px 10px rgba(29, 24, 26, 0.06), 0 28px 60px rgba(29, 24, 26, 0.16);
+  /* Blur runs wider than it used to at the same low alphas: a tight shadow
+     draws an edge, a wide one drapes — and draping is what makes the same
+     lift read soft instead of cut out. */
+  --contact: 0 1px 3px rgba(29, 24, 26, 0.05);
+  --e-2: 0 2px 5px rgba(29, 24, 26, 0.04), 0 8px 20px rgba(29, 24, 26, 0.05);
+  --e-3: 0 3px 8px rgba(29, 24, 26, 0.05), 0 16px 40px rgba(29, 24, 26, 0.08);
+  --e-4: 0 6px 16px rgba(29, 24, 26, 0.06), 0 32px 72px rgba(29, 24, 26, 0.15);
 
   /*
    * The accent's own shadow, tokenised. Seven literal copies of this value had
    * accumulated across the primary buttons, each free to drift — which is how a
    * "one recipe" claim in a token block turns out to be false in practice.
    */
-  --e-signal: 0 1px 2px rgba(133, 0, 42, 0.24);
-  --e-signal-hover: 0 3px 10px rgba(133, 0, 42, 0.28);
+  --e-signal: 0 2px 5px rgba(133, 0, 42, 0.22);
+  --e-signal-hover: 0 4px 14px rgba(133, 0, 42, 0.26);
 
   /*
    * ── Focus: one look, everywhere ──────────────────────────────────────
@@ -349,9 +361,9 @@ select {
   border: 1px solid transparent;
   border-radius: var(--r-md);
   transition:
-    background 130ms var(--ease),
-    border-color 130ms var(--ease),
-    box-shadow 130ms var(--ease);
+    background 170ms var(--ease),
+    border-color 170ms var(--ease),
+    box-shadow 170ms var(--ease);
 }
 
 input::placeholder,
@@ -393,8 +405,8 @@ textarea:disabled {
   border: 1px solid var(--edge);
   box-shadow: var(--contact);
   transition:
-    border-color 130ms var(--ease),
-    box-shadow 130ms var(--ease);
+    border-color 170ms var(--ease),
+    box-shadow 170ms var(--ease);
 }
 
 .composer-box:focus-within,
@@ -644,7 +656,7 @@ kbd {
   height: var(--tile);
   place-items: center;
   border-radius: var(--r-lg);
-  transition: background 120ms var(--ease);
+  transition: background 160ms var(--ease);
 }
 
 /*
@@ -669,8 +681,8 @@ kbd {
   border-radius: var(--r-lg);
   object-fit: cover;
   transition:
-    background 120ms var(--ease),
-    color 120ms var(--ease);
+    background 160ms var(--ease),
+    color 160ms var(--ease);
 }
 
 .dock-tile:hover > span:not(.dock-label):not(.dock-glyph),
@@ -1064,7 +1076,7 @@ kbd {
   color: var(--ink-secondary);
   text-align: left;
   border-radius: var(--r-md);
-  transition: background 110ms var(--ease);
+  transition: background 150ms var(--ease);
 }
 
 .sidebar-item:hover {
@@ -1311,8 +1323,8 @@ kbd {
   place-items: center;
   border-radius: var(--r-sm);
   transition:
-    color 110ms var(--ease),
-    background 110ms var(--ease);
+    color 150ms var(--ease),
+    background 150ms var(--ease);
 }
 
 .header-button:hover {
@@ -1337,8 +1349,8 @@ kbd {
   border: 1px solid transparent;
   border-radius: var(--r-md);
   transition:
-    background 110ms var(--ease),
-    color 110ms var(--ease);
+    background 150ms var(--ease),
+    color 150ms var(--ease);
 }
 
 .palette-trigger:hover {
@@ -1538,7 +1550,7 @@ kbd {
   padding: 4px 10px 5px 0;
   margin: 0 8px;
   border-radius: var(--r-md);
-  transition: background 110ms var(--ease);
+  transition: background 150ms var(--ease);
 }
 
 .message:hover {
@@ -1769,8 +1781,8 @@ kbd {
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   transition:
-    background 110ms var(--ease),
-    color 110ms var(--ease);
+    background 150ms var(--ease),
+    color 150ms var(--ease);
 }
 
 .attachment:hover {
@@ -1898,8 +1910,8 @@ kbd {
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   transition:
-    background 110ms var(--ease),
-    border-color 110ms var(--ease);
+    background 150ms var(--ease),
+    border-color 150ms var(--ease);
 }
 
 .reaction:hover {
@@ -1945,7 +1957,7 @@ kbd {
   box-shadow: var(--e-2);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 110ms var(--ease);
+  transition: opacity 150ms var(--ease);
 }
 
 .message:hover .message-actions,
@@ -1965,8 +1977,8 @@ kbd {
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   transition:
-    background 110ms var(--ease),
-    color 110ms var(--ease);
+    background 150ms var(--ease),
+    color 150ms var(--ease);
 }
 
 .message-actions button:hover {
@@ -2024,8 +2036,8 @@ kbd {
   border-radius: var(--r-lg);
   box-shadow: var(--e-2);
   transition:
-    border-color 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    border-color 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .jump-to-latest:hover {
@@ -2064,6 +2076,12 @@ kbd {
  * costs nothing: initials are a person's identity in a 20px box and have no
  * business being subordinate.
  */
+/*
+ * People take `--r-md`: on a 34px transcript avatar that is a soft squircle,
+ * and on a 20px rail avatar it clamps to a circle. One step rounder than the
+ * rest of the plate world on purpose — faces are the warmest thing on the
+ * surface, and they were wearing the same corner as an input well.
+ */
 .avatar img,
 .avatar-fallback {
   display: grid;
@@ -2073,7 +2091,7 @@ kbd {
   color: var(--ink);
   letter-spacing: 0;
   place-items: center;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   box-shadow: inset 0 0 0 1px var(--inset-hairline);
   object-fit: cover;
 }
@@ -2192,8 +2210,8 @@ kbd {
   place-items: center;
   border-radius: var(--r-lg);
   transition:
-    background 110ms var(--ease),
-    color 110ms var(--ease);
+    background 150ms var(--ease),
+    color 150ms var(--ease);
 }
 
 .composer-actions button:not(.composer-send):hover:not(:disabled) {
@@ -2248,8 +2266,8 @@ kbd {
   border-radius: var(--r-lg);
   box-shadow: var(--e-signal);
   transition:
-    background 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .composer-send:hover:not(:disabled) {
@@ -2288,9 +2306,9 @@ kbd {
   color: var(--ink-muted);
   opacity: 0;
   transition:
-    height 140ms var(--ease),
-    opacity 140ms var(--ease),
-    padding-top 140ms var(--ease);
+    height 180ms var(--ease),
+    opacity 180ms var(--ease),
+    padding-top 180ms var(--ease);
 }
 
 .composer:has(.composer-box:focus-within) .composer-hint {
@@ -2820,8 +2838,8 @@ kbd {
   border-radius: var(--r-md);
   box-shadow: var(--e-signal);
   transition:
-    background 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .settings-connect:hover:not(:disabled) {
@@ -3221,8 +3239,8 @@ kbd {
   border-radius: var(--r-md);
   box-shadow: var(--e-signal);
   transition:
-    background 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .app-list button:hover {
@@ -3395,8 +3413,8 @@ kbd {
   border-radius: var(--r-md);
   box-shadow: var(--e-signal);
   transition:
-    background 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .new-dm-start:hover:not(:disabled) {
@@ -3548,8 +3566,8 @@ kbd {
   border-radius: var(--r-md);
   box-shadow: var(--e-signal);
   transition:
-    background 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .share-send:hover:not(:disabled) {
@@ -3576,8 +3594,8 @@ kbd {
   text-align: left;
   border-radius: var(--r-md);
   transition:
-    background 110ms var(--ease),
-    color 110ms var(--ease);
+    background 150ms var(--ease),
+    color 150ms var(--ease);
 }
 
 .sidebar-empty-action:hover {
@@ -3820,8 +3838,8 @@ kbd {
   border-radius: var(--r-md);
   box-shadow: var(--e-signal);
   transition:
-    background 120ms var(--ease),
-    box-shadow 120ms var(--ease);
+    background 160ms var(--ease),
+    box-shadow 160ms var(--ease);
 }
 
 .signin-submit:hover:not(:disabled) {
@@ -4356,8 +4374,8 @@ kbd {
   border: 1px solid var(--n6);
   border-radius: var(--r-md);
   transition:
-    background 110ms var(--ease),
-    border-color 110ms var(--ease);
+    background 150ms var(--ease),
+    border-color 150ms var(--ease);
 }
 
 .agent-approval-actions button:hover {
@@ -4417,8 +4435,8 @@ kbd {
   border-radius: var(--r-lg);
   box-shadow: var(--e-signal);
   transition:
-    background 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .agent-send:hover:not(:disabled) {
@@ -4448,7 +4466,7 @@ kbd {
   place-items: center;
   border: 1px solid var(--n6);
   border-radius: var(--r-lg);
-  transition: background 110ms var(--ease);
+  transition: background 150ms var(--ease);
 }
 
 .agent-stop:hover {
@@ -4491,8 +4509,8 @@ kbd {
   border-radius: var(--r-md);
   box-shadow: var(--e-signal);
   transition:
-    background 110ms var(--ease),
-    box-shadow 110ms var(--ease);
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .agent-setup-open:hover {
