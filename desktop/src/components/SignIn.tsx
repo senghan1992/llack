@@ -25,6 +25,11 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const canSubmit =
+    email.trim().length > 0 &&
+    password.length > 0 &&
+    (mode === "signin" || displayName.trim().length > 0);
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -113,7 +118,20 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
           ) : null}
         </label>
 
-        <button type="submit" className="signin-submit" disabled={busy}>
+        {/*
+          Disabled until the form can actually be submitted.
+          
+          It was only disabled while a request was in flight, so with an empty
+          email it rendered as a live primary action that did nothing when
+          clicked — the browser's `required` check blocks the submit silently.
+          A primary button that looks available and is not is the single most
+          common place an interface loses a person's trust.
+        */}
+        <button
+          type="submit"
+          className="signin-submit"
+          disabled={busy || !canSubmit}
+        >
           {busy ? "잠시만요…" : mode === "signin" ? "로그인" : "계정 만들기"}
         </button>
 
