@@ -282,7 +282,7 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
-        className="modal"
+        className="modal app-directory"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-label="앱 디렉터리"
@@ -301,7 +301,7 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
           */}
           <section className="linkapp-form">
             <h3>웹 앱을 주소로 추가</h3>
-            <p className="settings-hint">
+            <p className="linkapp-hint">
               팀이 배포한 웹 도구의 주소를 넣으면 왼쪽 도크에 들어가고, 누르면
               이 창 안에서 열립니다. 워크스페이스 관리자만 추가할 수 있습니다.
             </p>
@@ -316,35 +316,40 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
                   if (event.key === "Enter" && linkUrl.trim()) void addLink();
                 }}
               />
-              <input
-                value={linkName}
-                onChange={(event) => setLinkName(event.target.value)}
-                placeholder="이름 (비우면 주소에서)"
-                aria-label="웹 앱 이름"
-                maxLength={120}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && linkUrl.trim()) void addLink();
-                }}
-              />
-              <button
-                type="button"
-                className="settings-primary"
-                onClick={() => void addLink()}
-                disabled={!linkUrl.trim() || addingLink}
-              >
-                {addingLink ? "추가 중…" : "추가"}
-              </button>
+              <div className="linkapp-row">
+                <input
+                  value={linkName}
+                  onChange={(event) => setLinkName(event.target.value)}
+                  placeholder="이름 (비우면 주소에서 가져옵니다)"
+                  aria-label="웹 앱 이름"
+                  maxLength={120}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && linkUrl.trim()) void addLink();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="settings-primary"
+                  onClick={() => void addLink()}
+                  disabled={!linkUrl.trim() || addingLink}
+                >
+                  {addingLink ? "추가 중…" : "추가"}
+                </button>
+              </div>
             </div>
           </section>
 
-          {loading ? <p>불러오는 중…</p> : null}
-          {!loading && available.length === 0 ? (
-            <p className="modal-empty">
-              설치할 수 있는 미니앱이 없습니다. 사내 앱을 등록하면 여기에 나타납니다.
-            </p>
-          ) : null}
+          <section className="directory-section">
+            <h3>미니앱</h3>
+            {loading ? <p className="linkapp-hint">불러오는 중…</p> : null}
+            {!loading && available.length === 0 ? (
+              <p className="linkapp-hint">
+                설치할 수 있는 미니앱이 없습니다. 사내 앱을 등록하면 여기에
+                나타납니다.
+              </p>
+            ) : null}
 
-          <ul className="app-list">
+            <ul className="app-list">
             {available.map((app) => (
               <li key={app.id}>
                 <div className="app-list-info">
@@ -373,7 +378,8 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
                 )}
               </li>
             ))}
-          </ul>
+            </ul>
+          </section>
         </div>
       </div>
     </div>
