@@ -30,6 +30,8 @@ r2d2_sqlite = "0.25"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+async-trait = "0.1"
 
 [profile.release]
 codegen-units = 1

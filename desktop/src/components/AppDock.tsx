@@ -10,8 +10,9 @@ import { useEffect, useState } from "react";
 
 import { colorForId, initials } from "@/lib/format";
 import { api } from "@/lib/ipc";
+import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
-import { IconClose } from "./Icon";
+import { IconAgent, IconClose } from "./Icon";
 
 export function AppDock() {
   const workspaces = useApp((state) => state.workspaces);
@@ -21,6 +22,8 @@ export function AppDock() {
   const openPanelInstallationId = useApp((state) => state.openPanelInstallationId);
   const openAppPanel = useApp((state) => state.openAppPanel);
   const badge = useApp((state) => state.badge);
+  const agentOpen = useAgent((state) => state.open);
+  const setAgentOpen = useAgent((state) => state.setOpen);
 
   const [directoryOpen, setDirectoryOpen] = useState(false);
 
@@ -86,6 +89,22 @@ export function AppDock() {
             )}
           </button>
         ))}
+
+        {/*
+          The agent sits with the apps rather than above the divider: it is one
+          of the things you can dock beside a channel, not a place you go. The
+          divider separates "where I am" from "what I can open here".
+        */}
+        <button
+          type="button"
+          className={`dock-tile dock-agent ${agentOpen ? "is-active" : ""}`}
+          onClick={() => setAgentOpen(!agentOpen)}
+          title="에이전트"
+          aria-label="에이전트"
+          aria-pressed={agentOpen}
+        >
+          <IconAgent size={17} />
+        </button>
 
         <button
           type="button"

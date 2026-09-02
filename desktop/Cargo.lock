@@ -2253,6 +2253,7 @@ dependencies = [
 name = "llack-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "futures-util",
  "parking_lot",
  "r2d2",
@@ -2262,6 +2263,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "time",
  "tokio",

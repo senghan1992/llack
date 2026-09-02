@@ -1,0 +1,284 @@
+/**
+ * The agent, as a third docked sheet.
+ *
+ * It is a sheet rather than a window or a separate app because that is this
+ * product's one structural promise: new work arrives *beside* the transcript
+ * instead of covering it. An agent summarising `#개발` while `#개발` stays
+ * readable next to it is the thing only this layout can show.
+ *
+ * It is first-party rather than a mini-app because a mini-app cannot hold a
+ * provider credential, cannot invoke a Tauri command, and cannot receive
+ * `llack://` events — and the panel needs all three. The extension point for
+ * third parties is the tool catalog, not this panel.
+ *
+ * ## Two sheets, never three
+ *
+ * The Tauri window's minimum is 940px and the two-sheet stacking rule fires at
+ * 960px, so a third simultaneous sheet would leave roughly a 200px transcript.
+ * Opening the agent therefore closes the mini-app panel, and vice versa — see
+ * `AppDock` and the `:has()` rules in `global.css`.
+ */
+
+import { useEffect, useRef, useState } from "react";
+
+import { agentHost, capabilities, events } from "@/lib/ipc";
+import { renderMessage } from "@/lib/markdown";
+import { useAgent } from "@/store/agent";
+import { useApp } from "@/store/app";
+
+import { AgentApprovalCard } from "./AgentApprovalCard";
+import { AgentProviderSetup } from "./AgentProviderSetup";
+import { IconClose, IconSend } from "./Icon";
+
+export function AgentPanel() {
+  const open = useAgent((state) => state.open);
+  const setOpen = useAgent((state) => state.setOpen);
+  const phase = useAgent((state) => state.phase);
+  const turns = useAgent((state) => state.turns);
+  const provider = useAgent((state) => state.provider);
+  const sessionId = useAgent((state) => state.sessionId);
+  const banner = useAgent((state) => state.banner);
+  const tainted = useAgent((state) => state.tainted);
+  const startSession = useAgent((state) => state.startSession);
+  const setProvider = useAgent((state) => state.setProvider);
+  const showApproval = useAgent((state) => state.showApproval);
+  const clearApproval = useAgent((state) => state.clearApproval);
+  const submit = useAgent((state) => state.submit);
+  const appendText = useAgent((state) => state.appendText);
+  const finishTurn = useAgent((state) => state.finishTurn);
+  const setComputerControl = useAgent((state) => state.setComputerControl);
+
+  const [draft, setDraft] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // One subscription for the whole panel's life, not per turn.
+  useEffect(() => {
+    if (!open) return undefined;
+    setComputerControl(capabilities.computerControl);
+
+    let cancelled = false;
+    void agentHost
+      .agentProviderStatus()
+      .then((status) => {
+        if (!cancelled) setProvider(status);
+      })
+      .catch(() => {
+        if (!cancelled) setProvider(null);
+      });
+
+    const unlisten = events.onAgent((event) => {
+      switch (event.kind) {
+        case "approval_pending":
+          showApproval(event.request);
+          break;
+        case "approval_closed":
+          clearApproval(event.request_id);
+          break;
+        case "provider_changed":
+          setProvider(event.status);
+          break;
+        case "session_started":
+          startSession(event.session_id);
+          break;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      void unlisten.then((stop) => stop()).catch(() => {});
+    };
+  }, [open, setComputerControl, setProvider, showApproval, clearApproval, startSession]);
+
+  // Follow the stream: an agent answer that scrolls off the bottom while it is
+  // being written is the same bug as a chat transcript that does not follow.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [turns]);
+
+  if (!open) return null;
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || phase !== "idle") return;
+    setDraft("");
+
+    let session = sessionId;
+    if (!session) {
+      session = await agentHost.agentOpenSession(null);
+      startSession(session);
+    }
+
+    const turnId = submit(text);
+    // The turn loop lands in a later step; until then the panel proves the
+    // shell, the streaming surface and the approval card. An answer saying so
+    // beats a spinner that never resolves — and it goes in as *text*, not as
+    // the turn's `error`, because a missing feature is not a failure and must
+    // not be styled as one.
+    appendText(turnId, "모델 연결은 다음 단계에서 붙습니다. 지금은 패널과 승인 흐름만 동작합니다.");
+    finishTurn(turnId);
+  };
+
+  const needsProvider = !provider?.connected;
+
+  return (
+    <aside className="agent-panel" aria-label="에이전트">
+      <header className="agent-panel-header">
+        <h2>
+          에이전트
+          {provider?.connected ? (
+            <span className="agent-model">{provider.model}</span>
+          ) : null}
+        </h2>
+        {tainted ? (
+          <span
+            className="agent-taint"
+            title="채널 내용을 읽었으므로 이 세션에서는 승인을 매번 다시 확인합니다."
+          >
+            채널 읽음
+          </span>
+        ) : null}
+        <button type="button" onClick={() => setOpen(false)} aria-label="에이전트 닫기">
+          <IconClose size={13} />
+        </button>
+      </header>
+
+      {banner ? <p className="agent-banner">{banner}</p> : null}
+
+      <div className="agent-scroll" ref={scrollRef}>
+        {needsProvider ? (
+          <AgentProviderSetup />
+        ) : turns.length === 0 ? (
+          <AgentEmptyState />
+        ) : (
+          turns.map((turn) => <AgentTurnView key={turn.id} turn={turn} />)
+        )}
+      </div>
+
+      <AgentApprovalCard />
+
+      <div className="agent-composer">
+        <div className="agent-composer-box">
+          <textarea
+            value={draft}
+            disabled={needsProvider || phase !== "idle"}
+            placeholder={
+              needsProvider
+                ? "프로바이더를 연결하면 사용할 수 있습니다"
+                : phase === "awaiting_approval"
+                  ? "승인을 기다리는 중…"
+                  : "무엇을 도와드릴까요?"
+            }
+            rows={Math.min(8, draft.split("\n").length)}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="agent-send"
+            onClick={() => void send()}
+            disabled={needsProvider || phase !== "idle" || !draft.trim()}
+            aria-label="보내기"
+          >
+            <IconSend size={15} />
+          </button>
+        </div>
+        {!capabilities.computerControl ? (
+          // Shown rather than hidden: a missing capability the user cannot see
+          // becomes "why won't it do the thing".
+          <p className="agent-composer-note">
+            컴퓨터 제어는 데스크톱 앱에서만 사용할 수 있습니다.
+          </p>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+/**
+ * The agent's output resolves no ids.
+ *
+ * A `<@id>` or `<#id>` the model emitted is not a real reference — it did not
+ * come from the server's mention pipeline — so resolving it would let the model
+ * fabricate a link that looks like the product's own. Unresolved, the renderer
+ * leaves it as literal text.
+ */
+const AGENT_RENDER = {
+  userName: () => undefined,
+  channelName: () => undefined,
+};
+
+function AgentEmptyState() {
+  const channel = useApp((state) =>
+    state.channels.find((candidate) => candidate.id === state.activeChannelId),
+  );
+  const name = channel?.name ? `#${channel.name}` : "이 채널";
+
+  return (
+    <div className="agent-empty">
+      <p>이 대화는 이 기기에만 저장됩니다.</p>
+      <ul>
+        <li>{name} 의 최근 논의를 요약해줘</li>
+        <li>내 프로젝트에서 실패하는 테스트를 찾아줘</li>
+        <li>어제 배포 로그에서 오류만 뽑아줘</li>
+      </ul>
+    </div>
+  );
+}
+
+function AgentTurnView({ turn }: { turn: ReturnType<typeof useAgent.getState>["turns"][number] }) {
+  return (
+    <article className={`agent-turn agent-turn-${turn.role}`}>
+      {turn.blocks.map((block, index) => {
+        if (block.kind === "text") {
+          return (
+            <div
+              key={index}
+              className="agent-text"
+              // The same renderer the transcript uses. It escapes before any
+              // tag exists and emits no <img>, so agent output cannot become a
+              // zero-click exfiltration beacon — which a second, hand-rolled
+              // markdown path in this file very easily could.
+              dangerouslySetInnerHTML={{ __html: renderMessage(block.text, AGENT_RENDER) }}
+            />
+          );
+        }
+        if (block.kind === "thinking") {
+          return (
+            <details key={index} className="agent-thinking">
+              <summary>생각 중</summary>
+              <p>{block.text}</p>
+            </details>
+          );
+        }
+        return <AgentToolCard key={index} run={block.run} />;
+      })}
+
+      {turn.streaming ? <span className="agent-cursor" aria-hidden="true" /> : null}
+      {turn.error ? <p className="agent-turn-error">{turn.error}</p> : null}
+    </article>
+  );
+}
+
+function AgentToolCard({
+  run,
+}: {
+  run: { id: string; name: string; state: string; artifact: string | null; summary: string | null };
+}) {
+  return (
+    <div className={`agent-tool agent-tool-${run.state}`}>
+      <code>{run.name}</code>
+      {run.summary ? <span>{run.summary}</span> : null}
+      {run.artifact ? (
+        <span className="agent-tool-artifact" title={run.artifact}>
+          저장됨
+        </span>
+      ) : null}
+    </div>
+  );
+}

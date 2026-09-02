@@ -26,6 +26,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
 import { api } from "@/lib/ipc";
 import type { PanelSession } from "@/lib/types";
@@ -183,10 +184,28 @@ export function AppPanel() {
 
   if (!installationId || !installation) return null;
 
-  const width = installation.app.default_width || 420;
+  /*
+   * The app's `default_width` is a request, not an instruction.
+   *
+   * Set as a plain inline `width` it beat `--panel-w` outright, so the 320px
+   * narrowing at ≤1180px and the full-bleed overlay at ≤720px were both dead —
+   * an app asking for 420px got 420px in a 940px window. Handed over as a
+   * custom property instead, CSS decides what to do with it: `min()` lets it
+   * only ever narrow the sheet, and the responsive rules that set `width: auto`
+   * drop it entirely.
+   */
+  const requested = installation.app.default_width;
 
   return (
-    <aside className="app-panel" style={{ width }} aria-label="앱 패널">
+    <aside
+      className="app-panel"
+      style={
+        requested
+          ? ({ "--app-req-w": `${requested}px` } as CSSProperties)
+          : undefined
+      }
+      aria-label="앱 패널"
+    >
       <header className="app-panel-header">
         <h2>
           {title ?? installation.app.name}

@@ -37,7 +37,12 @@ import type {
   User,
   Workspace,
 } from "./types";
-import { pickFilesInBrowser, webApi, webEvents } from "./web";
+import type {
+  AgentEvent,
+  AgentProviderStatus,
+  AgentSessionSummary,
+} from "./agent/types";
+import { pickFilesInBrowser, webAgent, webApi, webEvents } from "./web";
 
 export { asCommandError };
 
@@ -263,6 +268,17 @@ const tauriEvents = {
     listen<{ presence: string }>("llack://presence-request", (event) =>
       handler(event.payload),
     ),
+
+  /**
+   * Agent facts other surfaces need: a session opening, an approval waiting.
+   *
+   * Only these — never the token stream. A broadcast event carries no session
+   * scoping, so every listener would have to filter, and a filter you can get
+   * wrong is worse than no broadcast. Tokens ride the per-call channel the
+   * loop already owns.
+   */
+  onAgent: (handler: (event: AgentEvent) => void) =>
+    listen<AgentEvent>("llack://agent", (event) => handler(event.payload)),
 };
 
 /** The contract both runtimes implement. */
@@ -274,6 +290,98 @@ export type ShellEvents = typeof tauriEvents;
 // the desktop contract — a drift on either side fails the typecheck here.
 export const api: ShellApi = isDesktopShell() ? tauriApi : webApi;
 export const events: ShellEvents = isDesktopShell() ? tauriEvents : webEvents;
+
+/*
+ * ── The agent host surface ──────────────────────────────────────────────
+ *
+ * A second contract rather than more members on `ShellApi`. Nine commands that
+ * only the desktop shell can serve would mean nine browser stubs whose only
+ * job is to throw, and a reviewer could no longer tell from the type which
+ * commands are host-specific. Splitting them keeps that legible.
+ *
+ * The stubs are the fallback, not the mechanism: the real fix is that the tool
+ * schemas sent to the provider are filtered by host capability in Rust
+ * (`ToolCatalog::expose`), so a browser session never sees `host.exec` and the
+ * model never proposes it. A stub that actually gets hit therefore means a bug,
+ * and it will show up in the audit log as one.
+ */
+const tauriAgent = {
+  /** Whether a provider is connected, and which model. Never the key. */
+  agentProviderStatus: () => call<AgentProviderStatus>("agent_provider_status"),
+
+  /**
+   * Store a provider key in the OS keychain and validate it.
+   *
+   * The key crosses to Rust once, here, and never comes back — every later
+   * request is signed by the byte proxy on the Rust side.
+   */
+  agentProviderConnect: (providerId: string, apiKey: string, model: string) =>
+    call<AgentProviderStatus>("agent_provider_connect", { providerId, apiKey, model }),
+
+  agentProviderDisconnect: () => call<AgentProviderStatus>("agent_provider_disconnect"),
+
+  agentSessions: (limit = 20) =>
+    call<AgentSessionSummary[]>("agent_sessions", { limit }),
+
+  agentOpenSession: (sessionId: string | null) =>
+    call<string>("agent_open_session", { sessionId: sessionId ?? null }),
+
+  /**
+   * Run one tool call through the gate.
+   *
+   * The webview names a tool and its arguments; it cannot name a command to
+   * run. Everything about whether this is allowed is decided in Rust.
+   */
+  agentToolCall: (sessionId: string, name: string, args: unknown, rationale?: string) =>
+    call<{ content: unknown; artifact: string | null; is_error: boolean; taints: boolean }>(
+      "agent_tool_call",
+      { sessionId, name, args, rationale: rationale ?? null },
+    ),
+
+  /**
+   * Answer a pending approval.
+   *
+   * Takes a request id and its single-use nonce — never a description of an
+   * action. The webview can answer a request Rust created; it can never
+   * originate one.
+   */
+  agentResolveApproval: (
+    requestId: string,
+    nonce: string,
+    approve: boolean,
+    remember: boolean,
+  ) =>
+    call<void>("agent_resolve_approval", { requestId, nonce, approve, remember }),
+
+  /** Deny everything outstanding and stop the turn. */
+  agentCancel: (sessionId: string) => call<void>("agent_cancel", { sessionId }),
+
+  /** Let the user choose a directory the agent may read without asking. */
+  agentPickRoot: () => call<string | null>("agent_pick_root"),
+};
+
+/** The contract both runtimes implement for the agent. */
+export type AgentHostApi = typeof tauriAgent;
+
+export const agentHost: AgentHostApi = isDesktopShell() ? tauriAgent : webAgent;
+
+/**
+ * What this host can actually do, in one place.
+ *
+ * Collected here rather than scattering `isDesktopShell()` through components:
+ * a capability is a fact about the host, and the UI should read it rather than
+ * re-derive it.
+ */
+export const capabilities = {
+  /** Programs and files on this machine. Desktop only. */
+  computerControl: isDesktopShell(),
+  /**
+   * The agent panel itself. Available in both runtimes: a browser tab gets it
+   * driven by the scripted fake provider, which is how the panel is verified
+   * without a key.
+   */
+  agent: true,
+};
 
 /**
  * Capabilities that are not commands but still differ per host: anything the

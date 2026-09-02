@@ -17,6 +17,7 @@
  * - No OS notifications, tray badge or `llack://` deep links.
  */
 
+import type { AgentEvent, AgentProviderStatus } from "./agent/types";
 import { asCommandError, commandError } from "./errors";
 import type {
   AppInstallation,
@@ -992,6 +993,22 @@ export const webEvents = {
     return Promise.resolve(() => {});
   },
 
+  /**
+   * Agent events, deliverable from a test.
+   *
+   * The scripted fake never opens a real approval, so without a way to push one
+   * the approval card would be unreachable in a browser — and it is the one
+   * piece of this UI where a wrong click runs a command, so it is the piece
+   * most worth seeing rendered. `window.__llackAgentEmit` is that way in.
+   */
+  onAgent: (handler: (event: AgentEvent) => void) => {
+    agentHandlers.add(handler);
+    installAgentTestHook();
+    return Promise.resolve(() => {
+      agentHandlers.delete(handler);
+    });
+  },
+
   /** The desktop tray drives presence; in a tab, tab visibility does. */
   onPresenceRequest: (handler: (payload: { presence: string }) => void) => {
     const onVisibility = () => {
@@ -1017,3 +1034,114 @@ export function pickFilesInBrowser(multiple: boolean): Promise<File[]> {
     input.click();
   });
 }
+
+/* ── The agent, in a browser tab ───────────────────────────────────────── */
+
+/**
+ * The browser half of `AgentHostApi`.
+ *
+ * Two different behaviours, on purpose:
+ *
+ * - Anything that would touch this machine or the OS keychain **rejects**. Not
+ *   a silent no-op: a stub that quietly returns nothing turns "this host cannot
+ *   do that" into "the agent mysteriously did nothing", and the tool schemas
+ *   are filtered in Rust anyway so a reached stub means a bug worth seeing.
+ * - Session bookkeeping and the tool gate are served by a **scripted fake**, so
+ *   the panel, the streaming UI and the approval card can be driven end to end
+ *   in a headless browser with no API key and no Tauri build. That is what
+ *   makes this surface testable in CI at all.
+ */
+function desktopOnly<T>(what: string): Promise<T> {
+  return Promise.reject(
+    commandError(
+      "unsupported_in_browser",
+      `${what}는 데스크톱 앱에서만 사용할 수 있습니다.`,
+    ),
+  );
+}
+
+const agentHandlers = new Set<(event: AgentEvent) => void>();
+
+/**
+ * Expose one function a test can call to deliver an agent event.
+ *
+ * Deliberately not a general-purpose bridge: it takes an already-typed event
+ * and fans it out to the same handlers the shell would feed. Nothing about the
+ * panel's behaviour is special-cased for tests.
+ */
+function installAgentTestHook(): void {
+  const target = window as unknown as {
+    __llackAgentEmit?: (event: AgentEvent) => void;
+  };
+  if (target.__llackAgentEmit) return;
+  target.__llackAgentEmit = (event) => {
+    for (const handler of agentHandlers) handler(event);
+  };
+}
+
+/** The fake provider's state, kept out of the exported surface. */
+const fakeAgent = {
+  sessionSeq: 0,
+  /** Tool calls the fake gate approved, for assertions in tests. */
+  calls: [] as Array<{ name: string; args: unknown }>,
+};
+
+export const webAgent = {
+  agentProviderStatus: async (): Promise<AgentProviderStatus> => ({
+    // There is no keychain in a browser, so there is no real provider to
+    // connect. The scripted fake stands in, which is what makes the panel
+    // testable here — and it says so in the model name rather than pretending.
+    connected: true,
+    provider_id: "fake",
+    model: "fake-provider",
+    key_fingerprint: null,
+    last_error: null,
+  }),
+
+  agentProviderConnect: () =>
+    desktopOnly<AgentProviderStatus>("프로바이더 연결"),
+
+  agentProviderDisconnect: () =>
+    desktopOnly<AgentProviderStatus>("프로바이더 연결 해제"),
+
+  agentSessions: async (_limit = 20): Promise<never[]> => [],
+
+  agentOpenSession: async (sessionId: string | null): Promise<string> => {
+    if (sessionId) return sessionId;
+    fakeAgent.sessionSeq += 1;
+    return `fake-session-${fakeAgent.sessionSeq}`;
+  },
+
+  agentToolCall: async (_sessionId: string, name: string, args: unknown) => {
+    fakeAgent.calls.push({ name, args });
+    if (name.startsWith("host.")) {
+      // Exactly what the real gate does for a host tool in a browser: refuse,
+      // and tell the model rather than throwing.
+      return {
+        content: { error: "이 호스트에서는 컴퓨터 제어를 사용할 수 없습니다." },
+        artifact: null,
+        is_error: true,
+        taints: false,
+      };
+    }
+    return {
+      content: { note: "브라우저 모드의 가짜 도구 결과입니다.", name },
+      artifact: null,
+      is_error: false,
+      taints: name.startsWith("chat."),
+    };
+  },
+
+  agentResolveApproval: async (
+    _requestId: string,
+    _nonce: string,
+    _approve: boolean,
+    _remember: boolean,
+  ): Promise<void> => {
+    // Nothing to answer: the fake gate never opens a request.
+  },
+
+  agentCancel: async (_sessionId: string): Promise<void> => {},
+
+  agentPickRoot: () => desktopOnly<string | null>("폴더 선택"),
+};

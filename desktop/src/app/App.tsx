@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 
 import { AppDock } from "@/components/AppDock";
+import { AgentPanel } from "@/components/AgentPanel";
 import { AppPanel } from "@/components/AppPanel";
 import { Banner } from "@/components/Banner";
 import { Notices } from "@/components/Notices";
@@ -19,6 +20,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SignIn } from "@/components/SignIn";
 import { ThreadPane } from "@/components/ThreadPane";
 import { events, type UnlistenFn } from "@/lib/ipc";
+import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
 const FALLBACK_SERVER = "http://localhost:8000";
@@ -61,6 +63,7 @@ export function App() {
           </div>
           <ThreadPane />
           <AppPanel />
+          <AgentPanel />
         </div>
       </main>
       <CommandPalette />
@@ -210,6 +213,11 @@ function useKeyboardShortcuts() {
           void store.openThread(null);
         } else if (store.openPanelInstallationId) {
           store.openAppPanel(null);
+        } else if (useAgent.getState().open) {
+          // Last on the ladder, and only when nothing is pending: the approval
+          // card handles its own Escape as a denial and stops propagation, so
+          // Escape can never close the panel out from under a decision.
+          useAgent.getState().setOpen(false);
         }
       }
     };

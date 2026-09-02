@@ -23,6 +23,8 @@ r2d2_sqlite.workspace = true
 time.workspace = true
 rand.workspace = true
 uuid.workspace = true
+sha2.workspace = true
+async-trait.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

@@ -22,6 +22,7 @@
 //!   Cache ─── SQLite: channels, messages, offline send queue
 //! ```
 
+pub mod agent;
 pub mod api;
 pub mod cache;
 pub mod error;

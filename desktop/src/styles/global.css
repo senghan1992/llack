@@ -91,6 +91,14 @@
   --dock-w: 52px;
   --rail-w: 260px;
   --thread-w: 340px;
+  /*
+   * One width for both docked sheets. They are mutually exclusive, so they
+   * occupy the same slot beside the thread, and a slot that changes width
+   * depending on which sheet is in it makes the transcript jump. An earlier
+   * pass gave the agent 420px on the argument that it holds argv and a fact
+   * table; measured at 1440px that cost the transcript 40px it could not
+   * spare, and the fact table scrolls instead.
+   */
   --panel-w: 380px;
   --header-h: 44px;
   --gutter: 40px;
@@ -1418,7 +1426,8 @@ kbd {
 /* ── Docked sheets: the one authored motion ──────────────────────────── */
 
 .thread-pane,
-.app-panel {
+.app-panel,
+.agent-panel {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -1438,6 +1447,14 @@ kbd {
 }
 
 .app-panel {
+  /* `--app-req-w` is the installed app's `default_width`, set inline by
+     `AppPanel`. It can narrow the sheet and nothing else. */
+  width: min(var(--panel-w), var(--app-req-w, 100%));
+  max-width: 100%;
+  flex: none;
+}
+
+.agent-panel {
   width: var(--panel-w);
   max-width: 100%;
   flex: none;
@@ -1469,7 +1486,8 @@ kbd {
 }
 
 .thread-header,
-.app-panel-header {
+.app-panel-header,
+.agent-panel-header {
   display: flex;
   height: var(--header-h);
   flex: none;
@@ -1480,10 +1498,7 @@ kbd {
   border-bottom: 1px solid var(--rule);
 }
 
-.thread-header h2,
-.app-panel-header h2,
-.thread-header strong,
-.app-panel-header strong {
+:is(.thread-header, .app-panel-header, .agent-panel-header) :is(h2, strong) {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1496,8 +1511,7 @@ kbd {
   text-overflow: ellipsis;
 }
 
-.thread-header button,
-.app-panel-header button {
+:is(.thread-header, .app-panel-header, .agent-panel-header) button {
   display: grid;
   width: 24px;
   height: 24px;
@@ -1507,8 +1521,7 @@ kbd {
   border-radius: var(--r);
 }
 
-.thread-header button:hover,
-.app-panel-header button:hover {
+:is(.thread-header, .app-panel-header, .agent-panel-header) button:hover {
   color: var(--ink);
   background: var(--hover);
 }
@@ -2051,6 +2064,538 @@ kbd {
   text-underline-offset: 2px;
 }
 
+/* ── The agent sheet ─────────────────────────────────────────────────────
+ *
+ * Same plate, same rules, same one colour as everything else. The agent gets
+ * no visual dialect of its own: it is a place in this app, not a guest from
+ * another product. Two departures, both argued at their rule:
+ *
+ *   · The approval card's two buttons are equal weight, so neither reads as
+ *     the intended one — the only place on this surface where a primary action
+ *     is deliberately *not* promoted.
+ *   · `--signal` marks a high-risk approval, which is the same meaning it
+ *     already carries elsewhere: this row needs you.
+ */
+
+/*
+ * Only what differs from the shared sheet-header title above: the model chip
+ * sits on the title's baseline rather than centred with it, so a 10.5px
+ * monospace name lines up with a 12px semibold Korean label instead of
+ * floating in the middle of it.
+ */
+.agent-panel-header h2 {
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.agent-model {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Taint, made visible. The policy tightens once channel content has entered
+ * the session — approvals stop being rememberable — and a gate that tightens
+ * without saying so reads as the app being erratic.
+ */
+.agent-taint {
+  flex: none;
+  padding: 2px 6px;
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--ink-muted);
+  background: var(--n2);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  cursor: help;
+}
+
+.agent-banner {
+  flex: none;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  background: var(--signal-wash);
+  border-bottom: 1px solid var(--rule);
+}
+
+.agent-scroll {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
+.agent-empty {
+  margin: auto 0;
+  font-size: 12.5px;
+}
+
+.agent-empty > p {
+  margin-bottom: 10px;
+  color: var(--ink-muted);
+}
+
+.agent-empty ul {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 0;
+  list-style: none;
+}
+
+/*
+ * Examples, not buttons. They are not clickable because a suggestion that runs
+ * on click teaches people to start turns they have not read, and every turn
+ * here can end at an approval prompt.
+ */
+.agent-empty li {
+  padding: 7px 10px;
+  color: var(--ink-secondary);
+  background: var(--field);
+  border-left: 2px solid var(--rule);
+}
+
+/* ── Turns ───────────────────────────────────────────────────────────── */
+
+.agent-turn {
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+/*
+ * The user's own words are indented and plated; the agent's run full width.
+ * No avatars and no name labels: there are exactly two speakers and the
+ * asymmetry says which is which in less space than a label would.
+ */
+.agent-turn-user {
+  padding: 8px 11px;
+  margin-left: 28px;
+  color: var(--ink-secondary);
+  white-space: pre-wrap;
+  background: var(--n2);
+  border-radius: var(--r);
+}
+
+.agent-turn-assistant {
+  color: var(--ink);
+}
+
+/*
+ * No inline-code, code-block, or list styling here on purpose: agent prose goes
+ * through the same `renderMessage` as a chat message, so it arrives wearing
+ * `.code-inline`, `.code-block` and `.md-list` already. A second set of rules
+ * for the same classes is how the two halves of one app drift apart.
+ */
+.agent-text > * + * {
+  margin-top: 0.7em;
+}
+
+.agent-thinking {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.agent-thinking summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-thinking p {
+  padding-left: 9px;
+  margin-top: 5px;
+  white-space: pre-wrap;
+  border-left: 1px solid var(--rule);
+}
+
+/* The one place a caret is drawn rather than typed: the turn is still open. */
+.agent-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 13px;
+  vertical-align: -2px;
+  background: var(--ink);
+  animation: agent-blink 1.05s steps(2, start) infinite;
+}
+
+@keyframes agent-blink {
+  to {
+    opacity: 0;
+  }
+}
+
+.agent-turn-error {
+  padding: 7px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-left: 2px solid var(--rule-strong);
+}
+
+/* ── Tool runs ───────────────────────────────────────────────────────── */
+
+.agent-tool {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 9px;
+  margin: 8px 0;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-left-width: 2px;
+  border-radius: var(--r);
+}
+
+.agent-tool code {
+  flex: none;
+  font-family: var(--font-mono);
+  color: var(--ink-secondary);
+}
+
+.agent-tool > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* State on the left edge only — a full-card tint on every tool run would make
+   a transcript of six calls look like six alerts. */
+.agent-tool-running {
+  border-left-color: var(--rule-strong);
+}
+
+.agent-tool-ok {
+  border-left-color: var(--n8);
+}
+
+.agent-tool-error,
+.agent-tool-refused {
+  border-left-color: var(--signal);
+}
+
+/* Denied is the user's own decision, not a fault: it gets no alarm colour. */
+.agent-tool-denied {
+  border-left-color: var(--rule-strong);
+  text-decoration: line-through;
+  text-decoration-color: var(--rule-strong);
+}
+
+.agent-tool-artifact {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The approval card ───────────────────────────────────────────────── */
+
+.agent-approval {
+  flex: none;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-top: 1px solid var(--ink);
+  outline: none;
+}
+
+/* High risk — `host.exec`, posting as me, MCP — gets the one colour. */
+.agent-approval-high {
+  border-top-color: var(--signal);
+}
+
+.agent-approval-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.agent-approval-head strong {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.agent-approval-risk {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  text-transform: none;
+}
+
+.agent-approval-high .agent-approval-risk {
+  color: var(--signal);
+}
+
+.agent-approval-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  font-size: 11.5px;
+}
+
+.agent-approval-facts > div {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.agent-approval-facts dt {
+  color: var(--ink-muted);
+}
+
+.agent-approval-facts dd {
+  min-width: 0;
+  max-height: 8.5em;
+  overflow: auto;
+  font-family: var(--font-mono);
+  color: var(--ink);
+  /* argv arrives one argument per line, and it must stay that way: space-joined
+     it invites being read as shell, and `--author=a b` then looks like two. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-approval-rationale {
+  margin-top: 9px;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.agent-approval-rationale summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-approval-rationale p {
+  padding: 6px 9px;
+  margin-top: 5px;
+  /* Untrusted text, held at arm's length: the model wrote this, and whoever
+     wrote the channel message the agent read may have written it through the
+     model. Dashed, muted, and never adjacent to the buttons. */
+  white-space: pre-wrap;
+  background: var(--n2);
+  border: 1px dashed var(--rule-strong);
+}
+
+.agent-approval-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--ink-secondary);
+}
+
+.agent-approval-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/*
+ * Equal weight, on purpose. Neither button is filled, neither is focused on
+ * mount, and Deny comes first in the DOM so Tab reaches it first. A card that
+ * can appear under a cursor already travelling toward a primary button must
+ * not have one.
+ */
+.agent-approval-actions button {
+  flex: 1;
+  padding: 7px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r);
+}
+
+.agent-approval-actions button:hover {
+  background: var(--n2);
+}
+
+.agent-approval-actions button:focus-visible {
+  border-color: var(--ink);
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* ── Composer ────────────────────────────────────────────────────────── */
+
+.agent-composer {
+  flex: none;
+  padding: 10px 14px 8px;
+  border-top: 1px solid var(--rule);
+}
+
+.agent-composer-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 6px 6px 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r);
+}
+
+.agent-composer-box:focus-within {
+  border-color: var(--ink);
+}
+
+.agent-composer-box:has(textarea:disabled) {
+  background: var(--n2);
+  border-color: var(--rule);
+}
+
+.agent-composer-box textarea {
+  flex: 1;
+  max-height: 32vh;
+  padding: 3px 0;
+  overflow-y: auto;
+  font-size: 13px;
+  resize: none;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.agent-send {
+  display: grid;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  color: var(--ink-inverse);
+  background: var(--signal);
+  place-items: center;
+  border-radius: var(--r);
+}
+
+.agent-send:hover:not(:disabled) {
+  background: var(--signal-press);
+}
+
+.agent-send:disabled {
+  color: var(--ink-muted);
+  background: var(--n4);
+  cursor: not-allowed;
+}
+
+.agent-composer-note {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+/* ── Provider setup ──────────────────────────────────────────────────── */
+
+.agent-setup {
+  display: flex;
+  margin: auto 0;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.agent-setup-lead {
+  color: var(--ink);
+}
+
+.agent-setup label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.agent-setup input,
+.agent-setup select {
+  padding: 7px 9px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r);
+}
+
+.agent-setup input:focus,
+.agent-setup select:focus {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.agent-setup-note {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.agent-setup-error {
+  padding: 7px 9px;
+  font-size: 11.5px;
+  color: var(--ink);
+  background: var(--signal-wash);
+  border-left: 2px solid var(--signal);
+}
+
+.agent-setup-submit {
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-inverse);
+  background: var(--signal);
+  border-radius: var(--r);
+}
+
+.agent-setup-submit:hover:not(:disabled) {
+  background: var(--signal-press);
+}
+
+.agent-setup-submit:disabled {
+  color: var(--ink-muted);
+  background: var(--n4);
+  cursor: not-allowed;
+}
+
+/*
+ * The dock tile.
+ *
+ * Its child is an authored `<svg>`, not the `<span>`/`<img>` plate the app and
+ * workspace tiles carry, so the active plate is painted on the tile itself —
+ * same paper, same ring, same signal underline from `.dock-tile.is-active`.
+ * Without this the agent would be the one tile in the rail that does not look
+ * selected when it is.
+ */
+.dock-tile.dock-agent {
+  color: var(--ink-muted);
+}
+
+.dock-tile.dock-agent:hover {
+  color: var(--ink);
+}
+
+.dock-tile.dock-agent.is-active {
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+}
+
 /* ── Narrow windows ──────────────────────────────────────────────────── */
 
 @media (max-width: 1180px) {
@@ -2064,14 +2609,40 @@ kbd {
   :root {
     --rail-w: 216px;
   }
+}
 
-  /*
-   * Two sheets plus a transcript no longer fit side by side. They stack in one
-   * column instead of the thread being hidden: silently removing the sheet the
-   * user just opened, with no route back, broke the promise that entering a
-   * thread never loses your place.
-   */
-  .main-body:has(.app-panel):has(.thread-pane) {
+/*
+ * Two sheets plus a transcript no longer fit side by side, so they stack in one
+ * column. They stack rather than the thread being hidden: silently removing the
+ * sheet the user just opened, with no route back, broke the promise that
+ * entering a thread never loses your place.
+ *
+ * ## Why the band, and why 1400
+ *
+ * The upper bound is arithmetic, not taste. Three columns need the dock and
+ * rail (313px) plus a transcript that can still hold a sentence (~360px) plus
+ * both sheets (340 + 380), which is 1393px. Measured at 1180px the old 960px
+ * bound left the transcript **227px** — about twelve Korean characters a line.
+ * That was already true of thread + mini-app before the agent existed; the
+ * agent is only what made someone measure it.
+ *
+ * The lower bound is the same arithmetic from the other end: the stacked column
+ * is a fixed 288px, so a ~360px transcript needs 648px of body, which with the
+ * narrow rail (dock 52 + rail 216, plus the main border) is 917px of window —
+ * measured, not assumed: at 916px it came out one pixel short at 359px.
+ * Measured at 721px the stacked layout left the
+ * transcript **164px**. Below this the two sheets cover the transcript instead
+ * (next block) — the Tauri window's 940px floor means only browser mode ever
+ * gets there, but "only in the browser" is not the same as "not shipped".
+ *
+ * Bounding the band on both sides also fixes a latent bug: without `min-width`
+ * these rules kept winning on specificity inside the overlay blocks below, and
+ * their `grid-area` became the containing block for the `position: absolute`
+ * overlay — so the "full-bleed" sheet was in fact pinned to a 288px grid cell.
+ * Mutually exclusive bands fix that without stacking another override on top.
+ */
+@media (min-width: 917px) and (max-width: 1400px) {
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) {
     display: grid;
     /* Every track is explicit and every item is placed. Left implicit, the
        app panel auto-placed into a third column and overflowed the window,
@@ -2080,7 +2651,7 @@ kbd {
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .main-body:has(.app-panel):has(.thread-pane) .main-transcript {
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) .main-transcript {
     grid-area: 1 / 1 / 3 / 2;
     /* Both axes: a grid item's automatic minimum size is its content, which
        otherwise pushes the 1fr rows past the window. */
@@ -2088,21 +2659,56 @@ kbd {
     min-height: 0;
   }
 
-  .main-body:has(.app-panel):has(.thread-pane) .thread-pane {
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) .thread-pane {
     grid-area: 1 / 2 / 2 / 3;
   }
 
-  .main-body:has(.app-panel):has(.thread-pane) .app-panel {
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) :is(.app-panel, .agent-panel) {
     grid-area: 2 / 2 / 3 / 3;
     border-top: 1px solid var(--rule);
   }
 
-  .main-body:has(.app-panel):has(.thread-pane) .thread-pane,
-  .main-body:has(.app-panel):has(.thread-pane) .app-panel {
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) .thread-pane,
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) :is(.app-panel, .agent-panel) {
     width: auto;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+}
+
+/*
+ * Too narrow to stack the sheets *beside* the transcript, still wide enough for
+ * one sheet to sit beside it. So when both are open they cover the transcript,
+ * splitting the cover between them — same move as the ≤720px block, shared.
+ *
+ * Covering rather than crushing, and rather than hiding one: the transcript is
+ * still there behind, one close away, and neither sheet is silently discarded.
+ */
+@media (min-width: 721px) and (max-width: 916px) {
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) {
+    position: relative;
+  }
+
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) .thread-pane,
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel))
+    :is(.app-panel, .agent-panel) {
+    position: absolute;
+    z-index: 6;
+    width: auto;
+    min-width: 0;
+    overflow: hidden;
+    border-left: none;
+  }
+
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel)) .thread-pane {
+    inset: 0 0 50% 0;
+  }
+
+  .main-body:has(.thread-pane):has(:is(.app-panel, .agent-panel))
+    :is(.app-panel, .agent-panel) {
+    inset: 50% 0 0 0;
+    border-top: 1px solid var(--rule);
   }
 }
 
@@ -2221,7 +2827,8 @@ kbd {
   /* No room to sit beside the transcript, so the sheet covers it — arriving
      from the same edge, with its own close control already in the header. */
   .thread-pane,
-  .app-panel {
+  .app-panel,
+  .agent-panel {
     position: absolute;
     inset: 0;
     z-index: 6;

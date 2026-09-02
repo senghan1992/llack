@@ -194,3 +194,21 @@ export function ChannelMark({ kind }: { kind: string }) {
     </span>
   );
 }
+
+/**
+ * The agent.
+ *
+ * Not a robot head and not a chat bubble: the first is a cliché that promises
+ * autonomy this agent does not have, and the second is already taken by the
+ * transcript beside it. Two sparks — the same figure the rest of the industry
+ * settled on for "a model did this" — drawn on this set's grid and stroke so it
+ * belongs to the same hand as the bell and the paperclip.
+ */
+export function IconAgent(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6.6 2.1c.5 2.9 1.5 3.9 4.4 4.4-2.9.5-3.9 1.5-4.4 4.4-.5-2.9-1.5-3.9-4.4-4.4 2.9-.5 3.9-1.5 4.4-4.4Z" />
+      <path d="M12.3 9.6c.25 1.5.75 2 2.2 2.25-1.45.25-1.95.75-2.2 2.2-.25-1.45-.75-1.95-2.2-2.2 1.45-.25 1.95-.75 2.2-2.25Z" />
+    </Svg>
+  );
+}
