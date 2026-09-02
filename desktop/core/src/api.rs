@@ -329,6 +329,21 @@ impl ApiClient {
         .await
     }
 
+    /// Admin: overwrite a locked-out member's password with a one-time
+    /// temporary one. Returns `{ "temp_password": … }`, shown once.
+    pub async fn reset_member_password(
+        &self,
+        workspace_id: &str,
+        user_id: &str,
+    ) -> Result<serde_json::Value> {
+        self.send::<(), _>(
+            Method::POST,
+            &format!("/workspaces/{workspace_id}/members/{user_id}/reset-password"),
+            None,
+        )
+        .await
+    }
+
     pub async fn revoke_invite(&self, workspace_id: &str, invite_id: &str) -> Result<()> {
         self.send::<(), serde_json::Value>(
             Method::DELETE,

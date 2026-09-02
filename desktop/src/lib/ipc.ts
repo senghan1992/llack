@@ -106,6 +106,10 @@ const tauriApi = {
   revokeInvite: (workspaceId: Id, inviteId: string) =>
     call<void>("revoke_invite", { workspaceId, inviteId }),
 
+  /** Admin: one-time temporary password for a locked-out member. */
+  resetMemberPassword: (workspaceId: Id, userId: Id) =>
+    call<{ temp_password: string }>("reset_member_password", { workspaceId, userId }),
+
   createWorkspace: (name: string, slug: string) =>
     call<Workspace>("create_workspace", { name, slug }),
 

@@ -121,6 +121,7 @@ pub fn run() {
             commands::create_invites,
             commands::accept_invite,
             commands::list_invites,
+            commands::reset_member_password,
             commands::revoke_invite,
             commands::create_workspace,
             // workspaces

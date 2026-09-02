@@ -101,6 +101,34 @@ class Settings(BaseSettings):
         return self.env == "production"
 
 
+def validate_production_settings(s: Settings) -> None:
+    """Refuse to boot a production server on development defaults.
+
+    A guessable `LLACK_SECRET_KEY` means anyone can mint valid tokens — this
+    is the one misconfiguration that silently voids every other control, so
+    it fails loudly at startup instead of surfacing in an incident. Only
+    enforced when `LLACK_ENV=production`; dev stays frictionless.
+    """
+    if not s.is_production:
+        return
+    insecure = (
+        s.secret_key.startswith("dev-secret")
+        or s.secret_key.startswith("change-me")
+        or len(s.secret_key) < 32
+    )
+    if insecure:
+        raise RuntimeError(
+            "LLACK_SECRET_KEY 가 개발 기본값이거나 너무 짧습니다. "
+            "프로덕션에서는 32자 이상의 무작위 값을 설정해야 합니다 "
+            "(예: python -c \"import secrets; print(secrets.token_urlsafe(48))\")."
+        )
+    if s.database_url.startswith("sqlite"):
+        raise RuntimeError(
+            "프로덕션에서 SQLite 를 쓰고 있습니다. 동시 쓰기에서 무너집니다 — "
+            "LLACK_DATABASE_URL 을 Postgres 로 설정하세요."
+        )
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()

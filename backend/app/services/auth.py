@@ -223,3 +223,14 @@ async def change_password(
         raise Unauthorized("Current password is incorrect.", code="invalid_credentials")
     user.password_hash = hash_password(new_password)
     await db.flush()
+
+
+async def admin_set_password(db: AsyncSession, user: User, new_password: str) -> None:
+    """Overwrite a password without knowing the old one.
+
+    The recovery path for "비밀번호를 잊었습니다" on a server with no outbound
+    email. Authorisation (a strictly higher workspace role) is the API layer's
+    job; every caller must also revoke the target's sessions.
+    """
+    user.password_hash = hash_password(new_password)
+    await db.flush()

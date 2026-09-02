@@ -153,9 +153,10 @@ check: lint test build ## CI 가 실행하는 모든 검사
 ## ── Docker ────────────────────────────────────────────────────────────
 
 .PHONY: compose-up
-compose-up: ## Postgres/Redis/MinIO + API 실행
+compose-up: ## 프로덕션 모양 전체 스택 실행 (Postgres/Redis/MinIO + API + 웹) — docs/DEPLOY.md
 	docker compose up -d --build
-	@echo "API: http://localhost:8000/docs · MinIO: http://localhost:9001"
+	@echo "웹: http://localhost:$${LLACK_WEB_PUBLISH:-80} · MinIO 콘솔: http://localhost:9001"
+	@echo "첫 관리자 만들기 절차: docs/DEPLOY.md 4절"
 
 .PHONY: compose-down
 compose-down: ## 컨테이너 중지

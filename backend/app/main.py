@@ -17,7 +17,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.v1.router import api_router
 from app.core import db as database
-from app.core.config import settings
+from app.core.config import settings, validate_production_settings
 from app.core.errors import (
     AppError,
     app_error_handler,
@@ -36,6 +36,14 @@ log = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Fails the boot, not the first user: a production server on dev
+    # defaults must never start serving.
+    validate_production_settings(settings)
+    if settings.is_production and not settings.require_invite:
+        log.warning(
+            "sign_up_is_open",
+            hint="LLACK_REQUIRE_INVITE=true 로 가입을 초대 필수로 잠글 수 있습니다",
+        )
     log.info(
         "startup",
         env=settings.env,

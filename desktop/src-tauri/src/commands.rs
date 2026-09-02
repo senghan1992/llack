@@ -175,6 +175,18 @@ pub async fn list_invites(
 }
 
 #[tauri::command]
+pub async fn reset_member_password(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    user_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .reset_member_password(&workspace_id, &user_id)
+        .await
+}
+
+#[tauri::command]
 pub async fn revoke_invite(
     state: State<'_, Arc<AppState>>,
     workspace_id: String,

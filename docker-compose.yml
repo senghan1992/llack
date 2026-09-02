@@ -78,7 +78,10 @@ services:
         condition: service_healthy
     environment:
       LLACK_ENV: production
-      LLACK_SECRET_KEY: ${LLACK_SECRET_KEY:-change-me-before-any-real-deployment}
+      # 필수: .env 에 32자 이상의 무작위 값을 넣으세요. 개발 기본값이면
+      # 서버가 기동을 거부합니다 (validate_production_settings).
+      #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+      LLACK_SECRET_KEY: ${LLACK_SECRET_KEY:?LLACK_SECRET_KEY 를 .env 에 설정하세요}
       LLACK_DATABASE_URL: postgresql+asyncpg://llack:llack@postgres:5432/llack
       LLACK_REDIS_URL: redis://redis:6379/0
       LLACK_STORAGE_BACKEND: s3
@@ -87,15 +90,33 @@ services:
       LLACK_S3_REGION: ap-northeast-2
       AWS_ACCESS_KEY_ID: llackminio
       AWS_SECRET_ACCESS_KEY: llackminio-secret
-      LLACK_CORS_ORIGINS: "http://localhost:1420,tauri://localhost"
-    ports:
-      - "8000:8000"
+      # 웹은 nginx 가 같은 오리진으로 프록시하므로 CORS 에 들어갈 것은
+      # 데스크톱 앱의 오리진뿐입니다.
+      LLACK_CORS_ORIGINS: "tauri://localhost"
+      # 프로덕션 기본: 초대 없이는 가입 불가. 첫 부팅 시나리오는
+      # docs/DEPLOY.md 를 보세요.
+      LLACK_REQUIRE_INVITE: ${LLACK_REQUIRE_INVITE:-true}
+    # 포트를 공개하지 않습니다: 바깥세상은 web(nginx)만 봅니다. API 에
+    # 직접 붙어야 하면(디버깅) 임시로 ports 를 열어 쓰세요.
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\""]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 20s
+
+  # 웹 UI: 정적 번들 + API/WS 프록시 (deploy/nginx.conf).
+  web:
+    build:
+      context: .
+      dockerfile: desktop/Dockerfile.web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${LLACK_WEB_PUBLISH:-80}:80"
 
 volumes:
   postgres-data:

@@ -23,7 +23,7 @@ import { SignIn } from "@/components/SignIn";
 import { ThreadPane } from "@/components/ThreadPane";
 import { WebAppView } from "@/components/WebAppView";
 import { captureInviteFromLocation } from "@/lib/invite";
-import { events, type UnlistenFn } from "@/lib/ipc";
+import { events, isDesktopShell, type UnlistenFn } from "@/lib/ipc";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
@@ -33,12 +33,60 @@ const FALLBACK_SERVER = "http://localhost:8000";
 // the address is parked for redemption after sign-in.
 captureInviteFromLocation();
 
+/**
+ * System notification for a hidden browser tab. No-ops in the desktop shell
+ * (which notifies natively), in unsupported browsers, when permission was
+ * refused, and when the tab is visible (the toast covers that).
+ */
+function raiseBrowserNotification(effect: {
+  title: string;
+  body: string;
+  channel_id?: string | null;
+}): void {
+  if (isDesktopShell() || typeof Notification === "undefined") return;
+  if (!document.hidden || Notification.permission !== "granted") return;
+  try {
+    const notification = new Notification(effect.title, {
+      body: effect.body,
+      tag: effect.channel_id ?? undefined,
+    });
+    notification.onclick = () => {
+      window.focus();
+      if (effect.channel_id) void useApp.getState().openChannel(effect.channel_id);
+      notification.close();
+    };
+  } catch {
+    // Some browsers throw on construction (e.g. Android): the toast stands.
+  }
+}
+
+/**
+ * Ask once per browser, right after the first sign-in — the moment the value
+ * of notifications is most obvious and the request least resembles spam.
+ */
+function requestNotificationPermissionOnce(): void {
+  if (isDesktopShell() || typeof Notification === "undefined") return;
+  if (Notification.permission !== "default") return;
+  try {
+    if (window.localStorage.getItem("llack.notify-asked") === "1") return;
+    window.localStorage.setItem("llack.notify-asked", "1");
+  } catch {
+    // Blocked storage: asking twice is worse than never asking.
+    return;
+  }
+  void Notification.requestPermission();
+}
+
 export function App() {
   const screen = useApp((state) => state.screen);
   const [defaultServer, setDefaultServer] = useState(FALLBACK_SERVER);
 
   useRealtimeBridge(setDefaultServer);
   useKeyboardShortcuts();
+
+  useEffect(() => {
+    if (screen === "workspace") requestNotificationPermissionOnce();
+  }, [screen]);
 
   if (screen === "loading") {
     return (
@@ -190,6 +238,10 @@ function useRealtimeBridge(setDefaultServer: (url: string) => void) {
             // focused user reading another channel actually sees.
             store().pushNotice(effect);
             void store().refreshSidebar();
+            // The browser half: a tab behind other windows shows no toast, so
+            // a hidden tab raises a system notification instead. The desktop
+            // shell already does this natively and is skipped.
+            raiseBrowserNotification(effect);
             break;
           case "ignored":
             break;

@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from tests.conftest import Actor, register
+from tests.conftest import PASSWORD, Actor, register
 
 
 async def test_register_derives_a_handle_and_returns_tokens(client: httpx.AsyncClient) -> None:
@@ -243,3 +243,90 @@ async def test_a_revoked_invite_cannot_be_used(
     )
     assert refused.status_code == 403
     assert refused.json()["error"]["code"] == "invite_expired"
+
+
+# ── Admin password reset ─────────────────────────────────────────────────────
+
+
+async def test_an_admin_can_reset_a_members_password_and_kill_their_sessions(
+    client: httpx.AsyncClient, alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    from tests.test_channels import _join_workspace
+
+    await _join_workspace(alice, bob, workspace)
+    old_token = bob.tokens["access_token"]
+
+    reset = await alice.post(
+        f"/workspaces/{workspace['id']}/members/{bob.id}/reset-password"
+    )
+    assert reset.status_code == 200, reset.text
+    temp = reset.json()["temp_password"]
+    assert len(temp) >= 10
+
+    # The old password and every old session are dead.
+    old_login = await client.post(
+        "/auth/login", json={"email": "bob@example.com", "password": PASSWORD}
+    )
+    assert old_login.status_code == 401
+    stale = await client.get(
+        "/me", headers={"Authorization": f"Bearer {old_token}"}
+    )
+    assert stale.status_code == 401
+
+    # The temporary password works.
+    fresh = await client.post(
+        "/auth/login", json={"email": "bob@example.com", "password": temp}
+    )
+    assert fresh.status_code == 200
+
+
+async def test_password_reset_only_reaches_downward(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    from tests.test_channels import _join_workspace
+
+    await _join_workspace(alice, bob, workspace)
+    # A member cannot reset anyone.
+    denied = await bob.post(
+        f"/workspaces/{workspace['id']}/members/{alice.id}/reset-password"
+    )
+    assert denied.status_code == 403
+    # The owner cannot reset themselves through this door.
+    self_denied = await alice.post(
+        f"/workspaces/{workspace['id']}/members/{alice.id}/reset-password"
+    )
+    assert self_denied.status_code == 403
+    assert self_denied.json()["error"]["code"] == "cannot_reset_self"
+
+
+def test_production_refuses_dev_secrets() -> None:
+    from app.core.config import Settings, validate_production_settings
+
+    bad = Settings(
+        env="production",
+        secret_key="dev-secret-not-for-production-0123456789",
+        database_url="postgresql+asyncpg://x/x",
+    )
+    try:
+        validate_production_settings(bad)
+        raise AssertionError("dev 키로 프로덕션 기동이 허용되면 안 됩니다")
+    except RuntimeError:
+        pass
+
+    sqlite = Settings(
+        env="production",
+        secret_key="x" * 48,
+        database_url="sqlite+aiosqlite:///./x.db",
+    )
+    try:
+        validate_production_settings(sqlite)
+        raise AssertionError("프로덕션 SQLite 기동이 허용되면 안 됩니다")
+    except RuntimeError:
+        pass
+
+    good = Settings(
+        env="production",
+        secret_key="x" * 48,
+        database_url="postgresql+asyncpg://x/x",
+    )
+    validate_production_settings(good)

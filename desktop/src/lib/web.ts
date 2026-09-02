@@ -748,6 +748,12 @@ export const webApi = {
   revokeInvite: (workspaceId: Id, inviteId: string) =>
     request<void>("DELETE", `/workspaces/${workspaceId}/invites/${inviteId}`),
 
+  resetMemberPassword: (workspaceId: Id, userId: Id) =>
+    request<{ temp_password: string }>(
+      "POST",
+      `/workspaces/${workspaceId}/members/${userId}/reset-password`,
+    ),
+
   createWorkspace: (name: string, slug: string) =>
     request<Workspace>("POST", "/workspaces", { name, slug }),
 

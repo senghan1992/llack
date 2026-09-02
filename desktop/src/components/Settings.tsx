@@ -354,6 +354,8 @@ function InviteSection() {
         </ul>
       ) : null}
 
+      <ResetPasswordRow workspaceId={workspace.id} />
+
       {outstanding.length > 0 ? (
         <>
           <p className="settings-hint">
@@ -379,6 +381,100 @@ function InviteSection() {
         </>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The recovery path for "비밀번호를 잊었습니다" on a server with no email.
+ *
+ * The admin picks a member by email; the server issues a one-time temporary
+ * password (shown once, copy it now) and kills the member's sessions. The
+ * server enforces the role rules — only downward, never yourself.
+ */
+function ResetPasswordRow({ workspaceId }: { workspaceId: string }) {
+  const people = useApp((state) => state.people);
+  const me = useApp((state) => state.me);
+  const showBanner = useApp((state) => state.showBanner);
+  const reportError = useApp((state) => state.reportError);
+
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [issued, setIssued] = useState<{ email: string; password: string } | null>(null);
+
+  const reset = async () => {
+    const needle = email.trim().toLowerCase();
+    if (!needle || busy) return;
+    const target = [...people.values()].find(
+      (person) => person.email?.toLowerCase() === needle,
+    );
+    if (!target) {
+      showBanner("error", "그 이메일의 구성원을 찾지 못했습니다.");
+      return;
+    }
+    if (target.id === me?.id) {
+      showBanner("error", "내 비밀번호는 아래 계정 섹션에서 바꿀 수 있습니다.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api.resetMemberPassword(workspaceId, target.id);
+      setIssued({ email: needle, password: result.temp_password });
+      setEmail("");
+    } catch (error) {
+      reportError(error, "비밀번호를 재설정하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <p className="settings-hint" style={{ marginTop: 14 }}>
+        비밀번호를 잊은 구성원이 있다면 임시 비밀번호를 발급해 직접
+        전달해주세요. 기존 비밀번호와 모든 로그인 세션은 즉시 무효가 됩니다.
+      </p>
+      <div className="linkapp-row">
+        <input
+          className="settings-invite-input"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="구성원 이메일"
+          aria-label="비밀번호를 재설정할 구성원 이메일"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && email.trim()) void reset();
+          }}
+        />
+        <button
+          type="button"
+          className="settings-primary"
+          onClick={() => void reset()}
+          disabled={busy || !email.trim()}
+        >
+          {busy ? "발급 중…" : "임시 비밀번호 발급"}
+        </button>
+      </div>
+      {issued ? (
+        <ul className="invite-list">
+          <li>
+            <div className="invite-info">
+              <strong>{issued.email}</strong>
+              <span>임시 비밀번호: {issued.password} — 지금만 표시됩니다</span>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(issued.password)
+                  .then(() => showBanner("info", "임시 비밀번호를 복사했습니다."))
+                  .catch(() => showBanner("error", "복사하지 못했습니다."))
+              }
+            >
+              복사
+            </button>
+          </li>
+        </ul>
+      ) : null}
+    </>
   );
 }
 

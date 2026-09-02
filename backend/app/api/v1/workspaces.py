@@ -160,6 +160,54 @@ async def remove_member(member_id: str, ctx: AdminWorkspaceCtx, db: DbSession) -
     return OkResponse()
 
 
+@router.post("/{workspace_id}/members/{user_id}/reset-password", response_model=dict)
+async def reset_member_password(
+    user_id: str, ctx: AdminWorkspaceCtx, db: DbSession
+) -> dict[str, str]:
+    """Issue a one-time temporary password for a locked-out member.
+
+    No outbound email exists on this server, so recovery is a human handing a
+    human a temporary password. Guard rails: only for a member of *this*
+    workspace, only downward in role (an admin cannot reset another admin, an
+    owner can), never yourself (that is the ordinary change-password flow),
+    and every session of the target dies with the old password.
+    """
+    if user_id == ctx.user.id:
+        raise Forbidden(
+            "Use the change-password flow for your own account.",
+            code="cannot_reset_self",
+        )
+    target = await workspace_service.get_membership(
+        db, workspace_id=ctx.workspace.id, user_id=user_id
+    )
+    if target is None:
+        raise NotFound("This person is not a member of the workspace.",
+                       code="member_not_found")
+    if target.role_enum.rank >= ctx.role.rank:
+        raise Forbidden(
+            "You can only reset the password of a lower role.",
+            code="insufficient_role",
+        )
+
+    import secrets as _secrets
+
+    from app.models.user import User as UserModel
+    from app.services import auth as auth_service
+
+    user = await db.get(UserModel, user_id)
+    if user is None:
+        raise NotFound("User not found.", code="user_not_found")
+
+    temp_password = _secrets.token_urlsafe(9)
+    await auth_service.admin_set_password(db, user, temp_password)
+    await auth_service.revoke_all_sessions(db, user_id=user_id)
+    await db.commit()
+
+    # Shown once and never stored in this form; the recipient should change
+    # it immediately (환경설정 → 계정).
+    return {"temp_password": temp_password}
+
+
 @router.post("/{workspace_id}/invites", response_model=list[InviteOut],
              status_code=status.HTTP_201_CREATED)
 async def create_invites(
