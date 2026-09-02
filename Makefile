@@ -119,6 +119,10 @@ smoke: ## 실행 중인 서버에 대해 실시간/미니앱 종단 검증
 	cd $(BACKEND) && .venv/bin/python scripts/smoke_realtime.py
 	cd $(BACKEND) && .venv/bin/python scripts/smoke_apps.py
 
+.PHONY: smoke-ui
+smoke-ui: ## 실행 중인 백엔드(make dev)와 웹 모드(make ui)에 대해 헤드리스 브라우저 UI 검증 (playwright 필요 — 스크립트 도입부 참고)
+	python3 scripts/smoke_ui.py
+
 .PHONY: lint
 lint: ## 린트 및 타입 검사
 	cd $(BACKEND) && .venv/bin/ruff check app tests scripts
