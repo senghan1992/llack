@@ -1793,6 +1793,99 @@ kbd {
   color: var(--ink-muted);
 }
 
+/*
+ * An image attachment stacks: the picture above, the chip below. The chip
+ * never leaves — it is the download affordance, and the whole story when the
+ * preview cannot load.
+ */
+.attachments > li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.attachment-preview {
+  display: block;
+  max-width: min(360px, 100%);
+  padding: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: var(--n2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+}
+
+.attachment-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+}
+
+/* ── Lightbox: the one full-bleed overlay in the product ────────────────── */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  /* Darker than --scrim: a photograph needs a dark room, not a veil. */
+  background: rgba(29, 24, 26, 0.82);
+}
+
+.lightbox figure {
+  display: flex;
+  flex-direction: column;
+  max-width: min(1100px, 92vw);
+  max-height: 88vh;
+  margin: 0;
+  overflow: hidden;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-2);
+}
+
+.lightbox img {
+  display: block;
+  max-width: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.lightbox figcaption {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px 8px 14px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  border-top: 1px solid var(--rule);
+}
+
+.lightbox figcaption span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lightbox figcaption button {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-radius: var(--r-sm);
+}
+
+.lightbox figcaption button:hover {
+  color: var(--ink);
+  background: var(--n3);
+}
+
 .reaction {
   display: flex;
   align-items: center;

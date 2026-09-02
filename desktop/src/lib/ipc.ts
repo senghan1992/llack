@@ -202,6 +202,13 @@ const tauriApi = {
   downloadFile: (fileId: Id, filename: string) =>
     call<string>("download_file", { fileId, filename }),
 
+  /**
+   * An image attachment as a data URL, for inline rendering. Images only and
+   * capped — everything else is a download, not a preview.
+   */
+  filePreview: (fileId: Id, mime: string) =>
+    call<string>("file_preview", { fileId, mime }),
+
   // ── Mini-apps ─────────────────────────────────────────────────────────
 
   listInstalledApps: (workspaceId: Id) =>

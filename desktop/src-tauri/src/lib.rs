@@ -150,6 +150,7 @@ pub fn run() {
             // files
             commands::upload_file,
             commands::download_file,
+            commands::file_preview,
             // mini-apps
             commands::list_installed_apps,
             commands::list_available_apps,

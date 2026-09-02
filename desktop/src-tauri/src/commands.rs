@@ -553,6 +553,34 @@ pub async fn download_file(
     Ok(target.to_string_lossy().to_string())
 }
 
+/// An image attachment as a data URL, for rendering inline in the transcript.
+///
+/// The preview channel, not the download channel: images only, capped, and
+/// nothing touches the disk. The mime string goes into the URL, so anything
+/// that could smuggle a second field past `data:` parsing is refused here —
+/// the value came over IPC, not from a list this process built.
+#[tauri::command]
+pub async fn file_preview(
+    state: State<'_, Arc<AppState>>,
+    file_id: String,
+    mime: String,
+) -> Result<String> {
+    const PREVIEW_BYTE_CAP: usize = 10 * 1024 * 1024;
+    let clean_mime = mime
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '.' | '+'));
+    if !mime.starts_with("image/") || !clean_mime {
+        return Err(Error::Other("이미지만 미리 볼 수 있습니다.".into()));
+    }
+    let bytes = state.api()?.download_file(&file_id).await?;
+    if bytes.len() > PREVIEW_BYTE_CAP {
+        return Err(Error::Other("미리보기에는 너무 큰 파일입니다.".into()));
+    }
+    use base64::Engine as _;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
+}
+
 // ── Mini-apps ───────────────────────────────────────────────────────────────
 
 #[tauri::command]

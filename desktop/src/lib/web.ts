@@ -932,6 +932,25 @@ export const webApi = {
     return filename;
   },
 
+  /**
+   * Same bytes as the download path, folded into a data URL so the transcript
+   * can render the image inline. The `mime` parameter exists for the desktop
+   * shell; here the blob already knows its own type.
+   */
+  filePreview: async (fileId: Id, _mime: string): Promise<string> => {
+    const response = await fetch(`${apiRoot()}/files/${fileId}/download`, {
+      headers: { authorization: `Bearer ${await accessToken()}` },
+    });
+    if (!response.ok) await errorFromResponse(response);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("이미지를 읽지 못했습니다."));
+      reader.readAsDataURL(blob);
+    });
+  },
+
   // ── Mini-apps ─────────────────────────────────────────────────────────
 
   listInstalledApps: (workspaceId: Id) =>

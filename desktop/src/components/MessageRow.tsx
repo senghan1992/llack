@@ -6,6 +6,7 @@ import { renderMessage } from "@/lib/markdown";
 import type { Message } from "@/lib/types";
 import { useApp } from "@/store/app";
 
+import { AttachmentImage, isPreviewableImage } from "./AttachmentImage";
 import { Avatar } from "./Avatar";
 import {
   IconEdit,
@@ -182,6 +183,10 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
           <ul className="attachments">
             {message.attachments.map((file) => (
               <li key={file.id}>
+                {/* The image, when it loads, sits above the chip; the chip
+                    stays as the download affordance and as the whole story
+                    when the preview cannot load. */}
+                {isPreviewableImage(file) ? <AttachmentImage file={file} /> : null}
                 <button
                   type="button"
                   className="attachment"
