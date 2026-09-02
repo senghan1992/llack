@@ -494,6 +494,9 @@ function searchUnified(queryText: string): unknown {
     people: [] as unknown[],
     apps: [] as unknown[],
     messages: [] as unknown[],
+    // The demo has no file store; an empty list keeps the palette's file
+    // section honestly absent instead of undefined.
+    files: [] as unknown[],
   };
   if (!needle) return empty;
 

@@ -32,6 +32,8 @@ dependencies = [
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
+  # tests/conftest.py drives the app's lifespan through the test client.
+  "asgi-lifespan>=2.1",
   "ruff>=0.8",
   "mypy>=1.13",
 ]

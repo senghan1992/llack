@@ -214,6 +214,15 @@ export interface SearchResult {
     channel_name?: string | null;
     highlight?: string | null;
   }>;
+  /** Absent on servers older than the files-in-search release. */
+  files?: Array<{
+    id: Id;
+    filename: string;
+    mime_type?: string | null;
+    size_bytes: number;
+    created_at?: string | null;
+    uploader_name?: string | null;
+  }>;
 }
 
 /** The error shape every failed command rejects with. */

@@ -1,6 +1,6 @@
 /**
- * ⌘K — one input that searches channels, people, apps and message text at
- * once, and can act on the result.
+ * ⌘K — one input that searches channels, people, apps, message text and files
+ * at once, and can act on the result.
  *
  * This is the main thing the design bets on: in Slack, finding a person,
  * finding a channel and finding a message are three different UIs. Here they
@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { formatBytes } from "@/lib/format";
 import { api } from "@/lib/ipc";
 import { previewText } from "@/lib/markdown";
 import type { SearchResult } from "@/lib/types";
@@ -22,7 +23,8 @@ type Entry =
   | { kind: "channel"; id: string; label: string; hint?: string }
   | { kind: "person"; id: string; label: string; hint?: string; avatarUrl?: string | null }
   | { kind: "app"; id: string; label: string; hint?: string }
-  | { kind: "message"; id: string; channelId: string; label: string; hint?: string };
+  | { kind: "message"; id: string; channelId: string; label: string; hint?: string }
+  | { kind: "file"; id: string; label: string; hint?: string };
 
 export function CommandPalette() {
   const open = useApp((state) => state.paletteOpen);
@@ -159,6 +161,18 @@ export function CommandPalette() {
           hint: `#${hit.channel_name ?? ""} · ${hit.message.author?.display_name ?? ""}`,
         });
       }
+      // `files` is absent on servers older than this feature — treat it as
+      // empty rather than crashing the palette on a version skew.
+      for (const file of remote.files ?? []) {
+        push({
+          kind: "file",
+          id: file.id,
+          label: file.filename,
+          hint: [formatBytes(file.size_bytes), file.uploader_name]
+            .filter(Boolean)
+            .join(" · "),
+        });
+      }
     }
 
     return results.slice(0, 40);
@@ -184,9 +198,16 @@ export function CommandPalette() {
         case "message":
           await openChannel(entry.channelId);
           break;
+        case "file":
+          try {
+            await api.downloadFile(entry.id, entry.label);
+          } catch (error) {
+            reportError(error, "파일을 내려받지 못했습니다.");
+          }
+          break;
       }
     },
-    [channels, openChannel, joinChannel, openDm, openAppPanel, setPalette],
+    [channels, openChannel, joinChannel, openDm, openAppPanel, setPalette, reportError],
   );
 
   if (!open) return null;
@@ -206,7 +227,7 @@ export function CommandPalette() {
             setQuery(event.target.value);
             setCursor(0);
           }}
-          placeholder="채널, 사람, 앱, 메시지 검색…"
+          placeholder="채널, 사람, 앱, 메시지, 파일 검색…"
           aria-label="검색"
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
@@ -289,5 +310,7 @@ function kindLabel(kind: Entry["kind"]): string {
       return "앱";
     case "message":
       return "메시지";
+    case "file":
+      return "파일";
   }
 }

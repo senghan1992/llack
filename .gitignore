@@ -49,3 +49,4 @@ examples/apps/standup/vendor/
 # 디자인 검증 스크린샷과 세션 상태 (재생성 가능한 산출물)
 .impeccable/review/
 .impeccable/build/
+*.egg-info/

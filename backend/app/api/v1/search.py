@@ -1,8 +1,8 @@
 """Unified search — the Cmd+K palette's backend.
 
-One endpoint returns messages, channels, people and installed apps for a single
-query, so the client renders one ranked list instead of making the user pick a
-category first.
+One endpoint returns messages, channels, people, installed apps and files for a
+single query, so the client renders one ranked list instead of making the user
+pick a category first.
 """
 
 from __future__ import annotations
@@ -11,12 +11,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 from sqlalchemy import func, or_, select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbSession, WorkspaceCtx
 from app.api.v1.messages import serialise_message
 from app.core.enums import ChannelKind
 from app.models.app import AppInstallation
 from app.models.channel import Channel, ChannelMember
+from app.models.file import FileObject
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.schemas.message import SearchHit, SearchResponse
@@ -140,6 +142,26 @@ async def search_everything(
         or term.lower() in (inst.app.tagline or "").lower()
     ][:limit]
 
+    # Same visibility as the workspace file browser: filename metadata is
+    # workspace-wide; the bytes themselves stay behind the download check
+    # (membership in a channel the file was shared into).
+    files = list(
+        (
+            await db.scalars(
+                select(FileObject)
+                .where(
+                    FileObject.workspace_id == ctx.workspace.id,
+                    FileObject.deleted_at.is_(None),
+                    FileObject.is_ready.is_(True),
+                    func.lower(FileObject.filename).like(pattern),
+                )
+                .options(selectinload(FileObject.uploader))
+                .order_by(FileObject.id.desc())
+                .limit(limit)
+            )
+        ).all()
+    )
+
     message_hits, _, took_ms = await message_service.search_messages(
         db,
         workspace_id=ctx.workspace.id,
@@ -183,6 +205,17 @@ async def search_everything(
                 "has_panel": i.app.has_panel,
             }
             for i in matched_apps
+        ],
+        "files": [
+            {
+                "id": f.id,
+                "filename": f.filename,
+                "mime_type": f.mime_type,
+                "size_bytes": f.size_bytes,
+                "created_at": f.created_at.isoformat() if f.created_at else None,
+                "uploader_name": f.uploader.display_name if f.uploader else None,
+            }
+            for f in files
         ],
         "messages": [
             {

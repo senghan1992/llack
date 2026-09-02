@@ -168,3 +168,22 @@ async def test_path_traversal_in_a_filename_is_neutralised(
     assert uploaded.json()["filename"] == "passwd"
     # ...and the file is readable, i.e. it landed inside the storage root.
     assert (await alice.get(f"/files/{uploaded.json()['id']}/download")).content == CONTENT
+
+
+async def test_unified_search_finds_files_by_name_but_not_unfinished_uploads(
+    alice: Actor, workspace: dict
+) -> None:
+    await _upload(alice, workspace, "분기 매출.csv")
+    # A reserved ticket whose bytes never arrived must stay invisible.
+    ticket = await alice.post(
+        f"/workspaces/{workspace['id']}/files",
+        json={"filename": "매출 초안.csv", "size_bytes": len(CONTENT)},
+    )
+    assert ticket.status_code == 201
+
+    result = (await alice.get(f"/workspaces/{workspace['id']}/search?q=매출")).json()
+    names = [f["filename"] for f in result["files"]]
+    assert names == ["분기 매출.csv"]
+    hit = result["files"][0]
+    assert hit["size_bytes"] == len(CONTENT)
+    assert hit["uploader_name"] == "김앨리스"
