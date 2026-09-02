@@ -656,6 +656,16 @@ pub async fn install_app(
 }
 
 #[tauri::command]
+pub async fn add_link_app(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    name: String,
+    url: String,
+) -> Result<llack_core::AppInstallation> {
+    state.api()?.add_link_app(&workspace_id, &name, &url).await
+}
+
+#[tauri::command]
 pub async fn uninstall_app(state: State<'_, Arc<AppState>>, installation_id: String) -> Result<()> {
     state.api()?.uninstall_app(&installation_id).await
 }

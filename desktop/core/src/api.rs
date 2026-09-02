@@ -635,6 +635,23 @@ impl ApiClient {
         .await
     }
 
+    /// Register and pin an external web app from a bare URL. The server
+    /// derives the manifest; the caller supplies only what a person typed.
+    pub async fn add_link_app(
+        &self,
+        workspace_id: &str,
+        name: &str,
+        url: &str,
+    ) -> Result<AppInstallation> {
+        let payload = serde_json::json!({ "name": name, "url": url });
+        self.send(
+            Method::POST,
+            &format!("/workspaces/{workspace_id}/apps/link"),
+            Some(&payload),
+        )
+        .await
+    }
+
     pub async fn install_app(
         &self,
         workspace_id: &str,

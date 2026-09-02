@@ -159,6 +159,7 @@ pub fn run() {
             commands::list_installed_apps,
             commands::list_available_apps,
             commands::install_app,
+            commands::add_link_app,
             commands::uninstall_app,
             commands::open_app_panel,
             // shell

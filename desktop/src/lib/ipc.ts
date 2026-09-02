@@ -237,6 +237,10 @@ const tauriApi = {
       grantedScopes: grantedScopes ?? null,
     }),
 
+  /** Register and pin an external web app from a bare URL (admin). */
+  addLinkApp: (workspaceId: Id, name: string, url: string) =>
+    call<AppInstallation>("add_link_app", { workspaceId, name, url }),
+
   uninstallApp: (installationId: Id) =>
     call<void>("uninstall_app", { installationId }),
 

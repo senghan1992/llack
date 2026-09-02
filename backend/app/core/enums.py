@@ -56,6 +56,9 @@ class AppKind(StrEnum):
     PANEL = "panel"     # renders UI in the app panel
     BOT = "bot"         # posts messages, no UI
     BOTH = "both"
+    # An external site embedded as-is in the main pane. No bridge, no token,
+    # no scopes — the host lends it a frame and nothing else.
+    LINK = "link"
 
 
 class AppStatus(StrEnum):

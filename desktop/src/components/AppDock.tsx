@@ -38,6 +38,8 @@ export function AppDock() {
   const installations = useApp((state) => state.installations);
   const openPanelInstallationId = useApp((state) => state.openPanelInstallationId);
   const openAppPanel = useApp((state) => state.openAppPanel);
+  const openWebAppInstallationId = useApp((state) => state.openWebAppInstallationId);
+  const openWebApp = useApp((state) => state.openWebApp);
   const badge = useApp((state) => state.badge);
   const agentOpen = useAgent((state) => state.open);
   const setAgentOpen = useAgent((state) => state.setOpen);
@@ -97,13 +99,29 @@ export function AppDock() {
             key={installation.id}
             type="button"
             className={`dock-tile dock-app ${
-              installation.id === openPanelInstallationId ? "is-open" : ""
+              installation.id === openPanelInstallationId ||
+              installation.id === openWebAppInstallationId
+                ? "is-open"
+                : ""
             }`}
-            onClick={() =>
-              openAppPanel(
-                installation.id === openPanelInstallationId ? null : installation.id,
-              )
-            }
+            onClick={() => {
+              // A link app takes the main pane; a mini-app docks beside it.
+              // Same tile, different seat — the distinction is the app's
+              // kind, not something the person has to know.
+              if (installation.app.kind === "link") {
+                openWebApp(
+                  installation.id === openWebAppInstallationId
+                    ? null
+                    : installation.id,
+                );
+              } else {
+                openAppPanel(
+                  installation.id === openPanelInstallationId
+                    ? null
+                    : installation.id,
+                );
+              }
+            }}
             title={installation.app.tagline ?? installation.app.name}
           >
             {/*
@@ -199,6 +217,31 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState<string | null>(null);
 
+  const [linkName, setLinkName] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [addingLink, setAddingLink] = useState(false);
+
+  const addLink = async () => {
+    if (!workspaceId || addingLink) return;
+    setAddingLink(true);
+    try {
+      // The name falls back to the host, so pasting a URL alone is enough.
+      const name = linkName.trim() || new URL(linkUrl.trim()).host;
+      await api.addLinkApp(workspaceId, name, linkUrl.trim());
+      await loadInstallations();
+      setLinkName("");
+      setLinkUrl("");
+      onClose();
+    } catch (error) {
+      reportError(
+        error,
+        "웹 앱을 추가하지 못했습니다. 주소를 확인해주세요 (관리자 권한이 필요합니다).",
+      );
+    } finally {
+      setAddingLink(false);
+    }
+  };
+
   useEffect(() => {
     if (!workspaceId) {
       setLoading(false);
@@ -252,10 +295,52 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="modal-body">
+          {/*
+            The URL form sits first: for most teams "우리가 이미 배포한 웹
+            도구를 넣는다"가 매니페스트 앱 설치보다 훨씬 잦은 동작입니다.
+          */}
+          <section className="linkapp-form">
+            <h3>웹 앱을 주소로 추가</h3>
+            <p className="settings-hint">
+              팀이 배포한 웹 도구의 주소를 넣으면 왼쪽 도크에 들어가고, 누르면
+              이 창 안에서 열립니다. 워크스페이스 관리자만 추가할 수 있습니다.
+            </p>
+            <div className="linkapp-fields">
+              <input
+                value={linkUrl}
+                onChange={(event) => setLinkUrl(event.target.value)}
+                placeholder="https://tool.example.com"
+                aria-label="웹 앱 주소"
+                inputMode="url"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && linkUrl.trim()) void addLink();
+                }}
+              />
+              <input
+                value={linkName}
+                onChange={(event) => setLinkName(event.target.value)}
+                placeholder="이름 (비우면 주소에서)"
+                aria-label="웹 앱 이름"
+                maxLength={120}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && linkUrl.trim()) void addLink();
+                }}
+              />
+              <button
+                type="button"
+                className="settings-primary"
+                onClick={() => void addLink()}
+                disabled={!linkUrl.trim() || addingLink}
+              >
+                {addingLink ? "추가 중…" : "추가"}
+              </button>
+            </div>
+          </section>
+
           {loading ? <p>불러오는 중…</p> : null}
           {!loading && available.length === 0 ? (
             <p className="modal-empty">
-              설치할 수 있는 앱이 없습니다. 사내 앱을 등록하면 여기에 나타납니다.
+              설치할 수 있는 미니앱이 없습니다. 사내 앱을 등록하면 여기에 나타납니다.
             </p>
           ) : null}
 

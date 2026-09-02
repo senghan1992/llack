@@ -252,6 +252,27 @@ export function IconGear(props: IconProps) {
   );
 }
 
+/** A globe: the meridian ellipse over the equator line, inside the circle. */
+export function IconGlobe(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="5.9" />
+      <ellipse cx="8" cy="8" rx="2.7" ry="5.9" />
+      <path d="M2.3 8h11.4" />
+    </Svg>
+  );
+}
+
+/** Reload: a broken circle with an arrowhead at the break. */
+export function IconRefresh(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.8" />
+      <path d="M13.6 1.9v2.5h-2.5" />
+    </Svg>
+  );
+}
+
 /**
  * Expand the rail. Two chevrons pointing at the space the labels will take;
  * the caller flips it with a transform when the rail is already expanded.

@@ -7,10 +7,11 @@ notify — and every route enforces the installation's granted scopes.
 
 from __future__ import annotations
 
+import secrets
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
-from pydantic import Field
+from pydantic import AnyHttpUrl, Field
 
 from app.api.deps import (
     AdminWorkspaceCtx,
@@ -19,7 +20,7 @@ from app.api.deps import (
     DbSession,
     WorkspaceCtx,
 )
-from app.core.enums import AppScope, AppStatus, MessageKind
+from app.core.enums import AppKind, AppScope, AppStatus, MessageKind
 from app.core.errors import Forbidden, NotFound
 from app.models.app import App
 from app.realtime.events import emit_to_channel, emit_to_users, emit_to_workspace
@@ -154,6 +155,61 @@ async def install_app(
         granted_scopes=payload.granted_scopes,
         config=payload.config,
         pin_to_dock=payload.pin_to_dock,
+    )
+    await db.commit()
+    await db.refresh(installation, ["app"])
+
+    out = AppInstallationOut.model_validate(installation)
+    await emit_to_workspace(
+        ctx.workspace.id,
+        ServerEvent.APP_INSTALLED,
+        {"installation": out.model_dump(mode="json")},
+    )
+    return out
+
+
+class AddLinkAppRequest(Payload):
+    name: str = Field(min_length=1, max_length=120)
+    url: AnyHttpUrl
+    icon_url: str | None = Field(default=None, max_length=2000)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/apps/link",
+    response_model=AppInstallationOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_link_app(
+    payload: AddLinkAppRequest, ctx: AdminWorkspaceCtx, db: DbSession
+) -> AppInstallationOut:
+    """Register and pin an external web app in one step.
+
+    The whole point is that a URL is enough: no manifest file, no scopes, no
+    second request. The app lands private to this workspace, installed and
+    pinned. `AnyHttpUrl` restricts the scheme to http(s), so `javascript:`
+    and friends never reach the dock; `has_panel` stays false for LINK apps,
+    so the bridge-token path structurally cannot mint one for an external
+    site.
+    """
+    manifest = AppManifest(
+        slug=f"link-{secrets.token_hex(4)}",
+        name=payload.name,
+        tagline=payload.url.host,
+        icon_url=payload.icon_url,
+        kind=AppKind.LINK,
+        panel_url=payload.url,
+    )
+    app_row = await app_service.register_app(
+        db, manifest=manifest, author=ctx.user, owner_workspace_id=ctx.workspace.id
+    )
+    installation = await app_service.install_app(
+        db,
+        workspace_id=ctx.workspace.id,
+        app_row=app_row,
+        actor=ctx.user,
+        granted_scopes=[],
+        config={},
+        pin_to_dock=True,
     )
     await db.commit()
     await db.refresh(installation, ["app"])

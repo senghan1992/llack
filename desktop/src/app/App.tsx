@@ -20,6 +20,7 @@ import { Settings } from "@/components/Settings";
 import { Sidebar } from "@/components/Sidebar";
 import { SignIn } from "@/components/SignIn";
 import { ThreadPane } from "@/components/ThreadPane";
+import { WebAppView } from "@/components/WebAppView";
 import { events, type UnlistenFn } from "@/lib/ipc";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
@@ -68,11 +69,7 @@ export function App() {
             member count over a thread and an agent panel that are not the
             channel — and it stopped each sheet from being its own card.
           */}
-          <div className="main-transcript">
-            <ChannelHeader />
-            <MessageList />
-            <Composer />
-          </div>
+          <MainPane />
           <ThreadPane />
           <AppPanel />
           <AgentPanel />
@@ -81,6 +78,35 @@ export function App() {
       <CommandPalette />
       <Settings />
       <Notices />
+    </div>
+  );
+}
+
+/**
+ * The main pane: the transcript, unless a link app has borrowed the seat.
+ *
+ * One seat, two occupants, never both — an embedded dashboard next to a
+ * half-visible transcript would be two half-products. Opening a channel gives
+ * the seat back (the store clears the web app there).
+ */
+function MainPane() {
+  const webAppId = useApp((state) => state.openWebAppInstallationId);
+  const installation = useApp((state) =>
+    state.installations.find((entry) => entry.id === state.openWebAppInstallationId),
+  );
+
+  if (webAppId && installation) {
+    return (
+      <div className="main-transcript">
+        <WebAppView installation={installation} />
+      </div>
+    );
+  }
+  return (
+    <div className="main-transcript">
+      <ChannelHeader />
+      <MessageList />
+      <Composer />
     </div>
   );
 }

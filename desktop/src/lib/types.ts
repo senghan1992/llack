@@ -141,6 +141,9 @@ export interface AppSummary {
   id: Id;
   slug: string;
   name: string;
+  /** "link" is an external site the main pane embeds as-is — no bridge,
+   *  no token. Absent on servers older than the link-app release. */
+  kind?: "panel" | "bot" | "both" | "link" | null;
   tagline?: string | null;
   icon_url?: string | null;
   accent_color?: string | null;

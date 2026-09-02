@@ -368,6 +368,11 @@ pub struct AppSummary {
     pub id: Id,
     pub slug: String,
     pub name: String,
+    /// "panel" | "bot" | "both" | "link". A link app is an external site the
+    /// main pane embeds as-is — the UI branches on this, the server enforces
+    /// what it implies (no scopes, no bridge token).
+    #[serde(default)]
+    pub kind: Option<String>,
     #[serde(default)]
     pub tagline: Option<String>,
     #[serde(default)]

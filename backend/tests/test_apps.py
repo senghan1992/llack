@@ -344,3 +344,59 @@ async def test_reinstall_upgrades_in_place(alice: Actor, workspace: dict) -> Non
     assert second["id"] == first["id"]
     assert set(second["granted_scopes"]) == set(MANIFEST["scopes"])
     assert len((await alice.get(f"/workspaces/{workspace['id']}/apps")).json()) == 1
+
+
+# ── Link apps: a URL is enough ───────────────────────────────────────────────
+
+
+async def test_a_url_becomes_a_pinned_link_app_in_one_post(
+    alice: Actor, workspace: dict
+) -> None:
+    added = await alice.post(
+        f"/workspaces/{workspace['id']}/apps/link",
+        json={"name": "사내 위키", "url": "https://wiki.example.com/home"},
+    )
+    assert added.status_code == 201, added.text
+    installation = added.json()
+    assert installation["is_pinned"] is True
+    assert installation["app"]["kind"] == "link"
+    assert installation["app"]["panel_url"] == "https://wiki.example.com/home"
+    assert installation["app"]["tagline"] == "wiki.example.com"
+    assert installation["granted_scopes"] == []
+
+    listed = (await alice.get(f"/workspaces/{workspace['id']}/apps")).json()
+    assert any(i["id"] == installation["id"] for i in listed)
+
+
+async def test_adding_a_link_app_requires_a_workspace_admin(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    await _join_workspace(alice, bob, workspace)
+    denied = await bob.post(
+        f"/workspaces/{workspace['id']}/apps/link",
+        json={"name": "위키", "url": "https://wiki.example.com"},
+    )
+    assert denied.status_code == 403
+
+
+async def test_a_link_app_refuses_non_http_urls(alice: Actor, workspace: dict) -> None:
+    for url in ("javascript:alert(1)", "file:///etc/passwd", "ftp://x.example.com"):
+        response = await alice.post(
+            f"/workspaces/{workspace['id']}/apps/link",
+            json={"name": "이상한 앱", "url": url},
+        )
+        assert response.status_code == 422, url
+
+
+async def test_a_link_app_never_gets_a_bridge_token(alice: Actor, workspace: dict) -> None:
+    installation = (
+        await alice.post(
+            f"/workspaces/{workspace['id']}/apps/link",
+            json={"name": "사내 위키", "url": "https://wiki.example.com"},
+        )
+    ).json()
+    session = await alice.post(
+        f"/app-installations/{installation['id']}/panel-session"
+    )
+    assert session.status_code == 403
+    assert session.json()["error"]["code"] == "app_without_panel"

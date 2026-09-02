@@ -18,6 +18,7 @@ import base64
 import hashlib
 import os
 import sys
+import time
 
 import httpx
 from playwright.async_api import async_playwright
@@ -131,7 +132,9 @@ async def main() -> None:
         ok("ui: 컴포저 공유 서식 메뉴")
         await page.keyboard.press("Escape")
 
-        await page.hover("article", position={"x": 200, "y": 10})
+        # The last message is always in view; the first can sit under the
+        # sticky channel header, which intercepts the pointer.
+        await page.locator("article").last.hover(position={"x": 200, "y": 10})
         share_buttons = page.locator('button[aria-label="다른 대화로 공유"]')
         assert await share_buttons.count() > 0
         ok("ui: 메시지 공유 버튼 존재")
@@ -145,13 +148,38 @@ async def main() -> None:
         ok(f"ui: 채널 설정 모달 — 구성원 {members}명 로드")
 
         topic_input = page.locator('.channel-settings label:has-text("주제") input')
-        stamp = "스모크가 다녀간 주제"
+        # Unique per run: a repeated stamp would leave the form pristine and
+        # the save button honestly disabled.
+        stamp = f"스모크가 다녀간 주제 {int(time.time())}"
         await topic_input.fill(stamp)
         await page.click('.channel-settings button:has-text("저장")')
         await page.wait_for_selector(f'.channel-topic:has-text("{stamp}")')
         ok("ui: 주제 수정이 저장되고 머리글에 반영됨")
         await page.keyboard.press("Escape")
         await page.wait_for_selector(".channel-settings", state="detached")
+
+        # ── 웹 앱: URL 하나가 도크 타일이 되고 메인 패널을 채운다 ────────
+        await page.click('button[aria-label="앱 추가"]')
+        await page.wait_for_selector(".linkapp-form", state="visible")
+        # 임베드를 확실히 허용하는 페이지: 백엔드 자신의 API 문서.
+        docs_url = API.removesuffix("/api/v1") + "/docs"
+        await page.fill('input[aria-label="웹 앱 주소"]', docs_url)
+        await page.fill('input[aria-label="웹 앱 이름"]', "스모크 도구")
+        await page.click('.linkapp-form button:has-text("추가")')
+        tile = page.locator('.dock-app:has-text("스모크 도구")').first
+        await tile.wait_for(state="visible")
+        ok("ui: URL 추가 → 도크 타일 생성")
+
+        await tile.click()
+        await page.wait_for_selector(".webapp-view", state="visible")
+        frame_src = await page.locator(".webapp-frame").get_attribute("src")
+        assert frame_src and frame_src.startswith(docs_url), frame_src
+        ok("ui: 링크 앱이 메인 패널 iframe 으로 열림")
+
+        await page.click('.webapp-header button[aria-label="닫기"]')
+        await page.wait_for_selector(".webapp-view", state="detached")
+        assert await page.locator(".channel-header").is_visible()
+        ok("ui: 닫으면 전사록으로 복귀")
 
         # ── 환경설정: 기능 안내가 있다 ───────────────────────────────────
         await page.click('button[aria-label="환경설정"]')

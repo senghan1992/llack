@@ -445,6 +445,7 @@ export async function demoRequest<T>(
   }
   if (seg(0) === "app-installations" && method === "DELETE") return ok(undefined);
   if (seg(0) === "workspaces" && seg(3) === "install") throw unsupported("앱 설치");
+  if (seg(0) === "workspaces" && seg(3) === "link") throw unsupported("웹 앱 추가");
 
   if (seg(0) === "workspaces" && seg(2) === "channels" && length === 3) {
     return ok(withDemoStates(allChannels() as unknown[]));

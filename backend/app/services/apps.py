@@ -103,6 +103,20 @@ def _validate_manifest_surfaces(manifest: AppManifest) -> None:
             "A panel app must declare panel_url.",
             code="manifest_missing_panel_url",
         )
+    if manifest.kind is AppKind.LINK:
+        if manifest.panel_url is None:
+            raise Conflict(
+                "A link app must declare panel_url.",
+                code="manifest_missing_panel_url",
+            )
+        if manifest.scopes:
+            # A link app is an arbitrary external site: it gets a frame from
+            # the host and nothing else, so scopes are meaningless here and
+            # accepting them would only mislead the installer.
+            raise Conflict(
+                "A link app cannot request scopes.",
+                code="manifest_link_with_scopes",
+            )
     if manifest.kind is AppKind.BOT and manifest.panel_url is not None:
         raise Conflict(
             "A bot-only app must not declare panel_url.",

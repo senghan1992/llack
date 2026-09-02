@@ -102,6 +102,8 @@ interface AppStateShape {
   // ── Mini-apps ─────────────────────────────────────────────────────────
   installations: AppInstallation[];
   openPanelInstallationId: Id | null;
+  /** A link app filling the main pane instead of the transcript. */
+  openWebAppInstallationId: Id | null;
 
   // ── UI ────────────────────────────────────────────────────────────────
   paletteOpen: boolean;
@@ -149,6 +151,7 @@ interface AppActions {
 
   loadInstallations: () => Promise<void>;
   openAppPanel: (installationId: Id | null) => void;
+  openWebApp: (installationId: Id | null) => void;
 
   setPalette: (open: boolean) => void;
   setSettings: (open: boolean) => void;
@@ -207,6 +210,7 @@ export const useApp = create<AppStore>((set, get) => ({
 
   installations: [],
   openPanelInstallationId: null,
+  openWebAppInstallationId: null,
 
   paletteOpen: false,
   settingsOpen: false,
@@ -275,6 +279,7 @@ export const useApp = create<AppStore>((set, get) => ({
         presence: new Map(),
         installations: [],
         openPanelInstallationId: null,
+        openWebAppInstallationId: null,
         openThreadId: null,
         threadReplies: new Map(),
         badge: 0,
@@ -304,6 +309,7 @@ export const useApp = create<AppStore>((set, get) => ({
       activeChannelId: null,
       openThreadId: null,
       openPanelInstallationId: null,
+      openWebAppInstallationId: null,
     });
 
     // Cached first so the sidebar paints immediately, then authoritative.
@@ -344,7 +350,12 @@ export const useApp = create<AppStore>((set, get) => ({
     set((state) => ({
       notices: state.notices.filter((notice) => notice.channelId !== channelId),
     }));
-    set({ activeChannelId: channelId, openThreadId: null });
+    set({
+      activeChannelId: channelId,
+      openThreadId: null,
+      // Coming back to a conversation dismisses an embedded web app.
+      openWebAppInstallationId: null,
+    });
 
     // Paint from cache, then refresh.
     try {
@@ -681,6 +692,10 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   openAppPanel: (installationId) => set({ openPanelInstallationId: installationId }),
+
+  // The main pane shows the transcript or a web app, never both: opening one
+  // clears the other, and `openChannel` clears this (see there).
+  openWebApp: (installationId) => set({ openWebAppInstallationId: installationId }),
 
   // ── UI ────────────────────────────────────────────────────────────────
 

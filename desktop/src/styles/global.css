@@ -3071,6 +3071,126 @@ kbd {
   cursor: not-allowed;
 }
 
+/* ── 웹 앱: 링크 앱이 전사록의 자리를 빌립니다 ──────────────────────────── */
+
+.webapp-view {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.webapp-header {
+  display: flex;
+  height: var(--header-h);
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.webapp-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16.5px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.webapp-host {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webapp-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.webapp-open {
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--ink-secondary);
+  text-decoration: none;
+  background: var(--n2);
+  border-radius: var(--r-sm);
+}
+
+.webapp-open:hover {
+  color: var(--ink);
+  background: var(--n3);
+}
+
+.webapp-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  background: var(--card);
+  border: 0;
+}
+
+.webapp-footnote {
+  flex: none;
+  padding: 6px 16px 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  border-top: 1px solid var(--rule);
+}
+
+/* ── 앱 디렉터리의 URL 추가 폼 ──────────────────────────────────────────── */
+
+.linkapp-form h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+.linkapp-form {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.linkapp-fields {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.linkapp-fields input {
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--n2);
+  border-radius: var(--r-md);
+}
+
+.linkapp-fields input:first-child {
+  flex: 1.6;
+}
+
+.linkapp-fields input + input {
+  flex: 1;
+}
+
+.linkapp-fields .settings-primary {
+  flex: none;
+}
+
 /*
  * The palette's field is the palette's own top edge, so it is the one field
  * that is not a well: a well inside a 16px card with no padding would need a

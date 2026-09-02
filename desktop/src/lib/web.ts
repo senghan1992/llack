@@ -977,6 +977,12 @@ export const webApi = {
       granted_scopes: grantedScopes ?? null,
     }),
 
+  addLinkApp: (workspaceId: Id, name: string, url: string) =>
+    request<AppInstallation>("POST", `/workspaces/${workspaceId}/apps/link`, {
+      name,
+      url,
+    }),
+
   uninstallApp: (installationId: Id) =>
     request<void>("DELETE", `/app-installations/${installationId}`),
 
