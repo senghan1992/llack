@@ -23,6 +23,7 @@ import type {
   AgentToolResult,
   AgentToolSpec,
 } from "./agent/types";
+import { demoRequest, isDemoBuild } from "@/lib/demo";
 import { asCommandError, commandError } from "./errors";
 import type {
   AppInstallation,
@@ -242,6 +243,12 @@ async function request<T>(
   body?: unknown,
   { auth = true, retry = true }: RequestOptions = {},
 ): Promise<T> {
+  // The demo build answers from memory. One branch, at the single chokepoint,
+  // so everything above it — the adapter, the outbox, the store, the whole UI —
+  // is the same code the real browser mode runs. A separate mock app would look
+  // like the product without being it.
+  if (isDemoBuild()) return demoRequest<T>(method, path, body);
+
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["content-type"] = "application/json";
   if (auth) headers.authorization = `Bearer ${await accessToken()}`;
@@ -367,6 +374,20 @@ function disconnectSocket(): void {
 async function connectSocket(workspaceId: Id | null): Promise<void> {
   if (!session) return;
   activeWorkspaceId = workspaceId ?? activeWorkspaceId;
+
+  if (isDemoBuild()) {
+    // No socket to open. Reported as connected rather than left in "연결 중":
+    // a permanent connecting spinner is the first thing a reviewer would file
+    // as a bug, and in a single page there is genuinely nothing to connect to.
+    // What is therefore absent, honestly: typing indicators, presence dots
+    // updating, and another person's message arriving while you watch.
+    emit<ConnectionStatus>("connection", {
+      status: "connected",
+      session_id: "demo",
+      workspace_ids: activeWorkspaceId ? [activeWorkspaceId] : [],
+    });
+    return;
+  }
 
   disconnectSocket();
   closedByUs = false;

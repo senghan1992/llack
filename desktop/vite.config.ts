@@ -49,6 +49,17 @@ export default defineConfig({
     outDir: "dist",
   },
   resolve: {
-    alias: { "@": new URL("./src", import.meta.url).pathname },
+    alias: [
+      /*
+       * The demo runtime and its 47KB recording exist only in the demo build.
+       * Aliased here rather than tree-shaken: `web.ts` references
+       * `demoRequest`, so the bundler cannot drop the fixture on its own, and a
+       * static import put it in the desktop app's bundle where it is
+       * unreachable by construction. Exact match, so `@/lib/demo/…` paths are
+       * unaffected.
+       */
+      { find: /^@\/lib\/demo$/, replacement: new URL("./src/lib/demo/absent.ts", import.meta.url).pathname },
+      { find: "@", replacement: new URL("./src", import.meta.url).pathname },
+    ],
   },
 });

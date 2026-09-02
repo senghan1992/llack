@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { demoUser, isDemoBuild } from "@/lib/demo";
 import { useApp } from "@/store/app";
 
 export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
@@ -11,8 +12,16 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [server, setServer] = useState(serverUrl || defaultServerUrl);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  /*
+   * The demo build prefills and accepts anything.
+   *
+   * The screen is still shown rather than skipped: it is part of the product,
+   * and a walkthrough that starts already signed in hides the first thing a
+   * reviewer sees on their own machine. One click gets past it.
+   */
+  const demo = isDemoBuild();
+  const [email, setEmail] = useState(demo ? demoUser.email : "");
+  const [password, setPassword] = useState(demo ? "demo" : "");
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -44,16 +53,24 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
           <p className="signin-subtitle">사내 협업 OS</p>
         </header>
 
-        <label>
-          서버 주소
-          <input
-            value={server}
-            onChange={(event) => setServer(event.target.value)}
-            placeholder="https://llack.example.com"
-            autoComplete="url"
-            required
-          />
-        </label>
+        {demo ? (
+          <p className="signin-demo">
+            둘러보기용 데모입니다. 서버 없이 이 페이지 안에서 동작하고, 아무
+            비밀번호나 넣어도 들어갑니다. 입력한 내용은 어디에도 저장되지
+            않습니다.
+          </p>
+        ) : (
+          <label>
+            서버 주소
+            <input
+              value={server}
+              onChange={(event) => setServer(event.target.value)}
+              placeholder="https://llack.example.com"
+              autoComplete="url"
+              required
+            />
+          </label>
+        )}
 
         {mode === "signup" ? (
           <label>

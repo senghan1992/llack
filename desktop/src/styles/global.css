@@ -2064,6 +2064,83 @@ kbd {
   text-underline-offset: 2px;
 }
 
+/* ── The crash screen ────────────────────────────────────────────────── */
+
+.crash {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--board);
+  place-items: center;
+}
+
+.crash-plate {
+  display: flex;
+  width: 100%;
+  max-width: 420px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+
+.crash-plate h1 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.crash-plate p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+}
+
+.crash-plate button {
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-inverse);
+  background: var(--signal);
+  border-radius: var(--r);
+}
+
+.crash-plate button:hover {
+  background: var(--signal-press);
+}
+
+.crash-plate details {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+}
+
+.crash-plate summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.crash-plate pre {
+  padding: 8px 10px;
+  margin-top: 6px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  background: var(--n2);
+  border-left: 2px solid var(--rule-strong);
+}
+
+/* The demo build's one added element: what this page is, before you use it. */
+.signin-demo {
+  padding: 9px 11px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-left: 2px solid var(--rule-strong);
+}
+
 /* ── The agent sheet ─────────────────────────────────────────────────────
  *
  * Same plate, same rules, same one colour as everything else. The agent gets

@@ -68,6 +68,15 @@ ui: ## 브라우저에서 앱 실행 (Tauri 없이, 로컬 접속만)
 web: ## 브라우저 모드를 0.0.0.0 에 바인딩 (LAN 직접 접속용 · 터널은 ui 로 충분)
 	cd $(DESKTOP) && LLACK_WEB_HOST=0.0.0.0 npm run dev
 
+.PHONY: demo
+demo: ## 서버 없이 도는 한 파일 데모를 desktop/demo.html 로 빌드
+	cd $(DESKTOP) && npx vite build --config vite.demo.config.ts && node scripts/build-demo.mjs
+
+.PHONY: demo-fixture
+demo-fixture: ## 데모 데이터를 실행 중인 백엔드에서 다시 녹음 (make seed && make dev 먼저)
+	cd $(DESKTOP) && ../backend/.venv/bin/python scripts/dump-demo-fixture.py > src/lib/demo/fixture.json
+	@echo "다시 녹음했습니다. make demo 로 빌드하세요."
+
 .PHONY: example-app
 example-app: vendor-sdk ## 예제 미니앱을 5180 포트로 서빙
 	cd examples/apps/standup && python3 -m http.server 5180
@@ -98,11 +107,11 @@ reset-db: ## 개발 DB 삭제 후 재생성 + 시드
 test: test-backend test-core ## 전체 테스트
 
 .PHONY: test-backend
-test-backend: ## 백엔드 테스트 (77개)
+test-backend: ## 백엔드 테스트
 	cd $(BACKEND) && .venv/bin/python -m pytest -q
 
 .PHONY: test-core
-test-core: ## Rust 코어 테스트 (50개)
+test-core: ## Rust 코어 테스트
 	cd $(DESKTOP) && $(CARGO) test -p llack-core
 
 .PHONY: smoke
@@ -159,6 +168,6 @@ compose-nuke: ## 컨테이너와 볼륨까지 삭제
 
 .PHONY: clean
 clean: ## 빌드 산출물 삭제
-	rm -rf $(DESKTOP)/dist $(SDK)/dist
+	rm -rf $(DESKTOP)/dist $(DESKTOP)/dist-demo $(DESKTOP)/demo.html $(SDK)/dist
 	rm -rf $(BACKEND)/.pytest_cache $(BACKEND)/.ruff_cache
 	find $(BACKEND) -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true

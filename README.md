@@ -12,7 +12,7 @@ Slack/Teams 를 대체하려는 것이 아니라, **매일 쓰면서 불편했�
 ---
 
 > **윈도우에서 확인하시려면 → [docs/WINDOWS.md](docs/WINDOWS.md)**
-> 설치 없이 브라우저로만 보시려면 → **[docs/WEB.md](docs/WEB.md)**
+> 설치 없이 보시려면 → **[docs/WEB.md](docs/WEB.md)** (`make demo` 로 파일 하나면 끝납니다)
 > 코드 가져오기부터 데스크톱 창 띄우기까지 단계별로 정리해 두었습니다.
 > 윈도우에는 `make` 가 없으므로 `.\llack.ps1` 스크립트를 쓰세요.
 
@@ -140,7 +140,7 @@ llack/
 ## 문서
 
 - [docs/WINDOWS.md](docs/WINDOWS.md) — 윈도우에서 실행하기 (전송 · 설치 · 확인 · 문제 해결)
-- [docs/WEB.md](docs/WEB.md) — 설치 없이 브라우저에서 보기 (SSH 터널 · 빠지는 기능)
+- [docs/WEB.md](docs/WEB.md) — 설치 없이 보기: 서버 없는 데모 한 파일, 또는 SSH 터널 + 브라우저 모드
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 시스템 구조, 데이터 모델, 실시간 프로토콜, 배포
 - [docs/APP_PLATFORM.md](docs/APP_PLATFORM.md) — 미니앱 플랫폼: 매니페스트, 스코프, 보안 모델
 - [docs/AGENT.md](docs/AGENT.md) — 에이전트 패널: 도구, 승인 등급, 감사 로그, **없는 것**
