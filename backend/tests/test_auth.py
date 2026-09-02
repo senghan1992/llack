@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 
 from tests.conftest import Actor, register
 
@@ -136,3 +137,109 @@ async def test_sessions_list_marks_the_current_device(
     sessions = response.json()
     assert len(sessions) == 2
     assert sum(1 for s in sessions if s["is_current"]) == 1
+
+
+# ── Invite-gated sign-up ─────────────────────────────────────────────────────
+
+
+async def _invite_token(alice: Actor, workspace: dict, email: str) -> str:
+    created = await alice.post(
+        f"/workspaces/{workspace['id']}/invites",
+        json={"emails": [email], "role": "member"},
+    )
+    assert created.status_code == 201, created.text
+    url = created.json()[0]["invite_url"]
+    return url.split("token=")[1].split("&")[0]
+
+
+async def test_signing_up_with_an_invite_joins_the_workspace_in_one_step(
+    client: httpx.AsyncClient, alice: Actor, workspace: dict
+) -> None:
+    token = await _invite_token(alice, workspace, "joiner@example.com")
+    signed_up = await client.post(
+        "/auth/register",
+        json={
+            "email": "joiner@example.com",
+            "password": "joiner-password-1",
+            "display_name": "합류자",
+            "invite_token": token,
+        },
+    )
+    assert signed_up.status_code == 201, signed_up.text
+    access = signed_up.json()["tokens"]["access_token"]
+    listed = await client.get(
+        "/workspaces", headers={"Authorization": f"Bearer {access}"}
+    )
+    assert [w["id"] for w in listed.json()] == [workspace["id"]]
+
+
+async def test_invite_gated_signup_refuses_without_a_token(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "require_invite", True)
+    refused = await client.post(
+        "/auth/register",
+        json={
+            "email": "walkin@example.com",
+            "password": "walkin-password-1",
+            "display_name": "무단입장",
+        },
+    )
+    assert refused.status_code == 403
+    assert refused.json()["error"]["code"] == "invite_required"
+
+
+async def test_a_bad_invite_fails_signup_without_creating_an_orphan_account(
+    client: httpx.AsyncClient, alice: Actor, workspace: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "require_invite", True)
+    # The invite was issued to someone else's email.
+    token = await _invite_token(alice, workspace, "intended@example.com")
+    mismatched = await client.post(
+        "/auth/register",
+        json={
+            "email": "someone-else@example.com",
+            "password": "someone-password-1",
+            "display_name": "다른사람",
+            "invite_token": token,
+        },
+    )
+    assert mismatched.status_code == 403
+    assert mismatched.json()["error"]["code"] == "invite_email_mismatch"
+
+    # No orphan: the refused email cannot log in.
+    login = await client.post(
+        "/auth/login",
+        json={"email": "someone-else@example.com", "password": "someone-password-1"},
+    )
+    assert login.status_code == 401
+
+
+async def test_a_revoked_invite_cannot_be_used(
+    client: httpx.AsyncClient, alice: Actor, workspace: dict
+) -> None:
+    token = await _invite_token(alice, workspace, "cancelled@example.com")
+    invites = (await alice.get(f"/workspaces/{workspace['id']}/invites")).json()
+    target = next(i for i in invites if i["email"] == "cancelled@example.com")
+
+    revoked = await alice.delete(
+        f"/workspaces/{workspace['id']}/invites/{target['id']}"
+    )
+    assert revoked.status_code == 200
+
+    refused = await client.post(
+        "/auth/register",
+        json={
+            "email": "cancelled@example.com",
+            "password": "cancelled-password-1",
+            "display_name": "회수됨",
+            "invite_token": token,
+        },
+    )
+    assert refused.status_code == 403
+    assert refused.json()["error"]["code"] == "invite_expired"

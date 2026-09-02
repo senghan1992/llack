@@ -234,12 +234,14 @@ impl ApiClient {
         email: &str,
         password: &str,
         display_name: &str,
+        invite_token: Option<&str>,
     ) -> Result<AuthResponse> {
         let payload = serde_json::json!({
             "email": email,
             "password": password,
             "display_name": display_name,
             "device": self.config.device,
+            "invite_token": invite_token,
         });
         let auth: AuthResponse = self
             .send_public(Method::POST, "/auth/register", Some(&payload))
@@ -314,6 +316,34 @@ impl ApiClient {
         let payload = serde_json::json!({ "token": token });
         self.send(Method::POST, "/invites/accept", Some(&payload))
             .await
+    }
+
+    /// Outstanding invitations (admin). Untyped: the rows are rendered, not
+    /// processed, and `invite_url` is absent here by design (shown once).
+    pub async fn list_invites(&self, workspace_id: &str) -> Result<serde_json::Value> {
+        self.send::<(), _>(
+            Method::GET,
+            &format!("/workspaces/{workspace_id}/invites"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn revoke_invite(&self, workspace_id: &str, invite_id: &str) -> Result<()> {
+        self.send::<(), serde_json::Value>(
+            Method::DELETE,
+            &format!("/workspaces/{workspace_id}/invites/{invite_id}"),
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Create a workspace; the caller becomes its owner and lands in the
+    /// seeded #general/#random.
+    pub async fn create_workspace(&self, name: &str, slug: &str) -> Result<Workspace> {
+        let payload = serde_json::json!({ "name": name, "slug": slug });
+        self.send(Method::POST, "/workspaces", Some(&payload)).await
     }
 
     pub async fn list_workspaces(&self) -> Result<Vec<Workspace>> {

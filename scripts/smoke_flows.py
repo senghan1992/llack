@@ -111,10 +111,16 @@ async def main():
         admin.set_default_timeout(30000)
         await login_ui(admin, "alice@example.com")
         await admin.click('button[aria-label="환경설정"]')
-        await admin.fill('input[aria-label="초대할 이메일"]', f"invitee{int(time.time())}@example.com")
+        invite_email = f"invitee{int(time.time())}@example.com"
+        await admin.fill('input[aria-label="초대할 이메일"]', invite_email)
         await admin.click('button:has-text("초대 링크 만들기")')
-        await admin.wait_for_selector(".invite-list li", state="visible")
-        link = await admin.locator(".invite-info span").first.inner_text()
+        # 발급 행(복사 버튼이 있는 행)을 짚는다 — 대기 목록의 같은 이메일
+        # 행은 링크 대신 만료일을 보여준다.
+        issued_row = admin.locator(
+            f'.invite-list li:has-text("{invite_email}"):has(button:has-text("복사"))'
+        )
+        await issued_row.first.wait_for(state="visible")
+        link = await issued_row.first.locator(".invite-info span").inner_text()
         assert link.startswith("http"), link
         ok(f"초대: 관리자 UI 에서 웹 링크 생성 ({link[:44]}…)")
         await ctx_admin.close()
@@ -126,8 +132,8 @@ async def main():
         note = await newbie.locator(".signin-plate").inner_text()
         assert "초대" in note, "초대 안내 문구가 보여야 합니다"
         await newbie.click('button:has-text("계정이 없으신가요?")')
-        stamp2 = int(time.time())
-        await newbie.fill('input[type="email"]', f"invitee{stamp2}@example.com")
+        # 초대장은 발급된 이메일로만 쓸 수 있다 (invite_email_mismatch 방지).
+        await newbie.fill('input[type="email"]', invite_email)
         await newbie.fill('input[type="password"]', "invitee-password-123")
         await newbie.locator('label:has-text("이름") input').first.fill("초대검증")
         await newbie.locator('button[type="submit"]').click()
@@ -136,6 +142,42 @@ async def main():
         assert "general" in body or "채널" in body
         ok("초대: 링크로 가입 → 초대 자동 수락 → 워크스페이스 진입")
         await ctx_new.close()
+
+        # ── 5b. 초대 회수: 발급 → 대기 목록 → 회수 → 소멸 ────────────────
+        ctx_rev = await browser.new_context(viewport={"width": 1440, "height": 900})
+        rev = await ctx_rev.new_page()
+        rev.set_default_timeout(30000)
+        await login_ui(rev, "alice@example.com")
+        await rev.click('button[aria-label="환경설정"]')
+        revoke_email = f"revoke{int(time.time())}@example.com"
+        await rev.fill('input[aria-label="초대할 이메일"]', revoke_email)
+        await rev.click('button:has-text("초대 링크 만들기")')
+        pending_row = rev.locator(
+            f'.invite-list li:has-text("{revoke_email}"):has(button:has-text("회수"))'
+        )
+        await pending_row.first.wait_for(state="visible")
+        await pending_row.first.locator('button:has-text("회수")').click()
+        await pending_row.first.wait_for(state="detached")
+        ok("초대: 회수하면 대기 목록에서 사라지고 링크가 무효화됨")
+        await ctx_rev.close()
+
+        # ── 5c. 워크스페이스 없는 신규 가입 → 빈 상태 카드 → 직접 만들기 ─
+        ctx_f = await browser.new_context(viewport={"width": 1440, "height": 900})
+        founder = await ctx_f.new_page()
+        founder.set_default_timeout(30000)
+        await founder.goto(UI)
+        await founder.click('button:has-text("계정이 없으신가요?")')
+        await founder.fill('input[type="email"]', f"founder{int(time.time())}@example.com")
+        await founder.fill('input[type="password"]', "founder-password-1")
+        await founder.locator('label:has-text("이름") input').first.fill("창업자")
+        await founder.click('button[type="submit"]')
+        await founder.wait_for_selector(".no-workspace-card", state="visible")
+        ok("빈 상태: 워크스페이스 없는 계정에 안내 카드가 뜸")
+        await founder.fill('input[aria-label="워크스페이스 이름"]', "스모크 스타트업")
+        await founder.click('button:has-text("워크스페이스 만들기")')
+        await founder.wait_for_selector('.sidebar:has-text("general")', timeout=20000)
+        ok("빈 상태: 워크스페이스 만들기 → #general 착지")
+        await ctx_f.close()
 
         # ── 6. 429 아웃박스: 40연발이 자동 드레인으로 전량 도착 ──────────
         async with httpx.AsyncClient(base_url=API, timeout=30) as c:

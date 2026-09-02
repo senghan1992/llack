@@ -81,9 +81,11 @@ export interface Reaction {
 
 /** One issued invitation. `invite_url` is shown once and never stored. */
 export interface InviteOut {
+  id?: string;
   email: string;
   role?: string | null;
   expires_at?: string | null;
+  accepted_at?: string | null;
   invite_url?: string | null;
 }
 

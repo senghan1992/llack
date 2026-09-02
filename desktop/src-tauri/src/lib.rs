@@ -120,6 +120,9 @@ pub fn run() {
             commands::change_password,
             commands::create_invites,
             commands::accept_invite,
+            commands::list_invites,
+            commands::revoke_invite,
+            commands::create_workspace,
             // workspaces
             commands::list_workspaces,
             commands::select_workspace,

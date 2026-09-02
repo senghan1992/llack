@@ -48,20 +48,21 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
       // The server's auth messages are English; the person reading them is
       // not. Translate by code, and keep not disclosing which field was wrong.
       const parsed = reportError(error);
-      if (parsed.code === "invalid_credentials") {
-        useApp.setState({
-          banner: {
-            kind: "error",
-            message: "이메일 또는 비밀번호가 올바르지 않습니다.",
-          },
-        });
-      } else if (parsed.code === "rate_limited") {
-        useApp.setState({
-          banner: {
-            kind: "error",
-            message: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
-          },
-        });
+      const translations: Record<string, string> = {
+        invalid_credentials: "이메일 또는 비밀번호가 올바르지 않습니다.",
+        rate_limited: "시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
+        email_taken: "이미 가입된 이메일입니다. 로그인해주세요.",
+        invite_required:
+          "이 서버는 초대로만 가입할 수 있습니다. 관리자에게 초대 링크를 요청해주세요.",
+        invite_email_mismatch:
+          "초대장이 다른 이메일로 발급되었습니다. 초대받은 주소로 가입해주세요.",
+        invite_used: "이 초대 링크는 이미 사용되었습니다.",
+        invite_expired: "초대 링크가 만료되었거나 회수되었습니다.",
+        invite_invalid: "초대 링크가 올바르지 않습니다.",
+      };
+      const message = translations[parsed.code];
+      if (message) {
+        useApp.setState({ banner: { kind: "error", message } });
       }
     } finally {
       setBusy(false);

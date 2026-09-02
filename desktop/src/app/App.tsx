@@ -16,6 +16,7 @@ import { ChannelHeader } from "@/components/ChannelHeader";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
 import { MessageList } from "@/components/MessageList";
+import { NoWorkspace } from "@/components/NoWorkspace";
 import { Settings } from "@/components/Settings";
 import { Sidebar } from "@/components/Sidebar";
 import { SignIn } from "@/components/SignIn";
@@ -52,6 +53,24 @@ export function App() {
       <>
         <Banner />
         <SignIn defaultServerUrl={defaultServer} />
+      </>
+    );
+  }
+
+  return <WorkspaceShell />;
+}
+
+/** The signed-in surface: the workspace, or the "belongs to none yet" card. */
+function WorkspaceShell() {
+  const hasWorkspace = useApp((state) => state.workspaces.length > 0);
+  const workspacesLoaded = useApp((state) => state.workspacesLoaded);
+
+  if (workspacesLoaded && !hasWorkspace) {
+    return (
+      <>
+        <Banner />
+        <NoWorkspace />
+        <Notices />
       </>
     );
   }

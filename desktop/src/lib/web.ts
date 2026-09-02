@@ -659,14 +659,25 @@ export const webApi = {
     return auth.user;
   },
 
-  register: async (email: string, password: string, displayName: string): Promise<User> => {
+  register: async (
+    email: string,
+    password: string,
+    displayName: string,
+    inviteToken?: string | null,
+  ): Promise<User> => {
     const auth = await request<{
       user: User;
       tokens: { access_token: string; refresh_token: string; expires_at: string };
     }>(
       "POST",
       "/auth/register",
-      { email, password, display_name: displayName, device },
+      {
+        email,
+        password,
+        display_name: displayName,
+        device,
+        invite_token: inviteToken ?? null,
+      },
       { auth: false },
     );
 
@@ -730,6 +741,15 @@ export const webApi = {
 
   acceptInvite: (token: string) =>
     request<Workspace>("POST", "/invites/accept", { token }),
+
+  listInvites: (workspaceId: Id) =>
+    request<InviteOut[]>("GET", `/workspaces/${workspaceId}/invites`),
+
+  revokeInvite: (workspaceId: Id, inviteId: string) =>
+    request<void>("DELETE", `/workspaces/${workspaceId}/invites/${inviteId}`),
+
+  createWorkspace: (name: string, slug: string) =>
+    request<Workspace>("POST", "/workspaces", { name, slug }),
 
   // ── Workspaces ────────────────────────────────────────────────────────
 

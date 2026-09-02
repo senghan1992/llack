@@ -230,7 +230,13 @@ async def create_invites(
     return created
 
 
-async def accept_invite(db: AsyncSession, *, token: str, user: User) -> Workspace:
+async def peek_invite(db: AsyncSession, *, token: str) -> WorkspaceInvite:
+    """Validate an invite token without consuming it.
+
+    Sign-up needs to reject a bad token *before* creating the account — an
+    orphan user behind a failed invite is exactly what invite-gated sign-up
+    exists to prevent. Same checks as acceptance, minus the user comparison.
+    """
     invite = await db.scalar(
         select(WorkspaceInvite).where(WorkspaceInvite.token_hash == hash_token(token)).limit(1)
     )
@@ -240,6 +246,11 @@ async def accept_invite(db: AsyncSession, *, token: str, user: User) -> Workspac
         raise Conflict("This invitation has already been used.", code="invite_used")
     if invite.revoked_at is not None or invite.expires_at < datetime.now(UTC):
         raise Forbidden("This invitation has expired.", code="invite_expired")
+    return invite
+
+
+async def accept_invite(db: AsyncSession, *, token: str, user: User) -> Workspace:
+    invite = await peek_invite(db, token=token)
     if invite.email != user.email:
         raise Forbidden("This invitation was issued to a different email address.",
                         code="invite_email_mismatch")

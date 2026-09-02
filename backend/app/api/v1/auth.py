@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header, Request, status
 
 from app.api.deps import ClientIp, CurrentUser, DbSession
 from app.core.config import settings
+from app.core.errors import Forbidden
 from app.core.ratelimit import limiter
 from app.core.security import decode_access_token
 from app.schemas.auth import (
@@ -22,6 +23,7 @@ from app.schemas.auth import (
 from app.schemas.common import OkResponse
 from app.schemas.user import UserOut
 from app.services import auth as auth_service
+from app.services import workspaces as workspace_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -35,10 +37,31 @@ def _user_agent(request: Request) -> str | None:
 async def register(
     payload: RegisterRequest, db: DbSession, request: Request, ip: ClientIp
 ) -> AuthResponse:
-    """Create an account. Open by default; gate this behind SSO in production."""
+    """Create an account.
+
+    Open by default (dev). With `LLACK_REQUIRE_INVITE` the token is mandatory
+    and is validated *before* the account exists, so a bad invite cannot leave
+    an orphan user behind. A valid token also joins its workspace in the same
+    transaction — sign-up and onboarding are one step.
+    """
     limiter.check(
         "register", ip, capacity=settings.rate_limit_register_per_hour, per_seconds=3_600
     )
+
+    invite_token = payload.invite_token
+    if invite_token:
+        invite = await workspace_service.peek_invite(db, token=invite_token)
+        if invite.email != payload.email.strip().lower():
+            raise Forbidden(
+                "This invitation was issued to a different email address.",
+                code="invite_email_mismatch",
+            )
+    elif settings.require_invite:
+        raise Forbidden(
+            "Signing up on this server requires an invitation.",
+            code="invite_required",
+        )
+
     user = await auth_service.register_user(
         db,
         email=payload.email,
@@ -46,6 +69,8 @@ async def register(
         display_name=payload.display_name,
         handle=payload.handle,
     )
+    if invite_token:
+        await workspace_service.accept_invite(db, token=invite_token, user=user)
     tokens = await auth_service.issue_tokens(
         db, user, device=payload.device, ip_address=ip, user_agent=_user_agent(request)
     )
@@ -172,4 +197,7 @@ async def public_config() -> dict:
         "ws_heartbeat_seconds": settings.ws_heartbeat_seconds,
         "max_upload_bytes": settings.max_upload_bytes,
         "realtime_protocol_version": 1,
+        # The sign-in screen reads this to say "invite only" up front instead
+        # of letting someone fill the whole form first.
+        "require_invite": settings.require_invite,
     }

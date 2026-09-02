@@ -13,7 +13,7 @@
  * whatever the connected subscription can run is what the dropdown offers.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   DEFAULT_MODELS,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/agent/models";
 import { webInviteUrl } from "@/lib/invite";
 import { agentHost, api, capabilities } from "@/lib/ipc";
+import type { InviteOut } from "@/lib/types";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
@@ -228,8 +229,36 @@ function InviteSection() {
   const [issued, setIssued] = useState<
     Array<{ email: string; link: string; expires_at?: string | null }>
   >([]);
+  const [outstanding, setOutstanding] = useState<InviteOut[]>([]);
 
   const isAdmin = workspace?.my_role === "admin" || workspace?.my_role === "owner";
+
+  const refreshOutstanding = useCallback(async () => {
+    if (!workspace) return;
+    try {
+      const rows = await api.listInvites(workspace.id);
+      setOutstanding(rows.filter((row) => !row.accepted_at));
+    } catch {
+      // Not an admin, or the endpoint is unreachable: the section below
+      // simply shows nothing outstanding.
+      setOutstanding([]);
+    }
+  }, [workspace]);
+
+  useEffect(() => {
+    if (isAdmin) void refreshOutstanding();
+  }, [isAdmin, refreshOutstanding]);
+
+  const revoke = async (inviteId: string | undefined) => {
+    if (!workspace || !inviteId) return;
+    try {
+      await api.revokeInvite(workspace.id, inviteId);
+      await refreshOutstanding();
+      showBanner("info", "초대를 회수했습니다. 그 링크는 더 이상 동작하지 않습니다.");
+    } catch (error) {
+      reportError(error, "초대를 회수하지 못했습니다.");
+    }
+  };
 
   const invite = async () => {
     if (!workspace || busy) return;
@@ -252,6 +281,7 @@ function InviteSection() {
         })),
       );
       setEmails("");
+      await refreshOutstanding();
     } catch (error) {
       reportError(error, "초대를 만들지 못했습니다.");
     } finally {
@@ -322,6 +352,31 @@ function InviteSection() {
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {outstanding.length > 0 ? (
+        <>
+          <p className="settings-hint">
+            수락되지 않은 초대입니다. 회수하면 그 링크는 즉시 무효가 됩니다.
+          </p>
+          <ul className="invite-list">
+            {outstanding.map((row) => (
+              <li key={row.id ?? row.email}>
+                <div className="invite-info">
+                  <strong>{row.email}</strong>
+                  <span>
+                    {row.expires_at
+                      ? `만료: ${new Date(row.expires_at).toLocaleDateString("ko-KR")}`
+                      : "대기 중"}
+                  </span>
+                </div>
+                <button type="button" onClick={() => void revoke(row.id)}>
+                  회수
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : null}
     </div>
   );

@@ -77,8 +77,8 @@ const tauriApi = {
   login: (email: string, password: string) =>
     call<User>("login", { email, password }),
 
-  register: (email: string, password: string, displayName: string) =>
-    call<User>("register", { email, password, displayName }),
+  register: (email: string, password: string, displayName: string, inviteToken?: string | null) =>
+    call<User>("register", { email, password, displayName, inviteToken: inviteToken ?? null }),
 
   logout: () => call<void>("logout"),
 
@@ -99,6 +99,15 @@ const tauriApi = {
     call<InviteOut[]>("create_invites", { workspaceId, emails, role }),
 
   acceptInvite: (token: string) => call<Workspace>("accept_invite", { token }),
+
+  /** Outstanding invitations (admin). No invite_url — links are shown once. */
+  listInvites: (workspaceId: Id) => call<InviteOut[]>("list_invites", { workspaceId }),
+
+  revokeInvite: (workspaceId: Id, inviteId: string) =>
+    call<void>("revoke_invite", { workspaceId, inviteId }),
+
+  createWorkspace: (name: string, slug: string) =>
+    call<Workspace>("create_workspace", { name, slug }),
 
   // ── Workspaces ────────────────────────────────────────────────────────
 

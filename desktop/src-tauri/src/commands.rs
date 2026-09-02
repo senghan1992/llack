@@ -93,9 +93,12 @@ pub async fn register(
     email: String,
     password: String,
     display_name: String,
+    invite_token: Option<String>,
 ) -> Result<User> {
     let api = state.api()?;
-    let auth = api.register(&email, &password, &display_name).await?;
+    let auth = api
+        .register(&email, &password, &display_name, invite_token.as_deref())
+        .await?;
     state.install_sync(&auth.user.id)?;
     crate::realtime_task::start(app, state.inner().clone(), None);
     Ok(auth.user)
@@ -161,6 +164,32 @@ pub async fn create_invites(
 #[tauri::command]
 pub async fn accept_invite(state: State<'_, Arc<AppState>>, token: String) -> Result<Workspace> {
     state.api()?.accept_invite(&token).await
+}
+
+#[tauri::command]
+pub async fn list_invites(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.list_invites(&workspace_id).await
+}
+
+#[tauri::command]
+pub async fn revoke_invite(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    invite_id: String,
+) -> Result<()> {
+    state.api()?.revoke_invite(&workspace_id, &invite_id).await
+}
+
+#[tauri::command]
+pub async fn create_workspace(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    slug: String,
+) -> Result<Workspace> {
+    state.api()?.create_workspace(&name, &slug).await
 }
 
 // ── Workspaces ──────────────────────────────────────────────────────────────

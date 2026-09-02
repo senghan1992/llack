@@ -69,6 +69,9 @@ interface AppStateShape {
 
   // ── Workspaces ────────────────────────────────────────────────────────
   workspaces: Workspace[];
+  /** False until the first list arrives — [] before that means "loading",
+   *  not "belongs to none", and the empty-state must not flash. */
+  workspacesLoaded: boolean;
   activeWorkspaceId: Id | null;
 
   // ── Directory ─────────────────────────────────────────────────────────
@@ -196,6 +199,7 @@ export const useApp = create<AppStore>((set, get) => ({
   me: null,
 
   workspaces: [],
+  workspacesLoaded: false,
   activeWorkspaceId: null,
 
   people: new Map(),
@@ -264,7 +268,13 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   signUp: async (email, password, displayName) => {
-    const user = await api.register(email, password, displayName);
+    // A parked invite travels with the sign-up itself: the server validates
+    // it before creating the account and joins the workspace in the same
+    // transaction. Consumed either way, so `loadWorkspaces` does not try to
+    // spend it a second time.
+    const inviteToken = pendingInviteToken();
+    const user = await api.register(email, password, displayName, inviteToken);
+    clearPendingInvite();
     set({ me: user, screen: "workspace", banner: null });
     await get().loadWorkspaces();
   },
@@ -286,6 +296,7 @@ export const useApp = create<AppStore>((set, get) => ({
         unreadMarkers: new Map(),
         presence: new Map(),
         installations: [],
+        workspacesLoaded: false,
         openPanelInstallationId: null,
         openWebAppInstallationId: null,
         openThreadId: null,
@@ -319,7 +330,7 @@ export const useApp = create<AppStore>((set, get) => ({
 
     try {
       const workspaces = await api.listWorkspaces();
-      set({ workspaces });
+      set({ workspaces, workspacesLoaded: true });
       const first = workspaces[0];
       if (first && !get().activeWorkspaceId) {
         await get().selectWorkspace(first.id);

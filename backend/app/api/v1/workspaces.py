@@ -197,3 +197,22 @@ async def list_invites(ctx: AdminWorkspaceCtx, db: DbSession) -> list[InviteOut]
         .order_by(WorkspaceInvite.created_at.desc())
     )
     return [InviteOut.model_validate(row) for row in rows.all()]
+
+
+@router.delete("/{workspace_id}/invites/{invite_id}", response_model=OkResponse)
+async def revoke_invite(invite_id: str, ctx: AdminWorkspaceCtx, db: DbSession) -> OkResponse:
+    """Withdraw an outstanding invitation. A leaked link needs a kill switch."""
+    from datetime import UTC, datetime
+
+    invite = await db.get(WorkspaceInvite, invite_id)
+    if invite is None or invite.workspace_id != ctx.workspace.id:
+        raise NotFound("This invitation does not exist.", code="invite_invalid")
+    if invite.accepted_at is not None:
+        raise Conflict(
+            "This invitation has already been used; remove the member instead.",
+            code="invite_used",
+        )
+    if invite.revoked_at is None:
+        invite.revoked_at = datetime.now(UTC)
+        await db.commit()
+    return OkResponse()

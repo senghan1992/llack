@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-2"
     max_upload_bytes: int = 104_857_600  # 100 MiB
 
+    # ── Sign-up policy ──────────────────────────────────────────────────
+    # True locks /auth/register behind a valid invite token — the production
+    # posture for custom email/password auth until SSO lands. False (the dev
+    # default) keeps sign-up open; a token, when present, is still honoured.
+    require_invite: bool = False
+
     # ── Rate limits ─────────────────────────────────────────────────────
     # Token-bucket capacities (burst size == sustained rate over the window).
     # 0 disables a limit. In-process: with N workers the effective limit is

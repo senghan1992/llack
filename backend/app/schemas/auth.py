@@ -22,6 +22,10 @@ class RegisterRequest(Payload):
     display_name: str = Field(min_length=1, max_length=120)
     handle: Handle | None = None
     device: DeviceInfo | None = None
+    # Consumed at sign-up: the account is created and joins the inviting
+    # workspace in one step. Mandatory when the server runs invite-gated
+    # (LLACK_REQUIRE_INVITE).
+    invite_token: str | None = Field(default=None, min_length=10, max_length=512)
 
 
 class LoginRequest(Payload):
