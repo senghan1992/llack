@@ -16,6 +16,65 @@ Slack/Teams 를 대체하려는 것이 아니라, **매일 쓰면서 불편했�
 > 코드 가져오기부터 데스크톱 창 띄우기까지 단계별로 정리해 두었습니다.
 > 윈도우에는 `make` 가 없으므로 `.\llack.ps1` 스크립트를 쓰세요.
 
+## 배포하기 — 딱 이것만 하면 됩니다
+
+팀에게 주소 하나를 공유하기까지, 순서대로 여섯 가지입니다.
+(자세한 설명이 필요해지면 그때 [docs/DEPLOY.md](docs/DEPLOY.md) 를 여세요.)
+
+**1. 서버 한 대를 준비하세요.** Docker 가 설치된 리눅스 서버면 됩니다 (2 vCPU / 4GB 권장).
+
+**2. 코드를 올리고 시크릿 키를 만드세요.**
+
+```bash
+git clone <이 저장소> && cd llack
+cp .env.example .env
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+# 출력된 값을 .env 의 LLACK_SECRET_KEY= 에 붙여넣기
+```
+
+키가 비어 있거나 개발용 값이면 서버가 스스로 기동을 거부하니, 잊어도 사고로 이어지지 않습니다.
+
+**3. 띄우세요.**
+
+```bash
+docker compose up -d --build
+```
+
+이 한 줄로 전부 뜹니다: 웹 화면(nginx) · API · Postgres · Redis · 파일 저장소.
+마이그레이션도 부팅 때 자동으로 적용됩니다.
+
+**4. HTTPS 를 연결하세요.** 사내 표준 프록시가 있다면 그것으로 `서버:80` 을 가리키면 되고,
+없다면 [Caddy](https://caddyserver.com) 두 줄이 가장 쉽습니다 (인증서 자동 발급):
+
+```
+llack.우리회사.com {
+    reverse_proxy 127.0.0.1:80
+}
+```
+
+브라우저 알림과 클립보드는 HTTPS 에서만 동작하므로 이 단계는 건너뛰지 마세요.
+
+**5. 첫 관리자 계정을 만드세요.** 기본값이 "초대 없이는 가입 불가"라서 첫 사람만 예외 절차가 필요합니다:
+
+```bash
+# ① .env 에서 LLACK_REQUIRE_INVITE=false 로 바꾸고
+docker compose up -d api
+# ② 접속해서 계정 만들기 → 화면 안내대로 워크스페이스 만들기
+# ③ .env 를 LLACK_REQUIRE_INVITE=true 로 되돌리고
+docker compose up -d api
+```
+
+**6. 팀을 초대하세요.** 사이드바 하단 톱니(환경설정) → **구성원 초대** → 이메일 입력 →
+링크 복사 → 전달. 받은 사람은 링크로 접속해 가입하면 자동으로 팀에 합류합니다.
+
+끝입니다. 이후 기억할 것은 세 가지뿐입니다:
+
+- **백업**: 상태는 도커 볼륨 두 개(`postgres-data`, `minio-data`)가 전부입니다.
+- **비밀번호 분실**: 환경설정 → 구성원 초대 → **임시 비밀번호 발급** (관리자).
+- **잘 도는지 확인**: `curl https://주소/health` → `{"status":"ok"}`.
+
+---
+
 ## 5분 만에 띄워보기 (macOS / Linux)
 
 외부 의존성이 필요 없습니다. SQLite + 프로세스 내 pub/sub + 로컬 파일 저장으로 그대로 돌아갑니다.
@@ -140,6 +199,7 @@ llack/
 ## 문서
 
 - [docs/WINDOWS.md](docs/WINDOWS.md) — 윈도우에서 실행하기 (전송 · 설치 · 확인 · 문제 해결)
+- [docs/DEPLOY.md](docs/DEPLOY.md) — 배포: 무엇이 뜨는지, 첫 부팅, 운영 루틴, 정직한 한계
 - [docs/WEB.md](docs/WEB.md) — 설치 없이 보기: 서버 없는 데모 한 파일, 또는 SSH 터널 + 브라우저 모드
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 시스템 구조, 데이터 모델, 실시간 프로토콜, 배포
 - [docs/APP_PLATFORM.md](docs/APP_PLATFORM.md) — 미니앱 플랫폼: 매니페스트, 스코프, 보안 모델
