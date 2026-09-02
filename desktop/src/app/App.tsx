@@ -21,11 +21,16 @@ import { Sidebar } from "@/components/Sidebar";
 import { SignIn } from "@/components/SignIn";
 import { ThreadPane } from "@/components/ThreadPane";
 import { WebAppView } from "@/components/WebAppView";
+import { captureInviteFromLocation } from "@/lib/invite";
 import { events, type UnlistenFn } from "@/lib/ipc";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
 const FALLBACK_SERVER = "http://localhost:8000";
+
+// Before anything renders or the bridge rewrites history: an `?invite=` in
+// the address is parked for redemption after sign-in.
+captureInviteFromLocation();
 
 export function App() {
   const screen = useApp((state) => state.screen);
@@ -144,6 +149,12 @@ function useRealtimeBridge(setDefaultServer: (url: string) => void) {
             break;
           case "thread_changed":
             void store().applyThreadChanged(effect.parent_id);
+            // A thread reply also changes the channel: the parent row's
+            // "답글 N개" summary, and — with "채널에도 보내기" — the
+            // transcript itself. Both runtimes map a threaded message to
+            // thread_changed only, so the channel half is fanned out here,
+            // where one line covers desktop and web alike.
+            void store().applyChannelChanged(effect.channel_id);
             break;
           case "sidebar_changed":
             void store().refreshSidebar();

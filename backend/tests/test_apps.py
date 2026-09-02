@@ -400,3 +400,22 @@ async def test_a_link_app_never_gets_a_bridge_token(alice: Actor, workspace: dic
     )
     assert session.status_code == 403
     assert session.json()["error"]["code"] == "app_without_panel"
+
+
+async def test_the_same_url_does_not_become_a_second_link_app(
+    alice: Actor, workspace: dict
+) -> None:
+    first = (
+        await alice.post(
+            f"/workspaces/{workspace['id']}/apps/link",
+            json={"name": "위키", "url": "https://wiki.example.com/home"},
+        )
+    ).json()
+    second = await alice.post(
+        f"/workspaces/{workspace['id']}/apps/link",
+        json={"name": "위키 다시", "url": "https://wiki.example.com/home"},
+    )
+    assert second.status_code == 201
+    assert second.json()["id"] == first["id"], "같은 URL 은 같은 설치여야 합니다"
+    listed = (await alice.get(f"/workspaces/{workspace['id']}/apps")).json()
+    assert sum(1 for i in listed if i["app"]["panel_url"] == "https://wiki.example.com/home") == 1

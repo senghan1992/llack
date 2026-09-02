@@ -45,6 +45,27 @@ export function MessageList() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
+
+  // A search hit: scroll to the marked message and flash it once. The store
+  // guarantees the message is loaded before setting the mark.
+  const highlightId = useApp((state) => state.highlightMessageId);
+  const clearHighlight = useApp((state) => state.clearHighlight);
+  useEffect(() => {
+    if (!highlightId) return undefined;
+    const node = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-message-id="${highlightId}"]`,
+    );
+    if (node) {
+      setStickToBottom(false);
+      node.scrollIntoView({ block: "center" });
+      node.classList.add("is-spotlit");
+    }
+    const timer = window.setTimeout(() => {
+      node?.classList.remove("is-spotlit");
+      clearHighlight();
+    }, 2_400);
+    return () => window.clearTimeout(timer);
+  }, [highlightId, clearHighlight]);
   const previousCount = useRef(0);
   const previousChannel = useRef<string | null>(null);
   // Set while prepending history, so the effect can restore the offset.

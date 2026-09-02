@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { demoUser, isDemoBuild } from "@/lib/demo";
+import { pendingInviteToken } from "@/lib/invite";
 import { useApp } from "@/store/app";
 
 export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
@@ -44,7 +45,24 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
         await signUp(email.trim(), password, displayName.trim());
       }
     } catch (error) {
-      reportError(error);
+      // The server's auth messages are English; the person reading them is
+      // not. Translate by code, and keep not disclosing which field was wrong.
+      const parsed = reportError(error);
+      if (parsed.code === "invalid_credentials") {
+        useApp.setState({
+          banner: {
+            kind: "error",
+            message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+          },
+        });
+      } else if (parsed.code === "rate_limited") {
+        useApp.setState({
+          banner: {
+            kind: "error",
+            message: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
+          },
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -57,6 +75,13 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
           <h1 className="signin-title">Llack</h1>
           <p className="signin-subtitle">사내 협업 OS</p>
         </header>
+
+        {pendingInviteToken() ? (
+          <p className="signin-demo">
+            워크스페이스 초대 링크로 오셨습니다. 로그인하거나 계정을 만들면
+            초대가 자동으로 수락됩니다.
+          </p>
+        ) : null}
 
         {demo ? (
           <p className="signin-demo">

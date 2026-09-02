@@ -28,6 +28,7 @@ import type {
   DrainReport,
   FileRef,
   Id,
+  InviteOut,
   Message,
   PanelSession,
   PendingMessage,
@@ -82,6 +83,22 @@ const tauriApi = {
   logout: () => call<void>("logout"),
 
   currentUser: () => call<User | null>("current_user"),
+
+  /** Update my profile; `patch` carries only the fields to change. */
+  updateProfile: (patch: { display_name?: string; title?: string; avatar_url?: string }) =>
+    call<User>("update_me", { patch }),
+
+  updateStatus: (patch: { status_emoji?: string | null; status_text?: string | null }) =>
+    call<User>("update_my_status", { patch }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    call<void>("change_password", { currentPassword, newPassword }),
+
+  /** Issue workspace invitations (admin). URLs are shown once. */
+  createInvites: (workspaceId: Id, emails: string[], role = "member") =>
+    call<InviteOut[]>("create_invites", { workspaceId, emails, role }),
+
+  acceptInvite: (token: string) => call<Workspace>("accept_invite", { token }),
 
   // ── Workspaces ────────────────────────────────────────────────────────
 
@@ -174,6 +191,11 @@ const tauriApi = {
     call<Message>("edit_message", { messageId, body }),
 
   deleteMessage: (messageId: Id) => call<void>("delete_message", { messageId }),
+
+  setPinned: (messageId: Id, pinned: boolean) =>
+    call<Message>("set_pinned", { messageId, pinned }),
+
+  channelPins: (channelId: Id) => call<Message[]>("channel_pins", { channelId }),
 
   toggleReaction: (messageId: Id, emoji: string, add: boolean) =>
     call<void>("toggle_reaction", { messageId, emoji, add }),

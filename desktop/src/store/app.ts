@@ -13,6 +13,7 @@
 import { create } from "zustand";
 
 import { api, asCommandError } from "@/lib/ipc";
+import { clearPendingInvite, pendingInviteToken } from "@/lib/invite";
 import { canonicaliseMentions } from "@/lib/markdown";
 import type {
   AppInstallation,
@@ -114,6 +115,8 @@ interface AppStateShape {
   notices: Notice[];
   /** Ids of recently arrived messages that mention me — see `noteIncomingFrame`. */
   mentionedMessageIds: Id[];
+  /** A message the transcript should scroll to and flash (search result). */
+  highlightMessageId: Id | null;
 }
 
 interface AppActions {
@@ -134,6 +137,10 @@ interface AppActions {
   openChannel: (channelId: Id) => Promise<void>;
   refreshChannel: (channelId: Id) => Promise<void>;
   loadOlder: (channelId: Id) => Promise<void>;
+  /** Open a channel *at* a message: page back until it is loaded, then mark
+   *  it for the transcript to scroll to and flash. */
+  revealMessage: (channelId: Id, messageId: Id) => Promise<void>;
+  clearHighlight: () => void;
   refreshSidebar: () => Promise<void>;
   createChannel: (name: string, kind: "public" | "private") => Promise<Channel | null>;
   openDm: (userIds: Id[]) => Promise<Channel | null>;
@@ -204,6 +211,7 @@ export const useApp = create<AppStore>((set, get) => ({
   typing: new Map(),
   notices: [],
   mentionedMessageIds: [],
+  highlightMessageId: null,
 
   openThreadId: null,
   threadReplies: new Map(),
@@ -291,6 +299,24 @@ export const useApp = create<AppStore>((set, get) => ({
   // ── Workspaces ────────────────────────────────────────────────────────
 
   loadWorkspaces: async () => {
+    // A parked invite token is redeemed here — the first moment after
+    // sign-in/sign-up where joining a workspace makes sense. One shot: spent
+    // or failed, it is cleared, so a bad token cannot error on every launch.
+    const inviteToken = pendingInviteToken();
+    if (inviteToken) {
+      try {
+        const joined = await api.acceptInvite(inviteToken);
+        get().showBanner("info", `${joined.name} 워크스페이스에 참여했습니다.`);
+      } catch (error) {
+        get().reportError(
+          error,
+          "초대를 수락하지 못했습니다. 링크가 만료되었거나 이미 사용되었을 수 있습니다.",
+        );
+      } finally {
+        clearPendingInvite();
+      }
+    }
+
     try {
       const workspaces = await api.listWorkspaces();
       set({ workspaces });
@@ -334,9 +360,18 @@ export const useApp = create<AppStore>((set, get) => ({
         installations,
       });
 
-      // Land the user somewhere useful rather than on an empty pane.
+      // Land where the user left off; fall back to somewhere useful rather
+      // than an empty pane.
+      let lastChannelId: string | null = null;
+      try {
+        lastChannelId = window.localStorage.getItem(`llack.last-channel:${workspaceId}`);
+      } catch {
+        // Blocked storage: the fallback below stands.
+      }
       const firstChannel =
-        channels.find((channel) => channel.name === "general") ?? channels[0];
+        channels.find((channel) => channel.id === lastChannelId) ??
+        channels.find((channel) => channel.name === "general") ??
+        channels[0];
       if (firstChannel) await get().openChannel(firstChannel.id);
     } catch (error) {
       get().reportError(error, "워크스페이스를 열지 못했습니다.");
@@ -356,6 +391,17 @@ export const useApp = create<AppStore>((set, get) => ({
       // Coming back to a conversation dismisses an embedded web app.
       openWebAppInstallationId: null,
     });
+
+    // Remembered per workspace, so relaunching lands where you left off
+    // instead of resetting to #general.
+    const workspaceId = get().activeWorkspaceId;
+    if (workspaceId) {
+      try {
+        window.localStorage.setItem(`llack.last-channel:${workspaceId}`, channelId);
+      } catch {
+        // Private browsing: restoring is a nicety, not a requirement.
+      }
+    }
 
     // Paint from cache, then refresh.
     try {
@@ -437,6 +483,25 @@ export const useApp = create<AppStore>((set, get) => ({
       });
     }
   },
+
+  revealMessage: async (channelId, messageId) => {
+    await get().openChannel(channelId);
+    // Page back until the target is loaded or history is exhausted. Capped:
+    // twelve pages (~600 messages) is a search hit worth walking to; past
+    // that, landing in the channel is better than a spinner marathon.
+    for (let page = 0; page < 12; page += 1) {
+      if (get().messages.get(channelId)?.has(messageId)) break;
+      if (get().hasOlder.get(channelId) === false) break;
+      await get().loadOlder(channelId);
+    }
+    set({
+      highlightMessageId: get().messages.get(channelId)?.has(messageId)
+        ? messageId
+        : null,
+    });
+  },
+
+  clearHighlight: () => set({ highlightMessageId: null }),
 
   loadOlder: async (channelId) => {
     const existing = get().messages.get(channelId);
@@ -584,12 +649,15 @@ export const useApp = create<AppStore>((set, get) => ({
       }
 
       if (result.queued) {
-        set({
-          banner: {
-            kind: "info",
-            message: "오프라인 상태입니다. 연결되면 자동으로 전송됩니다.",
-          },
-        });
+        // Say what actually happened: a rate limit is not an outage, and the
+        // in-order queue is not an error at all.
+        const message =
+          result.error_code === "rate_limited"
+            ? "전송이 너무 빠릅니다. 잠시 뒤 자동으로 전송됩니다."
+            : result.error_code === "queued_in_order"
+              ? "앞의 메시지가 전송되는 대로 순서대로 전송됩니다."
+              : "오프라인 상태입니다. 연결되면 자동으로 전송됩니다.";
+        set({ banner: { kind: "info", message } });
         const pending = await api.pendingMessages(channelId);
         set((current) => ({ pending: new Map(current.pending).set(channelId, pending) }));
       }
@@ -739,6 +807,13 @@ export const useApp = create<AppStore>((set, get) => ({
         } catch {
           // Not worth surfacing.
         }
+      }
+      // The outbox drain reports through this effect; retire sent rows.
+      try {
+        const pending = await api.pendingMessages(channelId);
+        set((state) => ({ pending: new Map(state.pending).set(channelId, pending) }));
+      } catch {
+        // No outbox is the common case.
       }
     }
     await get().refreshSidebar();

@@ -340,7 +340,9 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
           disabled={disabled}
           placeholder={
             disabled
-              ? "보관된 채널에는 메시지를 보낼 수 없습니다."
+              ? channel?.is_archived
+                ? "보관된 채널에는 메시지를 보낼 수 없습니다."
+                : "왼쪽에서 채널을 고르거나 ⌘K 로 대화를 찾아보세요."
               : placeholder ??
                 (channel?.name ? `#${channel.name} 에 메시지 보내기` : "메시지 보내기")
           }

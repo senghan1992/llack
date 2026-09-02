@@ -20,7 +20,8 @@ import {
   listProviderModels,
   type ProviderModel,
 } from "@/lib/agent/models";
-import { agentHost, capabilities } from "@/lib/ipc";
+import { webInviteUrl } from "@/lib/invite";
+import { agentHost, api, capabilities } from "@/lib/ipc";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
@@ -62,6 +63,26 @@ export function Settings() {
 
         <div className="modal-body settings-body">
           <section className="settings-section">
+            <h3>내 프로필</h3>
+            <ProfileSection />
+          </section>
+
+          <section className="settings-section">
+            <h3>구성원 초대</h3>
+            <InviteSection />
+          </section>
+
+          <section className="settings-section">
+            <h3>에이전트 프로바이더</h3>
+            <ProviderSection />
+          </section>
+
+          <section className="settings-section">
+            <h3>계정</h3>
+            <AccountSection />
+          </section>
+
+          <section className="settings-section">
             <h3>기능 안내</h3>
             <p className="settings-hint">
               하고 싶은 일을 찾아 그대로 따라 하면 됩니다. 전부 지금 화면에서
@@ -69,12 +90,310 @@ export function Settings() {
             </p>
             <GuideList />
           </section>
-
-          <section className="settings-section">
-            <h3>에이전트 프로바이더</h3>
-            <ProviderSection />
-          </section>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * My name, title and status — the API existed all along; this is the door.
+ *
+ * Saved with `exclude_unset` semantics: only the fields that changed travel.
+ * The realtime `user.updated` event carries the change to everyone who shares
+ * a workspace, so no local map surgery is needed beyond `me`.
+ */
+function ProfileSection() {
+  const me = useApp((state) => state.me);
+  const showBanner = useApp((state) => state.showBanner);
+  const reportError = useApp((state) => state.reportError);
+
+  const [displayName, setDisplayName] = useState(me?.display_name ?? "");
+  const [title, setTitle] = useState(me?.title ?? "");
+  const [statusEmoji, setStatusEmoji] = useState(me?.status_emoji ?? "");
+  const [statusText, setStatusText] = useState(me?.status_text ?? "");
+  const [busy, setBusy] = useState(false);
+
+  // The dialog may open before `me` resolves on a cold start.
+  useEffect(() => {
+    setDisplayName(me?.display_name ?? "");
+    setTitle(me?.title ?? "");
+    setStatusEmoji(me?.status_emoji ?? "");
+    setStatusText(me?.status_text ?? "");
+  }, [me]);
+
+  const dirtyProfile =
+    displayName !== (me?.display_name ?? "") || title !== (me?.title ?? "");
+  const dirtyStatus =
+    statusEmoji !== (me?.status_emoji ?? "") || statusText !== (me?.status_text ?? "");
+
+  const save = async () => {
+    if ((!dirtyProfile && !dirtyStatus) || busy || !displayName.trim()) return;
+    setBusy(true);
+    try {
+      let updated = me;
+      if (dirtyProfile) {
+        updated = await api.updateProfile({
+          ...(displayName !== (me?.display_name ?? "")
+            ? { display_name: displayName.trim() }
+            : {}),
+          ...(title !== (me?.title ?? "") ? { title: title.trim() } : {}),
+        });
+      }
+      if (dirtyStatus) {
+        updated = await api.updateStatus({
+          status_emoji: statusEmoji.trim() || null,
+          status_text: statusText.trim() || null,
+        });
+      }
+      if (updated) useApp.setState({ me: updated });
+      showBanner("info", "프로필을 저장했습니다.");
+    } catch (error) {
+      reportError(error, "프로필을 저장하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-provider">
+      <label className="settings-field">
+        <span>이름</span>
+        <input
+          value={displayName}
+          onChange={(event) => setDisplayName(event.target.value)}
+          maxLength={120}
+        />
+      </label>
+      <label className="settings-field">
+        <span>직함</span>
+        <input
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          placeholder="예: 백엔드 엔지니어"
+          maxLength={160}
+        />
+      </label>
+      <div className="settings-status-row">
+        <label className="settings-field settings-status-emoji">
+          <span>상태 이모지</span>
+          <input
+            value={statusEmoji}
+            onChange={(event) => setStatusEmoji(event.target.value)}
+            placeholder="🍜"
+            maxLength={8}
+          />
+        </label>
+        <label className="settings-field settings-status-text">
+          <span>상태 문구</span>
+          <input
+            value={statusText}
+            onChange={(event) => setStatusText(event.target.value)}
+            placeholder="예: 점심 식사 중, 1시에 돌아옵니다"
+            maxLength={200}
+          />
+        </label>
+      </div>
+      <div className="settings-actions">
+        <button
+          type="button"
+          className="settings-primary"
+          onClick={() => void save()}
+          disabled={busy || (!dirtyProfile && !dirtyStatus) || !displayName.trim()}
+        >
+          {busy ? "저장 중…" : "저장"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Issue invite links from inside the product.
+ *
+ * The server's URL is a `llack://` deep link for the desktop; a browser needs
+ * a clickable https address, so each row shows the web form
+ * (`{origin}/?invite=token`) with a copy button. Links appear exactly once —
+ * the raw token is never stored — which the UI says out loud.
+ */
+function InviteSection() {
+  const workspace = useApp((state) =>
+    state.workspaces.find((entry) => entry.id === state.activeWorkspaceId),
+  );
+  const reportError = useApp((state) => state.reportError);
+  const showBanner = useApp((state) => state.showBanner);
+
+  const [emails, setEmails] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [issued, setIssued] = useState<
+    Array<{ email: string; link: string; expires_at?: string | null }>
+  >([]);
+
+  const isAdmin = workspace?.my_role === "admin" || workspace?.my_role === "owner";
+
+  const invite = async () => {
+    if (!workspace || busy) return;
+    const list = emails
+      .split(/[\s,;]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (list.length === 0) return;
+    setBusy(true);
+    try {
+      const created = await api.createInvites(workspace.id, list);
+      setIssued(
+        created.map((row) => ({
+          email: row.email,
+          link:
+            webInviteUrl(row.invite_url) ??
+            row.invite_url ??
+            "링크를 만들지 못했습니다",
+          expires_at: row.expires_at,
+        })),
+      );
+      setEmails("");
+    } catch (error) {
+      reportError(error, "초대를 만들지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      showBanner("info", "초대 링크를 복사했습니다.");
+    } catch {
+      showBanner("error", "복사하지 못했습니다. 링크를 직접 선택해 복사해주세요.");
+    }
+  };
+
+  if (!workspace) {
+    return <p className="settings-hint">워크스페이스에 들어간 뒤 초대할 수 있습니다.</p>;
+  }
+  if (!isAdmin) {
+    return (
+      <p className="settings-hint">
+        구성원 초대는 워크스페이스 관리자만 할 수 있습니다. 관리자에게 초대
+        링크를 요청해주세요.
+      </p>
+    );
+  }
+
+  return (
+    <div className="settings-provider">
+      <p className="settings-hint">
+        이메일을 쉼표나 줄바꿈으로 구분해 넣으세요. 사람마다 초대 링크가
+        만들어지며, 링크는 지금 한 번만 표시됩니다 — 복사해서 직접
+        전달해주세요.
+      </p>
+      <div className="linkapp-row">
+        <input
+          className="settings-invite-input"
+          value={emails}
+          onChange={(event) => setEmails(event.target.value)}
+          placeholder="jinny@acme.com, minho@acme.com"
+          aria-label="초대할 이메일"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && emails.trim()) void invite();
+          }}
+        />
+        <button
+          type="button"
+          className="settings-primary"
+          onClick={() => void invite()}
+          disabled={busy || !emails.trim()}
+        >
+          {busy ? "만드는 중…" : "초대 링크 만들기"}
+        </button>
+      </div>
+
+      {issued.length > 0 ? (
+        <ul className="invite-list">
+          {issued.map((row) => (
+            <li key={row.email}>
+              <div className="invite-info">
+                <strong>{row.email}</strong>
+                <span>{row.link}</span>
+              </div>
+              <button type="button" onClick={() => void copy(row.link)}>
+                복사
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** Password change and the way out. */
+function AccountSection() {
+  const me = useApp((state) => state.me);
+  const signOut = useApp((state) => state.signOut);
+  const showBanner = useApp((state) => state.showBanner);
+  const reportError = useApp((state) => state.reportError);
+
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const changePassword = async () => {
+    if (busy || !current || next.length < 10) return;
+    setBusy(true);
+    try {
+      await api.changePassword(current, next);
+      setCurrent("");
+      setNext("");
+      showBanner("info", "비밀번호를 변경했습니다.");
+    } catch (error) {
+      reportError(error, "비밀번호를 변경하지 못했습니다. 현재 비밀번호를 확인해주세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="settings-provider">
+      <div className="settings-status-row">
+        <label className="settings-field settings-status-text">
+          <span>현재 비밀번호</span>
+          <input
+            type="password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            autoComplete="current-password"
+          />
+        </label>
+        <label className="settings-field settings-status-text">
+          <span>새 비밀번호 (10자 이상)</span>
+          <input
+            type="password"
+            value={next}
+            onChange={(event) => setNext(event.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
+      </div>
+      <div className="settings-actions">
+        <button
+          type="button"
+          className="settings-primary"
+          onClick={() => void changePassword()}
+          disabled={busy || !current || next.length < 10}
+        >
+          비밀번호 변경
+        </button>
+      </div>
+
+      <div className="settings-danger-row">
+        <div>
+          <strong>로그아웃</strong>
+          <p>{me?.email ?? ""} 계정에서 이 기기의 세션을 종료합니다.</p>
+        </div>
+        <button type="button" onClick={() => void signOut()}>
+          로그아웃
+        </button>
       </div>
     </div>
   );

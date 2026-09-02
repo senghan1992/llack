@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { TYPING_TTL_MS, typingNames, useApp } from "@/store/app";
 
 import { ChannelSettings } from "./ChannelSettings";
-import { ChannelMark, IconBell, IconBellOff, IconGear, IconSearch } from "./Icon";
+import { ChannelMark, IconBell, IconBellOff, IconGear, IconPin, IconSearch } from "./Icon";
+import { PinnedMessages } from "./PinnedMessages";
 
 export function ChannelHeader() {
   const channel = useApp((state) =>
@@ -20,6 +21,7 @@ export function ChannelHeader() {
   const connection = useApp((state) => state.connection);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pinsOpen, setPinsOpen] = useState(false);
 
   // Entries expire by wall clock, so nudge a render when the newest one ages
   // out — otherwise "입력 중…" lingers until the next store change.
@@ -76,6 +78,15 @@ export function ChannelHeader() {
         <button
           type="button"
           className="header-button"
+          onClick={() => setPinsOpen(true)}
+          title="고정된 메시지"
+          aria-label="고정된 메시지"
+        >
+          <IconPin size={15} />
+        </button>
+        <button
+          type="button"
+          className="header-button"
           onClick={() => void toggleMute(channel.id)}
           title={muted ? "알림 켜기" : "알림 끄기"}
         >
@@ -107,6 +118,9 @@ export function ChannelHeader() {
 
       {settingsOpen ? (
         <ChannelSettings channel={channel} onClose={() => setSettingsOpen(false)} />
+      ) : null}
+      {pinsOpen ? (
+        <PinnedMessages channelId={channel.id} onClose={() => setPinsOpen(false)} />
       ) : null}
     </header>
   );

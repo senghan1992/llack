@@ -137,7 +137,31 @@ export function ChannelSettings({
     }
   };
 
+  const [notificationLevel, setNotificationLevel] = useState(
+    channel.membership?.notification_level ?? "all",
+  );
+
+  const changeNotificationLevel = async (level: string) => {
+    const previous = notificationLevel;
+    setNotificationLevel(level as typeof notificationLevel);
+    try {
+      await api.updateMembership(channel.id, { notification_level: level });
+      await refreshSidebar();
+    } catch (error) {
+      setNotificationLevel(previous);
+      reportError(error, "알림 수준을 바꾸지 못했습니다.");
+    }
+  };
+
+  // Archiving empties everyone's sidebar of this channel; one extra click is
+  // cheap insurance against a slip on a button with no undo.
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+
   const archive = async () => {
+    if (!confirmingArchive) {
+      setConfirmingArchive(true);
+      return;
+    }
     try {
       await api.updateChannel(channel.id, { is_archived: true });
       await refreshSidebar();
@@ -145,6 +169,7 @@ export function ChannelSettings({
       onClose();
     } catch (error) {
       reportError(error, "채널을 보관하지 못했습니다.");
+      setConfirmingArchive(false);
     }
   };
 
@@ -282,6 +307,25 @@ export function ChannelSettings({
             </ul>
           </section>
 
+          <section className="settings-section">
+            <h3>알림</h3>
+            <p className="settings-hint">
+              이 채널의 새 메시지를 언제 알릴지 정합니다. 음소거(머리글의 종)와
+              별개로, 알림 수준은 토스트와 배지 집계에 적용됩니다.
+            </p>
+            <label className="settings-field">
+              <span>알림 수준</span>
+              <select
+                value={notificationLevel}
+                onChange={(event) => void changeNotificationLevel(event.target.value)}
+              >
+                <option value="all">모든 메시지</option>
+                <option value="mentions">나를 부르는 멘션만</option>
+                <option value="nothing">알리지 않음</option>
+              </select>
+            </label>
+          </section>
+
           <section className="settings-section settings-danger">
             <h3>정리</h3>
             <div className="settings-danger-row">
@@ -306,9 +350,10 @@ export function ChannelSettings({
                 type="button"
                 className="is-destructive"
                 onClick={() => void archive()}
+                onMouseLeave={() => setConfirmingArchive(false)}
                 disabled={!isAdmin}
               >
-                보관
+                {confirmingArchive ? "정말 보관할까요?" : "보관"}
               </button>
             </div>
           </section>

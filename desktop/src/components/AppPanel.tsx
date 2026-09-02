@@ -257,6 +257,14 @@ export function AppPanel() {
         <span title={installation.granted_scopes.join(", ")}>
           권한 {installation.granted_scopes.length}개
         </span>
+        {/*
+          A cross-origin frame's load failure is undetectable from here, so
+          the escape hatch is stated instead of inferred — same policy as the
+          link-app footnote.
+        */}
+        <span className="app-panel-hint">
+          화면이 비어 보이면 앱 서버가 꺼져 있는 것일 수 있습니다.
+        </span>
       </footer>
     </aside>
   );

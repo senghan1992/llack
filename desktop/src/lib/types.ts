@@ -79,6 +79,14 @@ export interface Reaction {
   me: boolean;
 }
 
+/** One issued invitation. `invite_url` is shown once and never stored. */
+export interface InviteOut {
+  email: string;
+  role?: string | null;
+  expires_at?: string | null;
+  invite_url?: string | null;
+}
+
 /** One row of the channel member list. */
 export interface ChannelMemberEntry {
   id: Id;
@@ -181,6 +189,9 @@ export interface SendResult {
   client_msg_id: string;
   queued: boolean;
   error?: string | null;
+  /** Why it queued ("rate_limited", "network_error", "queued_in_order").
+   *  Set by the web adapter; the desktop shell's Rust outbox omits it. */
+  error_code?: string | null;
 }
 
 export interface BootstrapResult {

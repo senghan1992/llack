@@ -34,6 +34,7 @@ export function CommandPalette() {
   const people = useApp((state) => state.people);
   const installations = useApp((state) => state.installations);
   const openChannel = useApp((state) => state.openChannel);
+  const revealMessage = useApp((state) => state.revealMessage);
   const openDm = useApp((state) => state.openDm);
   const openAppPanel = useApp((state) => state.openAppPanel);
   const joinChannel = useApp((state) => state.joinChannel);
@@ -196,7 +197,9 @@ export function CommandPalette() {
           openAppPanel(entry.id);
           break;
         case "message":
-          await openChannel(entry.channelId);
+          // Not just the channel: the message. The store pages back until the
+          // hit is loaded, then the transcript scrolls to it and flashes it.
+          await revealMessage(entry.channelId, entry.id);
           break;
         case "file":
           try {
@@ -207,7 +210,7 @@ export function CommandPalette() {
           break;
       }
     },
-    [channels, openChannel, joinChannel, openDm, openAppPanel, setPalette, reportError],
+    [channels, openChannel, revealMessage, joinChannel, openDm, openAppPanel, setPalette, reportError],
   );
 
   if (!open) return null;

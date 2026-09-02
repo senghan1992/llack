@@ -120,6 +120,49 @@ pub async fn current_user(state: State<'_, Arc<AppState>>) -> Result<Option<User
     Ok(state.session().ok().and_then(|s| s.user()))
 }
 
+#[tauri::command]
+pub async fn update_me(state: State<'_, Arc<AppState>>, patch: serde_json::Value) -> Result<User> {
+    state.api()?.update_me(patch).await
+}
+
+#[tauri::command]
+pub async fn update_my_status(
+    state: State<'_, Arc<AppState>>,
+    patch: serde_json::Value,
+) -> Result<User> {
+    state.api()?.update_my_status(patch).await
+}
+
+#[tauri::command]
+pub async fn change_password(
+    state: State<'_, Arc<AppState>>,
+    current_password: String,
+    new_password: String,
+) -> Result<()> {
+    state
+        .api()?
+        .change_password(&current_password, &new_password)
+        .await
+}
+
+#[tauri::command]
+pub async fn create_invites(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    emails: Vec<String>,
+    role: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .create_invites(&workspace_id, &emails, &role)
+        .await
+}
+
+#[tauri::command]
+pub async fn accept_invite(state: State<'_, Arc<AppState>>, token: String) -> Result<Workspace> {
+    state.api()?.accept_invite(&token).await
+}
+
 // ── Workspaces ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -447,6 +490,23 @@ pub async fn edit_message(
     let message = state.api()?.edit_message(&message_id, &body).await?;
     state.cache.put_messages(std::slice::from_ref(&message))?;
     Ok(message)
+}
+
+#[tauri::command]
+pub async fn set_pinned(
+    state: State<'_, Arc<AppState>>,
+    message_id: String,
+    pinned: bool,
+) -> Result<Message> {
+    state.api()?.set_pinned(&message_id, pinned).await
+}
+
+#[tauri::command]
+pub async fn channel_pins(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+) -> Result<Vec<Message>> {
+    state.api()?.channel_pins(&channel_id).await
 }
 
 #[tauri::command]

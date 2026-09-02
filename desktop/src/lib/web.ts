@@ -37,6 +37,7 @@ import type {
   DrainReport,
   FileRef,
   Id,
+  InviteOut,
   Message,
   PanelSession,
   PendingMessage,
@@ -294,6 +295,50 @@ function query(params: Record<string, string | number | null | undefined>): stri
  * a message; here a reload does, which is the honest cost of the tab.
  */
 const outbox = new Map<string, PendingMessage>();
+
+/*
+ * The web outbox drains itself.
+ *
+ * Queueing a message and then waiting for a human to find a retry button is
+ * how a rate-limited burst used to die: the entries sat "pending" forever and
+ * a reload erased them. Every path that leaves something retryable in the
+ * outbox now also schedules a drain, with a backoff that grows with the
+ * entries' attempt count. After a drain pass, affected channels get a
+ * `channel_changed` sync effect so the store refreshes both the transcript
+ * (the echo may have raced the response) and the pending rows.
+ */
+let drainTimer: number | null = null;
+
+function scheduleDrain(delayMs: number): void {
+  if (drainTimer !== null) return;
+  drainTimer = window.setTimeout(() => {
+    drainTimer = null;
+    void runScheduledDrain();
+  }, delayMs);
+}
+
+async function runScheduledDrain(): Promise<void> {
+  const channels = new Set(
+    [...outbox.values()]
+      .filter((entry) => entry.state !== "failed")
+      .map((entry) => entry.channel_id),
+  );
+  if (channels.size === 0) return;
+
+  const report = await webApi.drainOutbox();
+  for (const channelId of channels) {
+    emit<SyncEffect>("sync", { kind: "channel_changed", channel_id: channelId });
+  }
+  if (report.still_pending > 0) {
+    const attempts = Math.max(
+      1,
+      ...[...outbox.values()]
+        .filter((entry) => entry.state === "pending")
+        .map((entry) => entry.attempts),
+    );
+    scheduleDrain(Math.min(3_000 * attempts, 20_000));
+  }
+}
 
 function isRetryable(code: string): boolean {
   return code === "network_error" || code.startsWith("http_5") || code === "rate_limited";
@@ -654,6 +699,38 @@ export const webApi = {
     return me;
   },
 
+  updateProfile: async (patch: {
+    display_name?: string;
+    title?: string;
+    avatar_url?: string;
+  }): Promise<User> => {
+    me = await request<User>("PATCH", "/me", patch);
+    return me;
+  },
+
+  updateStatus: async (patch: {
+    status_emoji?: string | null;
+    status_text?: string | null;
+  }): Promise<User> => {
+    me = await request<User>("PUT", "/me/status", patch);
+    return me;
+  },
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>("POST", "/auth/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+
+  createInvites: (workspaceId: Id, emails: string[], role = "member") =>
+    request<InviteOut[]>("POST", `/workspaces/${workspaceId}/invites`, {
+      emails,
+      role,
+    }),
+
+  acceptInvite: (token: string) =>
+    request<Workspace>("POST", "/invites/accept", { token }),
+
   // ── Workspaces ────────────────────────────────────────────────────────
 
   listWorkspaces: () => request<Workspace[]>("GET", "/workspaces"),
@@ -783,6 +860,24 @@ export const webApi = {
       created_at_ms: Date.now(),
     };
 
+    // A pending entry ahead of us means order is at stake: sending directly
+    // would overtake it. Join the queue instead — the drain sends in order.
+    const blocked = [...outbox.values()].some(
+      (queued) =>
+        queued.channel_id === options.channelId && queued.state !== "failed",
+    );
+    if (blocked) {
+      outbox.set(clientMsgId, { ...entry, state: "pending", attempts: 0 });
+      scheduleDrain(300);
+      return {
+        message: null,
+        client_msg_id: clientMsgId,
+        queued: true,
+        error: "앞의 메시지가 전송되는 대로 함께 전송됩니다.",
+        error_code: "queued_in_order",
+      };
+    }
+
     try {
       const message = await postMessage(entry);
       return { message, client_msg_id: clientMsgId, queued: false };
@@ -791,17 +886,20 @@ export const webApi = {
       if (!isRetryable(parsed.code)) throw parsed;
 
       // Queue it, exactly as the desktop outbox would, so the composer clears
-      // and the message goes out when the server comes back.
+      // and the message goes out when the server comes back — and schedule
+      // the drain that makes "goes out" true without human help.
       outbox.set(clientMsgId, {
         ...entry,
         state: "pending",
         last_error: parsed.message,
       });
+      scheduleDrain(parsed.code === "rate_limited" ? 3_500 : 2_000);
       return {
         message: null,
         client_msg_id: clientMsgId,
         queued: true,
         error: parsed.message,
+        error_code: parsed.code,
       };
     }
   },
@@ -810,6 +908,12 @@ export const webApi = {
     request<Message>("PATCH", `/messages/${messageId}`, { body }),
 
   deleteMessage: (messageId: Id) => request<void>("DELETE", `/messages/${messageId}`),
+
+  setPinned: (messageId: Id, pinned: boolean) =>
+    request<Message>("POST", `/messages/${messageId}/pin?pinned=${pinned}`),
+
+  channelPins: (channelId: Id) =>
+    request<Message[]>("GET", `/channels/${channelId}/pins`),
 
   toggleReaction: async (messageId: Id, emoji: string, add: boolean): Promise<void> => {
     if (add) {

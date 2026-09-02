@@ -272,6 +272,50 @@ impl ApiClient {
 
     // ── Workspaces ──────────────────────────────────────────────────────
 
+    /// Update my profile (display_name / title / avatar_url / …). `patch`
+    /// carries only the fields to change.
+    pub async fn update_me(&self, patch: serde_json::Value) -> Result<User> {
+        self.send(Method::PATCH, "/me", Some(&patch)).await
+    }
+
+    /// Set my status (status_emoji / status_text / presence).
+    pub async fn update_my_status(&self, patch: serde_json::Value) -> Result<User> {
+        self.send(Method::PUT, "/me/status", Some(&patch)).await
+    }
+
+    pub async fn change_password(&self, current: &str, new_password: &str) -> Result<()> {
+        let payload = serde_json::json!({
+            "current_password": current,
+            "new_password": new_password,
+        });
+        self.send::<_, serde_json::Value>(Method::POST, "/auth/password", Some(&payload))
+            .await
+            .map(|_| ())
+    }
+
+    /// Issue workspace invitations (admin). Untyped passthrough: the response
+    /// carries one-time invite URLs the UI renders verbatim.
+    pub async fn create_invites(
+        &self,
+        workspace_id: &str,
+        emails: &[String],
+        role: &str,
+    ) -> Result<serde_json::Value> {
+        let payload = serde_json::json!({ "emails": emails, "role": role });
+        self.send(
+            Method::POST,
+            &format!("/workspaces/{workspace_id}/invites"),
+            Some(&payload),
+        )
+        .await
+    }
+
+    pub async fn accept_invite(&self, token: &str) -> Result<Workspace> {
+        let payload = serde_json::json!({ "token": token });
+        self.send(Method::POST, "/invites/accept", Some(&payload))
+            .await
+    }
+
     pub async fn list_workspaces(&self) -> Result<Vec<Workspace>> {
         self.send::<(), _>(Method::GET, "/workspaces", None).await
     }
@@ -486,6 +530,20 @@ impl ApiClient {
         self.send::<(), serde_json::Value>(Method::DELETE, &format!("/messages/{message_id}"), None)
             .await
             .map(|_| ())
+    }
+
+    pub async fn set_pinned(&self, message_id: &str, pinned: bool) -> Result<Message> {
+        self.send::<(), _>(
+            Method::POST,
+            &format!("/messages/{message_id}/pin?pinned={pinned}"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn channel_pins(&self, channel_id: &str) -> Result<Vec<Message>> {
+        self.send::<(), _>(Method::GET, &format!("/channels/{channel_id}/pins"), None)
+            .await
     }
 
     pub async fn add_reaction(&self, message_id: &str, emoji: &str) -> Result<()> {

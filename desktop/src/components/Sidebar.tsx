@@ -32,6 +32,7 @@ export function Sidebar() {
   const [creating, setCreating] = useState(false);
   const [startingDm, setStartingDm] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newPrivate, setNewPrivate] = useState(false);
 
   const groups = useMemo(() => {
     const starred: Channel[] = [];
@@ -51,7 +52,8 @@ export function Sidebar() {
     if (!name) return;
     setNewName("");
     setCreating(false);
-    await createChannel(name, "public");
+    setNewPrivate(false);
+    await createChannel(name, newPrivate ? "private" : "public");
   };
 
   const renderChannel = (channel: Channel) => {
@@ -163,9 +165,20 @@ export function Sidebar() {
                   if (event.key === "Escape") {
                     setCreating(false);
                     setNewName("");
+                    setNewPrivate(false);
                   }
                 }}
               />
+              {/* A private channel could not be created from the UI at all —
+                  the kind was hardcoded. One honest checkbox. */}
+              <label className="sidebar-new-private">
+                <input
+                  type="checkbox"
+                  checked={newPrivate}
+                  onChange={(event) => setNewPrivate(event.target.checked)}
+                />
+                비공개 채널 (초대한 사람만 볼 수 있습니다)
+              </label>
             </form>
           ) : null}
           {groups.rooms.map(renderChannel)}

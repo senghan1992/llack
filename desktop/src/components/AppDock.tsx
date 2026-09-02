@@ -122,7 +122,11 @@ export function AppDock() {
                 );
               }
             }}
-            title={installation.app.tagline ?? installation.app.name}
+            title={
+              installation.app.tagline
+                ? `${installation.app.name} — ${installation.app.tagline}`
+                : installation.app.name
+            }
           >
             {/*
               The app's own `accent_color` is deliberately ignored: on this
@@ -220,6 +224,28 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
   const [linkName, setLinkName] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [addingLink, setAddingLink] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  // Every other modal closes on Escape; this one was the odd one out.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const removeInstallation = async (installationId: string) => {
+    setRemoving(installationId);
+    try {
+      await api.uninstallApp(installationId);
+      await loadInstallations();
+    } catch (error) {
+      reportError(error, "앱을 제거하지 못했습니다. 관리자 권한이 필요할 수 있습니다.");
+    } finally {
+      setRemoving(null);
+    }
+  };
 
   const addLink = async () => {
     if (!workspaceId || addingLink) return;
@@ -233,10 +259,16 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
       setLinkUrl("");
       onClose();
     } catch (error) {
-      reportError(
-        error,
-        "웹 앱을 추가하지 못했습니다. 주소를 확인해주세요 (관리자 권한이 필요합니다).",
-      );
+      // One cause per sentence: a member being told to "check the URL" would
+      // fix the wrong thing.
+      const parsed = reportError(error);
+      const message =
+        parsed.status === 403
+          ? "웹 앱은 워크스페이스 관리자만 추가할 수 있습니다."
+          : parsed.status === 422
+            ? "주소를 확인해주세요. http(s) 주소만 추가할 수 있습니다."
+            : "웹 앱을 추가하지 못했습니다.";
+      useApp.setState({ banner: { kind: "error", message } });
     } finally {
       setAddingLink(false);
     }
@@ -338,6 +370,34 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           </section>
+
+          {installations.length > 0 ? (
+            <section className="directory-section installed-section">
+              <h3>설치된 앱</h3>
+              <ul className="app-list">
+                {installations.map((installation) => (
+                  <li key={installation.id}>
+                    <div className="app-list-info">
+                      <strong>{installation.app.name}</strong>
+                      <span>
+                        {installation.app.kind === "link"
+                          ? `웹 앱 · ${installation.app.tagline ?? ""}`
+                          : (installation.app.tagline ?? "미니앱")}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="app-remove"
+                      onClick={() => void removeInstallation(installation.id)}
+                      disabled={removing === installation.id}
+                    >
+                      {removing === installation.id ? "제거 중…" : "제거"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <section className="directory-section">
             <h3>미니앱</h3>

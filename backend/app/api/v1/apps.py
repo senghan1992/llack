@@ -191,6 +191,28 @@ async def add_link_app(
     so the bridge-token path structurally cannot mint one for an external
     site.
     """
+    # The same URL twice is the same tool twice: two identical tiles in the
+    # dock, indistinguishable when collapsed. Return the existing installation
+    # instead of minting a twin.
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.app import AppInstallation
+
+    existing = await db.scalar(
+        select(AppInstallation)
+        .join(App, App.id == AppInstallation.app_id)
+        .where(
+            AppInstallation.workspace_id == ctx.workspace.id,
+            App.kind == AppKind.LINK.value,
+            App.panel_url == str(payload.url),
+        )
+        .options(selectinload(AppInstallation.app))
+        .limit(1)
+    )
+    if existing is not None:
+        return AppInstallationOut.model_validate(existing)
+
     manifest = AppManifest(
         slug=f"link-{secrets.token_hex(4)}",
         name=payload.name,

@@ -41,7 +41,19 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
 
   const [editing, setEditing] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [draft, setDraft] = useState(message.body);
+  const refreshChannel = useApp((state) => state.refreshChannel);
+  const reportError = useApp((state) => state.reportError);
+
+  const togglePin = async () => {
+    try {
+      await api.setPinned(message.id, !message.is_pinned);
+      await refreshChannel(message.channel_id);
+    } catch (error) {
+      reportError(error, "고정 상태를 바꾸지 못했습니다.");
+    }
+  };
 
   const html = useMemo(
     () =>
@@ -272,6 +284,15 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
         >
           <IconShare size={13} />
         </button>
+        <button
+          type="button"
+          onClick={() => void togglePin()}
+          title={message.is_pinned ? "고정 해제" : "채널에 고정"}
+          aria-label={message.is_pinned ? "고정 해제" : "채널에 고정"}
+          className={message.is_pinned ? "is-on" : ""}
+        >
+          <IconPin size={13} />
+        </button>
         {isMine ? (
           <>
             <button
@@ -282,14 +303,33 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
             >
               <IconEdit size={13} />
             </button>
-            <button
-              type="button"
-              onClick={() => void deleteMessage(message.id)}
-              title="삭제"
-              aria-label="삭제"
-            >
-              <IconTrash size={13} />
-            </button>
+            {/*
+              Two clicks to delete, no dialog: the first click turns the
+              button into its own confirmation, and looking away resets it.
+              The trash sits one slot from edit, and there is no undo.
+            */}
+            {confirmingDelete ? (
+              <button
+                type="button"
+                className="is-confirm-delete"
+                onClick={() => void deleteMessage(message.id)}
+                onMouseLeave={() => setConfirmingDelete(false)}
+                onBlur={() => setConfirmingDelete(false)}
+                title="한 번 더 누르면 삭제됩니다"
+                aria-label="삭제 확인"
+              >
+                삭제?
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                title="삭제"
+                aria-label="삭제"
+              >
+                <IconTrash size={13} />
+              </button>
+            )}
           </>
         ) : null}
       </div>
