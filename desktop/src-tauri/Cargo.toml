@@ -32,6 +32,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
+async-trait.workspace = true
+base64 = "0.22"
 parking_lot.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

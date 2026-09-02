@@ -49,7 +49,9 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
-    Approved { source: DecisionSource },
+    Approved {
+        source: DecisionSource,
+    },
     /// The user said no.
     Denied,
     /// Nobody answered in time.
@@ -220,7 +222,13 @@ impl ApprovalBroker {
     ///
     /// Fails when the id is unknown, the nonce is wrong, or the request was
     /// already answered — a replayed answer must not approve a second action.
-    pub fn resolve(&self, request_id: &str, nonce: &str, approve: bool, remember: bool) -> Result<()> {
+    pub fn resolve(
+        &self,
+        request_id: &str,
+        nonce: &str,
+        approve: bool,
+        remember: bool,
+    ) -> Result<()> {
         let pending = {
             let mut map = self.pending.lock();
             match map.get(request_id) {
@@ -239,7 +247,9 @@ impl ApprovalBroker {
         };
 
         if remember && approve {
-            self.remember_requested.lock().insert(request_id.to_string());
+            self.remember_requested
+                .lock()
+                .insert(request_id.to_string());
         }
 
         let outcome = if approve {
@@ -332,7 +342,11 @@ mod tests {
             .await;
 
         assert_eq!(outcome, Outcome::Expired);
-        assert_eq!(broker.pending_count(), 0, "an expired request must be dropped");
+        assert_eq!(
+            broker.pending_count(),
+            0,
+            "an expired request must be dropped"
+        );
         assert_eq!(recorder.opened.lock().len(), 1);
         assert_eq!(recorder.closed.lock()[0].1, Outcome::Expired);
     }
@@ -422,7 +436,11 @@ mod tests {
         for handle in handles {
             assert_eq!(handle.await.unwrap(), Outcome::Cancelled);
         }
-        assert_eq!(broker.pending_count(), 0, "cancel must leave nothing pending");
+        assert_eq!(
+            broker.pending_count(),
+            0,
+            "cancel must leave nothing pending"
+        );
     }
 
     #[tokio::test]
@@ -451,7 +469,9 @@ mod tests {
         };
 
         assert!(
-            broker.resolve(&request.id, "forged-nonce", true, false).is_err(),
+            broker
+                .resolve(&request.id, "forged-nonce", true, false)
+                .is_err(),
             "a forged nonce must not approve"
         );
         assert_eq!(
@@ -491,7 +511,9 @@ mod tests {
         asking.await.unwrap();
 
         assert!(
-            broker.resolve(&request.id, &request.nonce, true, false).is_err(),
+            broker
+                .resolve(&request.id, &request.nonce, true, false)
+                .is_err(),
             "the same id and nonce must not be reusable"
         );
     }
@@ -563,13 +585,18 @@ mod tests {
                 })
             };
             let request = loop {
-                let opened = recorder.opened.lock();
-                if let Some(request) = opened.last().cloned() {
+                // The lock is taken and released inside this block, never held
+                // across the yield below — a std `Mutex` guard that survives an
+                // await is a deadlock waiting for a single-threaded runtime.
+                let seen = {
+                    let opened = recorder.opened.lock();
+                    opened.last().cloned()
+                };
+                if let Some(request) = seen {
                     if broker.pending_count() == 1 {
                         break request;
                     }
                 }
-                drop(opened);
                 tokio::task::yield_now().await;
             };
             broker

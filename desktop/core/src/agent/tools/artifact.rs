@@ -74,11 +74,7 @@ pub(super) fn query(
             },
             // Told to the model rather than raised: a missing argument is
             // something it can fix on the next turn.
-            None => {
-                return Ok(ToolOutput::error(
-                    "grep 에는 pattern 인자가 필요합니다.",
-                ))
-            }
+            None => return Ok(ToolOutput::error("grep 에는 pattern 인자가 필요합니다.")),
         },
         _ => return Ok(ToolOutput::error("알 수 없는 op 입니다.")),
     };

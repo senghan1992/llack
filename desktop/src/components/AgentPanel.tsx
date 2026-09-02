@@ -21,6 +21,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { createDriver, type TurnDriver } from "@/lib/agent/driver";
 import { agentHost, capabilities, events } from "@/lib/ipc";
 import { renderMessage } from "@/lib/markdown";
 import { useAgent } from "@/store/agent";
@@ -28,7 +29,7 @@ import { useApp } from "@/store/app";
 
 import { AgentApprovalCard } from "./AgentApprovalCard";
 import { AgentProviderSetup } from "./AgentProviderSetup";
-import { IconClose, IconSend } from "./Icon";
+import { IconClose, IconSend, IconStop } from "./Icon";
 
 export function AgentPanel() {
   const open = useAgent((state) => state.open);
@@ -43,13 +44,20 @@ export function AgentPanel() {
   const setProvider = useAgent((state) => state.setProvider);
   const showApproval = useAgent((state) => state.showApproval);
   const clearApproval = useAgent((state) => state.clearApproval);
-  const submit = useAgent((state) => state.submit);
-  const appendText = useAgent((state) => state.appendText);
-  const finishTurn = useAgent((state) => state.finishTurn);
   const setComputerControl = useAgent((state) => state.setComputerControl);
+  const setBanner = useAgent((state) => state.setBanner);
+  const activeChannelId = useApp((state) => state.activeChannelId);
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  /**
+   * One driver per session, holding the API-shaped message history.
+   *
+   * A ref rather than state: replacing it must not re-render, and re-rendering
+   * must not replace it — a new driver mid-conversation would silently start
+   * the history over and the only symptom would be the model losing the thread.
+   */
+  const driverRef = useRef<{ sessionId: string; driver: TurnDriver } | null>(null);
 
   // One subscription for the whole panel's life, not per turn.
   useEffect(() => {
@@ -103,20 +111,36 @@ export function AgentPanel() {
     if (!text || phase !== "idle") return;
     setDraft("");
 
-    let session = sessionId;
-    if (!session) {
-      session = await agentHost.agentOpenSession(null);
-      startSession(session);
-    }
+    try {
+      let session = sessionId;
+      if (!session) {
+        session = await agentHost.agentOpenSession(null);
+        startSession(session);
+      }
 
-    const turnId = submit(text);
-    // The turn loop lands in a later step; until then the panel proves the
-    // shell, the streaming surface and the approval card. An answer saying so
-    // beats a spinner that never resolves — and it goes in as *text*, not as
-    // the turn's `error`, because a missing feature is not a failure and must
-    // not be styled as one.
-    appendText(turnId, "모델 연결은 다음 단계에서 붙습니다. 지금은 패널과 승인 흐름만 동작합니다.");
-    finishTurn(turnId);
+      if (driverRef.current?.sessionId !== session) {
+        driverRef.current = {
+          sessionId: session,
+          driver: createDriver(session, provider?.model ?? ""),
+        };
+      }
+      // The engine needs to know which channel "this channel" means, and the
+      // user may have moved since the session opened.
+      await agentHost.agentFocus(session, activeChannelId).catch(() => {});
+
+      await driverRef.current.driver.send(text);
+    } catch (error) {
+      // The driver reports turn-level failures into the turn itself; this
+      // catches the ones before a turn exists — opening a session, fetching the
+      // catalog — which would otherwise vanish.
+      setBanner(
+        error instanceof Error ? error.message : "대화를 시작할 수 없습니다.",
+      );
+    }
+  };
+
+  const stop = () => {
+    driverRef.current?.driver.stop();
   };
 
   const needsProvider = !provider?.connected;
@@ -178,15 +202,29 @@ export function AgentPanel() {
               }
             }}
           />
-          <button
-            type="button"
-            className="agent-send"
-            onClick={() => void send()}
-            disabled={needsProvider || phase !== "idle" || !draft.trim()}
-            aria-label="보내기"
-          >
-            <IconSend size={15} />
-          </button>
+          {phase === "idle" ? (
+            <button
+              type="button"
+              className="agent-send"
+              onClick={() => void send()}
+              disabled={needsProvider || !draft.trim()}
+              aria-label="보내기"
+            >
+              <IconSend size={15} />
+            </button>
+          ) : (
+            /* The same slot, so stop is where send was — a control that moves
+               between states is a control people miss when they need it most. */
+            <button
+              type="button"
+              className="agent-stop"
+              onClick={stop}
+              aria-label="중단"
+              title="중단"
+            >
+              <IconStop size={13} />
+            </button>
+          )}
         </div>
         {!capabilities.computerControl ? (
           // Shown rather than hidden: a missing capability the user cannot see

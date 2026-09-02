@@ -41,6 +41,7 @@ import type {
   AgentEvent,
   AgentProviderStatus,
   AgentSessionSummary,
+  AgentToolSpec,
 } from "./agent/types";
 import { pickFilesInBrowser, webAgent, webApi, webEvents } from "./web";
 
@@ -320,6 +321,9 @@ const tauriAgent = {
 
   agentProviderDisconnect: () => call<AgentProviderStatus>("agent_provider_disconnect"),
 
+  /** The tools this host advertises. Computed in Rust, filtered by capability. */
+  agentTools: () => call<AgentToolSpec[]>("agent_tools"),
+
   agentSessions: (limit = 20) =>
     call<AgentSessionSummary[]>("agent_sessions", { limit }),
 
@@ -355,6 +359,13 @@ const tauriAgent = {
 
   /** Deny everything outstanding and stop the turn. */
   agentCancel: (sessionId: string) => call<void>("agent_cancel", { sessionId }),
+
+  /**
+   * Tell the engine which channel the panel is looking at, so a tool call with
+   * no explicit channel means "this one".
+   */
+  agentFocus: (sessionId: string, channelId: string | null) =>
+    call<void>("agent_focus", { sessionId, channelId }),
 
   /** Let the user choose a directory the agent may read without asking. */
   agentPickRoot: () => call<string | null>("agent_pick_root"),

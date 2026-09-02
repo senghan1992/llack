@@ -212,3 +212,18 @@ export function IconAgent(props: IconProps) {
     </Svg>
   );
 }
+
+/**
+ * Stop.
+ *
+ * A filled square, not an ✕. The ✕ in this app means "close this"; stopping a
+ * turn in flight is a different act, and the transport control everybody
+ * already recognises costs nothing to reuse.
+ */
+export function IconStop(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="4" width="8" height="8" rx="0.5" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}

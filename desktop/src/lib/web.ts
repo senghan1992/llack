@@ -17,7 +17,7 @@
  * - No OS notifications, tray badge or `llack://` deep links.
  */
 
-import type { AgentEvent, AgentProviderStatus } from "./agent/types";
+import type { AgentEvent, AgentProviderStatus, AgentToolSpec } from "./agent/types";
 import { asCommandError, commandError } from "./errors";
 import type {
   AppInstallation,
@@ -1104,6 +1104,53 @@ export const webAgent = {
   agentProviderDisconnect: () =>
     desktopOnly<AgentProviderStatus>("프로바이더 연결 해제"),
 
+  /**
+   * The browser advertises the same catalog minus `host.*`.
+   *
+   * Hard-coded rather than fetched: there is no Rust here to ask. The names and
+   * shapes must match `core/src/agent/tools/`, and the point of listing them is
+   * that the scripted fake exercises the same code path the desktop does — the
+   * panel does not know it is talking to a fake.
+   */
+  agentTools: async (): Promise<AgentToolSpec[]> => [
+    {
+      name: "chat.read_channel",
+      description: "채널의 최근 메시지를 읽습니다.",
+      input_schema: {
+        type: "object",
+        properties: {
+          channel_id: { type: "string" },
+          limit: { type: "integer" },
+        },
+        required: ["channel_id"],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "chat.search",
+      description: "워크스페이스에서 메시지를 검색합니다.",
+      input_schema: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "artifact.query",
+      description: "저장된 결과의 일부를 가져옵니다.",
+      input_schema: {
+        type: "object",
+        properties: {
+          handle: { type: "string" },
+          op: { type: "string" },
+        },
+        required: ["handle", "op"],
+        additionalProperties: false,
+      },
+    },
+  ],
+
   agentSessions: async (_limit = 20): Promise<never[]> => [],
 
   agentOpenSession: async (sessionId: string | null): Promise<string> => {
@@ -1142,6 +1189,8 @@ export const webAgent = {
   },
 
   agentCancel: async (_sessionId: string): Promise<void> => {},
+
+  agentFocus: async (_sessionId: string, _channelId: string | null): Promise<void> => {},
 
   agentPickRoot: () => desktopOnly<string | null>("폴더 선택"),
 };

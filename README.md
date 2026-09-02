@@ -143,6 +143,7 @@ llack/
 - [docs/WEB.md](docs/WEB.md) — 설치 없이 브라우저에서 보기 (SSH 터널 · 빠지는 기능)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 시스템 구조, 데이터 모델, 실시간 프로토콜, 배포
 - [docs/APP_PLATFORM.md](docs/APP_PLATFORM.md) — 미니앱 플랫폼: 매니페스트, 스코프, 보안 모델
+- [docs/AGENT.md](docs/AGENT.md) — 에이전트 패널: 도구, 승인 등급, 감사 로그, **없는 것**
 - [docs/ROADMAP.md](docs/ROADMAP.md) — 이 초안에 없는 것과 다음에 할 것
 
 ## 주요 명령

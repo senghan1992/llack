@@ -179,10 +179,45 @@ pub enum Decision {
 /// They are refused *persistence*: remembering `python` means remembering
 /// every program python can run, which is every program.
 const INTERPRETERS: &[&str] = &[
-    "sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "python", "python2", "python3",
-    "node", "deno", "bun", "ruby", "perl", "php", "lua", "osascript", "powershell", "pwsh", "cmd",
-    "cmd.exe", "env", "xargs", "nice", "timeout", "nohup", "setsid", "eval", "exec", "make",
-    "cargo", "npm", "npx", "pnpm", "yarn", "uv", "pipx",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "dash",
+    "ksh",
+    "csh",
+    "tcsh",
+    "python",
+    "python2",
+    "python3",
+    "node",
+    "deno",
+    "bun",
+    "ruby",
+    "perl",
+    "php",
+    "lua",
+    "osascript",
+    "powershell",
+    "pwsh",
+    "cmd",
+    "cmd.exe",
+    "env",
+    "xargs",
+    "nice",
+    "timeout",
+    "nohup",
+    "setsid",
+    "eval",
+    "exec",
+    "make",
+    "cargo",
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "uv",
+    "pipx",
 ];
 
 /// Ways to become another user. Refused outright: an agent that can elevate
@@ -430,11 +465,7 @@ fn classify_exec(argv: &[String], cwd: &Path, ctx: &SessionContext) -> Decision 
 }
 
 /// Argv shapes that are refused however the user answers.
-fn refuse_dangerous_argv(
-    argv: &[String],
-    name: &str,
-    ctx: &SessionContext,
-) -> Option<Decision> {
+fn refuse_dangerous_argv(argv: &[String], name: &str, ctx: &SessionContext) -> Option<Decision> {
     let rest: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
     let has = |needle: &str| rest.contains(&needle);
 
@@ -631,9 +662,9 @@ fn classify_path(path: &Path, access: Access, ctx: &SessionContext) -> PathVerdi
     if access == Access::Write {
         let as_str = path.to_string_lossy().replace('\\', "/");
         if SELF_ESCALATION_NAMES.contains(&file_name.as_str())
-            || SELF_ESCALATION_SEGMENTS
-                .iter()
-                .any(|seg| as_str.contains(&format!("/{seg}/")) || as_str.ends_with(&format!("/{seg}")))
+            || SELF_ESCALATION_SEGMENTS.iter().any(|seg| {
+                as_str.contains(&format!("/{seg}/")) || as_str.ends_with(&format!("/{seg}"))
+            })
         {
             return PathVerdict::Refuse {
                 rule: "path_self_escalation",
@@ -646,6 +677,32 @@ fn classify_path(path: &Path, access: Access, ctx: &SessionContext) -> PathVerdi
         return PathVerdict::InRoot;
     }
     PathVerdict::Allowed
+}
+
+/// The path deny list, exposed for callers outside the agent loop.
+///
+/// `upload_file` takes an absolute path from the webview and reads it off disk.
+/// That is exactly the primitive `host.read_file` is gated on, so it has to
+/// answer to the same list — otherwise the agent's refusals are theatre. A
+/// prompt-injected model that cannot read `~/.ssh/id_rsa` through its own tool
+/// can simply ask the panel to attach it to a message instead, and the file
+/// leaves the machine either way.
+///
+/// Returns `Some((rule, reason))` when the path is denied outright. `None`
+/// means only "not on the deny list" — it says nothing about whether the
+/// caller should ask the user first.
+///
+/// Same caveat as [`classify_path`]: this is lexical. Canonicalise before
+/// calling and re-check the opened file afterwards.
+pub fn refuse_path(
+    path: &Path,
+    access: Access,
+    ctx: &SessionContext,
+) -> Option<(&'static str, &'static str)> {
+    match classify_path(path, access, ctx) {
+        PathVerdict::Refuse { rule, reason } => Some((rule, reason)),
+        PathVerdict::InRoot | PathVerdict::Allowed => None,
+    }
 }
 
 /// Lexical normalisation: drop `.`, resolve `..` without touching the disk.
@@ -760,8 +817,13 @@ impl Decision {
         match self {
             Decision::Auto { taints: false } => "auto",
             Decision::Auto { taints: true } => "auto_tainting",
-            Decision::Approve { risk: Risk::Moderate, .. } => "approve_moderate",
-            Decision::Approve { risk: Risk::High, .. } => "approve_high",
+            Decision::Approve {
+                risk: Risk::Moderate,
+                ..
+            } => "approve_moderate",
+            Decision::Approve {
+                risk: Risk::High, ..
+            } => "approve_high",
             Decision::Refuse { rule, .. } => rule,
         }
     }
@@ -852,7 +914,10 @@ mod tests {
     fn an_untainted_session_may_remember_a_read_but_a_tainted_one_may_not() {
         let clean = classify(&read("/home/me/notes/todo.md"), &ctx());
         match clean {
-            Decision::Approve { grain: Grain::Session { .. }, .. } => {}
+            Decision::Approve {
+                grain: Grain::Session { .. },
+                ..
+            } => {}
             other => panic!("expected a session grain, got {other:?}"),
         }
 
@@ -870,7 +935,9 @@ mod tests {
     #[test]
     fn a_tainted_session_never_remembers_a_command() {
         match classify(&exec(&["git", "status"]), &tainted()) {
-            Decision::Approve { grain: Grain::Once, .. } => {}
+            Decision::Approve {
+                grain: Grain::Once, ..
+            } => {}
             other => panic!("expected Once, got {other:?}"),
         }
     }
@@ -964,7 +1031,12 @@ mod tests {
 
     #[test]
     fn kernel_interfaces_are_refused() {
-        for path in ["/proc/self/environ", "/proc/1234/mem", "/sys/kernel/notes", "/dev/mem"] {
+        for path in [
+            "/proc/self/environ",
+            "/proc/1234/mem",
+            "/sys/kernel/notes",
+            "/dev/mem",
+        ] {
             assert!(
                 classify(&read(path), &ctx()).is_refusal(),
                 "{path} must be refused"
@@ -1018,11 +1090,7 @@ mod tests {
     fn dot_dot_cannot_walk_out_of_a_root_into_a_secret() {
         // Lexically this resolves to /home/me/.ssh/id_rsa.
         assert!(
-            classify(
-                &read("/home/me/projects/app/../../.ssh/id_rsa"),
-                &ctx()
-            )
-            .is_refusal(),
+            classify(&read("/home/me/projects/app/../../.ssh/id_rsa"), &ctx()).is_refusal(),
             ".. must be resolved before the deny-list is applied"
         );
     }
@@ -1062,7 +1130,10 @@ mod tests {
             classify(&exec(&["rm", "-rf", "/home/me"]), &ctx()).rule(),
             "exec_rm_root"
         );
-        assert_eq!(classify(&exec(&["rm", "-rf", "/"]), &ctx()).rule(), "exec_rm_root");
+        assert_eq!(
+            classify(&exec(&["rm", "-rf", "/"]), &ctx()).rule(),
+            "exec_rm_root"
+        );
         assert_eq!(
             classify(&exec(&["git", "push", "--force"]), &ctx()).rule(),
             "exec_git_force_push"
@@ -1073,7 +1144,10 @@ mod tests {
     fn deleting_a_project_directory_is_only_an_approval_not_a_refusal() {
         // The refusal is scoped to home and filesystem roots; an agent that
         // cannot delete a build directory is not useful.
-        match classify(&exec(&["rm", "-rf", "/home/me/projects/app/target"]), &ctx()) {
+        match classify(
+            &exec(&["rm", "-rf", "/home/me/projects/app/target"]),
+            &ctx(),
+        ) {
             Decision::Approve { .. } => {}
             other => panic!("expected an approval, got {other:?}"),
         }
@@ -1098,7 +1172,11 @@ mod tests {
             "exec_print_token"
         );
         assert_eq!(
-            classify(&exec(&["security", "find-generic-password", "-s", "x"]), &ctx()).rule(),
+            classify(
+                &exec(&["security", "find-generic-password", "-s", "x"]),
+                &ctx()
+            )
+            .rule(),
             "exec_keychain_tool"
         );
         assert_eq!(
@@ -1126,9 +1204,21 @@ mod tests {
 
     #[test]
     fn interpreters_may_run_once_but_are_never_persisted() {
-        for program in ["sh", "bash", "python3", "node", "/usr/bin/env", "npx", "make"] {
+        for program in [
+            "sh",
+            "bash",
+            "python3",
+            "node",
+            "/usr/bin/env",
+            "npx",
+            "make",
+        ] {
             match classify(&exec(&[program, "-c", "echo hi"]), &ctx()) {
-                Decision::Approve { grain: Grain::Once, risk: Risk::High, .. } => {}
+                Decision::Approve {
+                    grain: Grain::Once,
+                    risk: Risk::High,
+                    ..
+                } => {}
                 other => panic!("{program} must be Once/High, got {other:?}"),
             }
         }
@@ -1157,8 +1247,14 @@ mod tests {
         let b = classify(&exec(&["git", "log", "--all"]), &ctx());
         match (a, b) {
             (
-                Decision::Approve { grain: Grain::Session { fingerprint: fa }, .. },
-                Decision::Approve { grain: Grain::Session { fingerprint: fb }, .. },
+                Decision::Approve {
+                    grain: Grain::Session { fingerprint: fa },
+                    ..
+                },
+                Decision::Approve {
+                    grain: Grain::Session { fingerprint: fb },
+                    ..
+                },
             ) => assert_ne!(fa, fb, "an extra argument must not reuse an approval"),
             other => panic!("expected two session grains, got {other:?}"),
         }
@@ -1195,7 +1291,11 @@ mod tests {
             },
             &ctx(),
         ) {
-            Decision::Approve { risk: Risk::High, grain: Grain::Once, .. } => {}
+            Decision::Approve {
+                risk: Risk::High,
+                grain: Grain::Once,
+                ..
+            } => {}
             other => panic!("expected High/Once, got {other:?}"),
         }
     }
@@ -1252,7 +1352,11 @@ mod tests {
                     .find(|f| f.label == "내용")
                     .unwrap()
                     .value;
-                assert!(shown.chars().count() <= 401, "got {} chars", shown.chars().count());
+                assert!(
+                    shown.chars().count() <= 401,
+                    "got {} chars",
+                    shown.chars().count()
+                );
                 assert!(shown.ends_with('…'));
             }
             other => panic!("expected an approval, got {other:?}"),
@@ -1263,10 +1367,77 @@ mod tests {
 
     #[test]
     fn normalise_resolves_dots_without_touching_the_disk() {
-        assert_eq!(
-            normalise(Path::new("/a/./b/../c")),
-            PathBuf::from("/a/c")
-        );
+        assert_eq!(normalise(Path::new("/a/./b/../c")), PathBuf::from("/a/c"));
         assert_eq!(normalise(Path::new("/a/b/../../..")), PathBuf::from("/"));
+    }
+
+    // ── refuse_path: the seam `upload_file` uses ─────────────────────────
+
+    fn upload_ctx() -> SessionContext {
+        SessionContext {
+            tainted: false,
+            roots: Vec::new(),
+            home: Some(PathBuf::from("/home/u")),
+            app_data_dir: PathBuf::from("/home/u/.local/share/llack"),
+        }
+    }
+
+    #[test]
+    fn refuse_path_denies_what_the_agent_is_denied() {
+        let ctx = upload_ctx();
+        // The rule id is whichever check fires first, and the by-name check
+        // runs before the by-directory one — both are refusals, and asserting
+        // the exact id is what keeps the ordering from drifting silently.
+        for (path, rule) in [
+            ("/home/u/.ssh/id_rsa", "path_secret_file"),
+            ("/home/u/.ssh/config", "path_home_credentials"),
+            ("/home/u/.aws/credentials", "path_secret_file"),
+            ("/home/u/.gnupg/trustdb.gpg", "path_home_credentials"),
+            ("/home/u/project/backend/.env", "path_secret_file"),
+            ("/home/u/project/server.pem", "path_secret_file"),
+            ("/home/u/project/cache.sqlite3", "path_secret_file"),
+            ("/etc/shadow", "path_system_secret"),
+            ("/proc/self/environ", "path_kernel_interface"),
+            (
+                "/home/u/.local/share/llack/agent.sqlite3",
+                "path_llack_state",
+            ),
+            // `..` must not walk out of a denied prefix check.
+            ("/home/u/project/../.ssh/id_ed25519", "path_secret_file"),
+            ("relative/path", "path_not_absolute"),
+        ] {
+            let got = refuse_path(Path::new(path), Access::Read, &ctx);
+            assert_eq!(got.map(|(r, _)| r), Some(rule), "for {path}");
+        }
+    }
+
+    #[test]
+    fn refuse_path_allows_an_ordinary_attachment() {
+        let ctx = upload_ctx();
+        for path in [
+            "/home/u/Downloads/report.pdf",
+            "/home/u/Pictures/screenshot.png",
+            "/home/u/project/README.md",
+            // Documentation, not a secret.
+            "/home/u/project/.env.example",
+        ] {
+            assert_eq!(
+                refuse_path(Path::new(path), Access::Read, &ctx),
+                None,
+                "for {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn refuse_path_read_is_not_write() {
+        let ctx = upload_ctx();
+        let build = Path::new("/home/u/project/Makefile");
+        // Uploading a Makefile is fine; the agent rewriting one is not.
+        assert_eq!(refuse_path(build, Access::Read, &ctx), None);
+        assert_eq!(
+            refuse_path(build, Access::Write, &ctx).map(|(r, _)| r),
+            Some("path_self_escalation")
+        );
     }
 }

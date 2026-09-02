@@ -271,9 +271,7 @@ pub async fn execute(
     let rule = decision.rule();
     let redacted = redact_args(&call);
 
-    audit.append(
-        AuditEntry::intent(name, redacted.clone(), rule).tainted(session.tainted),
-    )?;
+    audit.append(AuditEntry::intent(name, redacted.clone(), rule).tainted(session.tainted))?;
 
     let (verdict, source) = match &decision {
         Decision::Refuse { reason, .. } => {
@@ -294,14 +292,7 @@ pub async fn execute(
         Decision::Auto { .. } => (Verdict::Auto, DecisionSource::PolicyAuto),
         Decision::Approve { risk, grain, facts } => {
             let outcome = broker
-                .ask(
-                    ctx.session_id,
-                    name,
-                    *risk,
-                    grain,
-                    facts.clone(),
-                    rationale,
-                )
+                .ask(ctx.session_id, name, *risk, grain, facts.clone(), rationale)
                 .await;
             match outcome {
                 Outcome::Approved { source } => (Verdict::Approved, source),
@@ -523,9 +514,9 @@ async fn dispatch(
             "파일 쓰기 도구는 아직 제공되지 않습니다.".into(),
         )),
         // Refused by the policy before it can reach here.
-        ToolCall::Mcp { .. } | ToolCall::Unknown { .. } => Err(Error::Other(
-            "이 도구는 실행할 수 없습니다.".into(),
-        )),
+        ToolCall::Mcp { .. } | ToolCall::Unknown { .. } => {
+            Err(Error::Other("이 도구는 실행할 수 없습니다.".into()))
+        }
     }
 }
 
@@ -957,7 +948,10 @@ mod tests {
         assert_eq!(host.exec_calls.lock()[0], vec!["make", "build"]);
 
         // A 500-line log must not be in the tool result.
-        let handle = outcome.output.artifact.expect("large output needs a handle");
+        let handle = outcome
+            .output
+            .artifact
+            .expect("large output needs a handle");
         assert!(handle.starts_with("art_"));
         let rendered = outcome.output.content.to_string();
         assert!(
@@ -972,10 +966,18 @@ mod tests {
         let h = harness(Arc::new(FakeHost::default()));
         let broker = ApprovalBroker::new(Arc::new(SilentNotifier));
         let outcome = h
-            .run(&broker, &session(), "host.definitely_not_real", serde_json::json!({}))
+            .run(
+                &broker,
+                &session(),
+                "host.definitely_not_real",
+                serde_json::json!({}),
+            )
             .await;
         assert_eq!(outcome.verdict, Verdict::Refused);
-        assert_eq!(h.audit_records()[1].matched_rule.as_deref(), Some("unknown_tool"));
+        assert_eq!(
+            h.audit_records()[1].matched_rule.as_deref(),
+            Some("unknown_tool")
+        );
     }
 
     #[tokio::test]
@@ -1105,7 +1107,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_grep_without_a_pattern_tells_the_model_instead_of_failing_the_turn() {
-        let h = harness(Arc::new(FakeHost::with_history(vec![line("01M", "a", "b")])));
+        let h = harness(Arc::new(FakeHost::with_history(vec![line(
+            "01M", "a", "b",
+        )])));
         let broker = ApprovalBroker::new(Arc::new(SilentNotifier));
         let read = h
             .run(

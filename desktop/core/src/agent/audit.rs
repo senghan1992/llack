@@ -158,7 +158,11 @@ pub struct AuditEntry {
 
 impl AuditEntry {
     /// An intent record: what the agent is about to attempt.
-    pub fn intent(tool: impl Into<String>, args: serde_json::Value, risk: impl Into<String>) -> Self {
+    pub fn intent(
+        tool: impl Into<String>,
+        args: serde_json::Value,
+        risk: impl Into<String>,
+    ) -> Self {
         Self {
             phase: Phase::Intent,
             tool: tool.into(),
@@ -290,7 +294,9 @@ impl AuditLog {
         let mut chain = self.chain.lock();
 
         let record = AuditRecord {
-            ts: now.format(&Rfc3339).unwrap_or_else(|_| String::from("unknown")),
+            ts: now
+                .format(&Rfc3339)
+                .unwrap_or_else(|_| String::from("unknown")),
             seq: chain.seq + 1,
             prev: chain.prev.clone(),
             phase: entry.phase,

@@ -392,8 +392,7 @@ impl AgentStore {
                     seq: row.get(1)?,
                     role: row.get(2)?,
                     blocks: serde_json::from_str(&blocks).unwrap_or(serde_json::Value::Null),
-                    provider_payload: payload
-                        .and_then(|p| serde_json::from_str(&p).ok()),
+                    provider_payload: payload.and_then(|p| serde_json::from_str(&p).ok()),
                     created_at_ms: row.get(5)?,
                 })
             })?
@@ -448,7 +447,11 @@ impl AgentStore {
             handle: artifact.id.clone(),
             total_lines: lines.len(),
             bytes: body.len(),
-            head: lines.iter().take(PREVIEW_LINES).map(|s| s.to_string()).collect(),
+            head: lines
+                .iter()
+                .take(PREVIEW_LINES)
+                .map(|s| s.to_string())
+                .collect(),
             tail: if lines.len() > PREVIEW_LINES * 2 {
                 lines
                     .iter()
@@ -510,9 +513,7 @@ impl AgentStore {
                 |row| row.get(0),
             )
             .optional()?
-            .ok_or_else(|| {
-                Error::Other(format!("no artifact with the handle {handle}"))
-            })?;
+            .ok_or_else(|| Error::Other(format!("no artifact with the handle {handle}")))?;
 
         let lines: Vec<&str> = body.lines().collect();
         let total = lines.len();
@@ -521,13 +522,20 @@ impl AgentStore {
             ArtifactOp::Count => (0, Vec::new()),
             ArtifactOp::Head { lines: n } => (
                 0,
-                lines.iter().take((*n).min(max_lines)).map(|s| s.to_string()).collect(),
+                lines
+                    .iter()
+                    .take((*n).min(max_lines))
+                    .map(|s| s.to_string())
+                    .collect(),
             ),
             ArtifactOp::Tail { lines: n } => {
                 let take = (*n).min(max_lines).min(total);
                 (
                     total - take,
-                    lines[total - take..].iter().map(|s| s.to_string()).collect(),
+                    lines[total - take..]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
                 )
             }
             ArtifactOp::Slice { from, to } => {
@@ -804,7 +812,9 @@ mod tests {
             2
         );
         assert_eq!(
-            store.append_message(&s.id, "user", &serde_json::json!([]), None).unwrap(),
+            store
+                .append_message(&s.id, "user", &serde_json::json!([]), None)
+                .unwrap(),
             3
         );
     }
@@ -830,7 +840,12 @@ mod tests {
         let store = store();
         let s = session(&store);
         let (_, preview) = store
-            .put_artifact(&s.id, "chat_history", "one\ntwo\nthree", serde_json::json!({}))
+            .put_artifact(
+                &s.id,
+                "chat_history",
+                "one\ntwo\nthree",
+                serde_json::json!({}),
+            )
             .unwrap();
         assert_eq!(preview.inline.as_deref(), Some("one\ntwo\nthree"));
         assert_eq!(preview.total_lines, 3);
@@ -842,7 +857,12 @@ mod tests {
         let s = session(&store);
         let body: String = (0..500).map(|i| format!("line {i}\n")).collect();
         let (artifact, preview) = store
-            .put_artifact(&s.id, "exec_output", &body, serde_json::json!({"argv": ["make"]}))
+            .put_artifact(
+                &s.id,
+                "exec_output",
+                &body,
+                serde_json::json!({"argv": ["make"]}),
+            )
             .unwrap();
 
         assert!(preview.inline.is_none(), "a large body must not be inlined");

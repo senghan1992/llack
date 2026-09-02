@@ -4,6 +4,7 @@
 //! the background realtime task. All the logic those wrap lives in
 //! `llack-core`, which has no webview dependency and is unit-tested.
 
+mod agent_commands;
 mod commands;
 mod keychain;
 mod realtime_task;
@@ -49,7 +50,27 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-            let state = Arc::new(AppState::new(data_dir, KeychainTokenStore::shared())?);
+            let tokens = KeychainTokenStore::shared();
+            let state = Arc::new(AppState::new(data_dir.clone(), tokens.clone())?);
+
+            // The agent is built here rather than in `AppState::new` because
+            // its approval notifier needs an `AppHandle`, which does not exist
+            // until setup. A failure is logged and swallowed: a machine with no
+            // writable data directory should still be a working chat client
+            // without an agent panel, not a client that refuses to launch.
+            match llack_core::agent::AgentEngine::open(
+                data_dir,
+                home_dir(),
+                tokens,
+                Arc::new(agent_commands::PanelNotifier::new(app.handle().clone())),
+                llack_core::agent::HostCapabilities::desktop(),
+            ) {
+                Ok(engine) => state.install_agent(Arc::new(engine)),
+                Err(error) => {
+                    tracing::warn!(%error, "the agent panel is unavailable");
+                }
+            }
+
             app.manage(state);
 
             tray::build(app.handle())?;
@@ -141,6 +162,21 @@ pub fn run() {
             commands::reconnect,
             commands::cache_stats,
             commands::prune_cache,
+            // agent — the whole IPC surface the panel has
+            agent_commands::agent_provider_status,
+            agent_commands::agent_provider_connect,
+            agent_commands::agent_provider_disconnect,
+            agent_commands::agent_provider_request,
+            agent_commands::agent_provider_abort,
+            agent_commands::agent_tools,
+            agent_commands::agent_sessions,
+            agent_commands::agent_open_session,
+            agent_commands::agent_focus,
+            agent_commands::agent_tool_call,
+            agent_commands::agent_resolve_approval,
+            agent_commands::agent_cancel,
+            agent_commands::agent_pick_root,
+            agent_commands::agent_verify_audit,
         ])
         .run(tauri::generate_context!())
         .expect("could not start Llack");
@@ -152,4 +188,21 @@ fn init_tracing() {
     let filter = EnvFilter::try_from_env("LLACK_LOG")
         .unwrap_or_else(|_| EnvFilter::new("info,llack=debug,llack_core=debug"));
     let _ = fmt().with_env_filter(filter).with_target(true).try_init();
+}
+
+/// The user's home directory, for the agent's path policy.
+///
+/// Duplicated from `state.rs` rather than shared, because the two want
+/// different things from a missing value: `state` uses it per upload, this uses
+/// it once at startup. Both treat `None` as "the home-relative rules do not
+/// fire", which is safe — the absolute deny rules are unaffected.
+fn home_dir() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(std::path::PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    }
 }

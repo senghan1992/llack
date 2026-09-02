@@ -2495,6 +2495,27 @@ kbd {
   cursor: not-allowed;
 }
 
+/*
+ * Stop sits in the same 26px slot as send, and takes the plate rather than the
+ * one colour: red would read as "something went wrong", and stopping a turn is
+ * an ordinary thing to want.
+ */
+.agent-stop {
+  display: grid;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  color: var(--ink);
+  background: var(--n3);
+  place-items: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r);
+}
+
+.agent-stop:hover {
+  background: var(--n4);
+}
+
 .agent-composer-note {
   margin-top: 6px;
   font-size: 11px;

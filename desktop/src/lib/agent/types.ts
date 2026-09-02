@@ -63,10 +63,18 @@ export interface AgentSessionSummary {
   last_active_at_ms: number;
 }
 
-/** A tool as the panel renders it — metadata the UI does not interpret. */
+/**
+ * A tool as Rust advertises it. Mirrors `tools::ToolSpec`.
+ *
+ * The schema is generated in Rust and passed through untouched — the loop does
+ * not validate against it and neither does the UI. Rust is where a call that
+ * does not fit becomes a refusal, and a second validation in the webview would
+ * suggest the check lives here.
+ */
 export interface AgentToolSpec {
   name: string;
   description: string;
+  input_schema: Record<string, unknown>;
 }
 
 /**

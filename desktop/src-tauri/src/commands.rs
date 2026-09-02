@@ -494,13 +494,36 @@ pub async fn search_messages(
 
 // ── Files ───────────────────────────────────────────────────────────────────
 
+/// Read a local file and attach it to the workspace.
+///
+/// The path comes from the webview. Before the agent existed that was merely
+/// broad; now it is the cheapest way around the agent's file policy — a
+/// prompt-injected model that is refused `~/.ssh/id_rsa` through `host.read_file`
+/// could otherwise ask the panel to attach it to a message and the file leaves
+/// the machine anyway. So this goes through the same deny list, and it
+/// canonicalises first: the list is lexical, and `Downloads/link → ~/.ssh` is
+/// one symlink away otherwise.
 #[tauri::command]
 pub async fn upload_file(
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     path: String,
 ) -> Result<llack_core::FileRef> {
-    let file_path = std::path::PathBuf::from(&path);
+    let requested = std::path::PathBuf::from(&path);
+    let file_path = std::fs::canonicalize(&requested)
+        .map_err(|e| Error::Other(format!("could not read {path}: {e}")))?;
+
+    if let Some((rule, reason)) = llack_core::agent::policy::refuse_path(
+        &file_path,
+        llack_core::agent::policy::Access::Read,
+        &state.path_context(),
+    ) {
+        // The rule id goes to the log, the reason to the user. Naming the rule
+        // in the message would teach a caller which name to avoid next time.
+        tracing::warn!(rule, path = %file_path.display(), "upload refused by path policy");
+        return Err(Error::Other(reason.into()));
+    }
+
     let filename = file_path
         .file_name()
         .and_then(|n| n.to_str())

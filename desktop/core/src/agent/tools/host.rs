@@ -61,11 +61,7 @@ pub(super) fn specs() -> Vec<ToolSpec> {
     ]
 }
 
-pub(super) async fn exec(
-    ctx: &ToolContext<'_>,
-    argv: &[String],
-    cwd: &Path,
-) -> Result<ToolOutput> {
+pub(super) async fn exec(ctx: &ToolContext<'_>, argv: &[String], cwd: &Path) -> Result<ToolOutput> {
     let out = ctx.host.exec(argv, cwd).await?;
 
     // Build output goes to the artifact store like a channel history does: a

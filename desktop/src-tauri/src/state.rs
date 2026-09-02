@@ -17,6 +17,13 @@ pub struct AppState {
     pub token_store: Arc<dyn TokenStore>,
     inner: RwLock<Connected>,
     pub data_dir: PathBuf,
+    /// The agent, once the window exists.
+    ///
+    /// Late-initialised because the approval notifier needs an `AppHandle`, and
+    /// `AppState` is built before the window is. `None` means the panel is
+    /// simply unavailable — every command that needs it says so rather than
+    /// unwrapping.
+    agent: RwLock<Option<Arc<llack_core::agent::AgentEngine>>>,
 }
 
 #[derive(Default)]
@@ -40,6 +47,7 @@ impl AppState {
             token_store,
             inner: RwLock::new(Connected::default()),
             data_dir,
+            agent: RwLock::new(None),
         })
     }
 
@@ -51,7 +59,10 @@ impl AppState {
         }
         // The account key is the server URL, so one machine can hold
         // credentials for several Llack deployments side by side.
-        let session = Arc::new(Session::new(self.token_store.clone(), config.base_url.clone()));
+        let session = Arc::new(Session::new(
+            self.token_store.clone(),
+            config.base_url.clone(),
+        ));
         session.restore()?;
 
         let api = Arc::new(ApiClient::new(config, session.clone())?);
@@ -62,6 +73,20 @@ impl AppState {
         inner.server_url = Some(server_url.to_string());
         inner.sync = None;
         Ok(api)
+    }
+
+    /// The path policy context for this machine.
+    ///
+    /// No roots: nothing here is a session the user granted the agent, so every
+    /// path is judged on the deny list alone. Used by `upload_file`, which
+    /// reads an arbitrary absolute path the webview handed it.
+    pub fn path_context(&self) -> llack_core::agent::policy::SessionContext {
+        llack_core::agent::policy::SessionContext {
+            tainted: false,
+            roots: Vec::new(),
+            home: dirs_home(),
+            app_data_dir: self.data_dir.clone(),
+        }
     }
 
     pub fn api(&self) -> Result<Arc<ApiClient>> {
@@ -89,6 +114,13 @@ impl AppState {
         let api = self.api()?;
         let engine = Arc::new(SyncEngine::new(self.cache.clone(), api, user_id));
         self.inner.write().sync = Some(engine.clone());
+        // The agent learns who it belongs to here rather than in each of the
+        // three sign-in paths (resume, login, register). Its keychain accounts
+        // and its session rows are all keyed by user id, so a missed call would
+        // be an agent that silently reads another account's settings.
+        if let Ok(agent) = self.agent() {
+            agent.set_user(user_id);
+        }
         Ok(engine)
     }
 
@@ -124,8 +156,40 @@ impl AppState {
         self.inner.read().active_workspace_id.clone()
     }
 
+    /// Alias used by the agent commands, which read it per call rather than
+    /// caching it — the panel can be open across a workspace switch.
+    pub fn active_workspace_id(&self) -> Option<String> {
+        self.active_workspace()
+    }
+
+    // ── The agent ────────────────────────────────────────────────────────
+
+    pub fn install_agent(&self, engine: Arc<llack_core::agent::AgentEngine>) {
+        *self.agent.write() = Some(engine);
+    }
+
+    pub fn agent(&self) -> Result<Arc<llack_core::agent::AgentEngine>> {
+        self.agent
+            .read()
+            .clone()
+            .ok_or_else(|| Error::Other("에이전트를 사용할 수 없습니다.".into()))
+    }
+
     /// Tear down everything user-specific. Called on sign-out.
+    ///
+    /// The agent goes first. It holds the provider key in the keychain, live
+    /// approval grants in memory, and pending prompts on screen; clearing the
+    /// message cache while an approved `host.exec` is still in flight would
+    /// leave the most dangerous state behind and the least dangerous state
+    /// gone.
     pub fn reset(&self) -> Result<()> {
+        if let Ok(agent) = self.agent() {
+            // A failure here is reported but does not stop the sign-out: a user
+            // who pressed sign-out must end up signed out.
+            if let Err(error) = agent.clear_user() {
+                tracing::warn!(%error, "could not fully clear agent state on sign-out");
+            }
+        }
         if let Some(handle) = self.take_realtime() {
             let _ = handle.shutdown();
         }
@@ -134,5 +198,27 @@ impl AppState {
         inner.sync = None;
         inner.active_workspace_id = None;
         Ok(())
+    }
+}
+
+/// The user's home directory, without taking a dependency for one lookup.
+///
+/// Returning `None` is safe: the home-relative rules simply do not fire, and
+/// every absolute deny rule still does. It is not safe to *guess* — a wrong
+/// home would make `~/.ssh` look like an ordinary directory.
+fn dirs_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .or_else(|| {
+                let drive = std::env::var_os("HOMEDRIVE")?;
+                let path = std::env::var_os("HOMEPATH")?;
+                Some(PathBuf::from(drive).join(path))
+            })
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
     }
 }
