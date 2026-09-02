@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-2"
     max_upload_bytes: int = 104_857_600  # 100 MiB
 
+    # ── Rate limits ─────────────────────────────────────────────────────
+    # Token-bucket capacities (burst size == sustained rate over the window).
+    # 0 disables a limit. In-process: with N workers the effective limit is
+    # N× these numbers — see app/core/ratelimit.py.
+    rate_limit_login_per_minute: int = 10        # per email+IP
+    rate_limit_register_per_hour: int = 30       # per IP
+    rate_limit_messages_per_10s: int = 30        # per user
+    rate_limit_search_per_minute: int = 60       # per user
+
     # ── Realtime ────────────────────────────────────────────────────────
     ws_heartbeat_seconds: int = 25
     presence_ttl_seconds: int = 60

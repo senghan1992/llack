@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header, Request, status
 
 from app.api.deps import ClientIp, CurrentUser, DbSession
 from app.core.config import settings
+from app.core.ratelimit import limiter
 from app.core.security import decode_access_token
 from app.schemas.auth import (
     AuthResponse,
@@ -35,6 +36,9 @@ async def register(
     payload: RegisterRequest, db: DbSession, request: Request, ip: ClientIp
 ) -> AuthResponse:
     """Create an account. Open by default; gate this behind SSO in production."""
+    limiter.check(
+        "register", ip, capacity=settings.rate_limit_register_per_hour, per_seconds=3_600
+    )
     user = await auth_service.register_user(
         db,
         email=payload.email,
@@ -53,6 +57,14 @@ async def register(
 async def login(
     payload: LoginRequest, db: DbSession, request: Request, ip: ClientIp
 ) -> AuthResponse:
+    # Keyed by email *and* address, and checked before the password: the
+    # bucket must fill on failures, or it does not slow a guesser down.
+    limiter.check(
+        "login",
+        f"{payload.email.lower()}|{ip or '-'}",
+        capacity=settings.rate_limit_login_per_minute,
+        per_seconds=60,
+    )
     user = await auth_service.authenticate(db, email=payload.email, password=payload.password)
     tokens = await auth_service.issue_tokens(
         db, user, device=payload.device, ip_address=ip, user_agent=_user_agent(request)

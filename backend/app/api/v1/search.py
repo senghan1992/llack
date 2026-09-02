@@ -15,7 +15,9 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbSession, WorkspaceCtx
 from app.api.v1.messages import serialise_message
+from app.core.config import settings
 from app.core.enums import ChannelKind
+from app.core.ratelimit import limiter
 from app.models.app import AppInstallation
 from app.models.channel import Channel, ChannelMember
 from app.models.file import FileObject
@@ -37,6 +39,9 @@ async def search_messages(
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
     cursor: Annotated[str | None, Query(max_length=26)] = None,
 ) -> SearchResponse:
+    limiter.check(
+        "search", ctx.user.id, capacity=settings.rate_limit_search_per_minute, per_seconds=60
+    )
     hits, _has_more, took_ms = await message_service.search_messages(
         db,
         workspace_id=ctx.workspace.id,
@@ -71,6 +76,9 @@ async def search_everything(
     limit: Annotated[int, Query(ge=1, le=20)] = 8,
 ) -> dict[str, Any]:
     """Everything at once, capped per category — built for a command palette."""
+    limiter.check(
+        "search", ctx.user.id, capacity=settings.rate_limit_search_per_minute, per_seconds=60
+    )
     term = q.strip()
     pattern = f"%{term.lower()}%"
 

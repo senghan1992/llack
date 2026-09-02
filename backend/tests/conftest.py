@@ -25,6 +25,7 @@ import httpx  # noqa: E402
 from asgi_lifespan import LifespanManager  # noqa: E402
 
 from app.core.db import dispose_engine, get_engine  # noqa: E402
+from app.core.ratelimit import limiter  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402
 
@@ -42,6 +43,13 @@ async def _fresh_schema() -> AsyncIterator[None]:
         await conn.run_sync(Base.metadata.create_all)
     yield
     await dispose_engine()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits() -> None:
+    # The limiter is process-global; without this, the whole suite shares one
+    # register bucket and the 30th test's sign-up gets a spurious 429.
+    limiter.reset()
 
 
 @pytest.fixture

@@ -7,7 +7,9 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import ChannelCtx, CurrentUser, DbSession, PrincipalChannelCtx
+from app.core.config import settings
 from app.core.enums import AppScope, ChannelRole, MessageKind
+from app.core.ratelimit import limiter
 from app.realtime.events import emit_to_channel, emit_to_users
 from app.schemas.common import CursorPage, OkResponse
 from app.schemas.file import FileOut
@@ -132,6 +134,12 @@ async def create_message(
     """
     ctx.require_scope(AppScope.MESSAGES_WRITE)
     ctx.require_member()
+    limiter.check(
+        "messages",
+        ctx.user.id,
+        capacity=settings.rate_limit_messages_per_10s,
+        per_seconds=10,
+    )
 
     message, created = await message_service.create_message(
         db,
