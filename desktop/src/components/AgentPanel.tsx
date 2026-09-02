@@ -28,7 +28,6 @@ import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
 import { AgentApprovalCard } from "./AgentApprovalCard";
-import { AgentProviderSetup } from "./AgentProviderSetup";
 import { IconClose, IconSend, IconStop } from "./Icon";
 
 export function AgentPanel() {
@@ -47,6 +46,7 @@ export function AgentPanel() {
   const setComputerControl = useAgent((state) => state.setComputerControl);
   const setBanner = useAgent((state) => state.setBanner);
   const activeChannelId = useApp((state) => state.activeChannelId);
+  const openSettings = useApp((state) => state.setSettings);
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -151,7 +151,16 @@ export function AgentPanel() {
         <h2>
           에이전트
           {provider?.connected ? (
-            <span className="agent-model">{provider.model}</span>
+            // A button, because the model is a choice: it opens the settings
+            // dialog where the account's model list lives.
+            <button
+              type="button"
+              className="agent-model"
+              onClick={() => openSettings(true)}
+              title="설정에서 모델 변경"
+            >
+              {provider.model}
+            </button>
           ) : null}
         </h2>
         {tainted ? (
@@ -171,7 +180,7 @@ export function AgentPanel() {
 
       <div className="agent-scroll" ref={scrollRef}>
         {needsProvider ? (
-          <AgentProviderSetup />
+          <AgentNeedsProvider onOpenSettings={() => openSettings(true)} />
         ) : turns.length === 0 ? (
           <AgentEmptyState />
         ) : (
@@ -250,6 +259,45 @@ const AGENT_RENDER = {
   userName: () => undefined,
   channelName: () => undefined,
 };
+
+/**
+ * No provider yet: point at settings rather than embedding the form here.
+ *
+ * The panel is where you talk to the model; setup is a different act and lives
+ * in 환경설정 with the rest of what gets configured once. In a browser there is
+ * nothing to configure, so the note says what stands in instead.
+ */
+function AgentNeedsProvider({ onOpenSettings }: { onOpenSettings: () => void }) {
+  if (!capabilities.computerControl) {
+    return (
+      <div className="agent-setup">
+        <p className="agent-setup-lead">
+          브라우저에서는 프로바이더를 연결할 수 없습니다. 키는 OS 키체인에만
+          저장되고, 브라우저에는 키체인이 없습니다.
+        </p>
+        <p className="agent-setup-note">
+          지금은 <strong>가짜 프로바이더</strong>로 화면과 흐름만 확인할 수 있습니다.
+          실제 모델을 쓰려면 데스크톱 앱에서 열어주세요.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="agent-setup">
+      <p className="agent-setup-lead">
+        에이전트를 쓰려면 모델 프로바이더를 연결하세요.
+      </p>
+      <p className="agent-setup-note">
+        환경설정에서 API 키를 연결하면, 계정에서 사용할 수 있는 모델을 골라 쓸 수
+        있습니다.
+      </p>
+      <button type="button" className="agent-setup-open" onClick={onOpenSettings}>
+        설정에서 연결
+      </button>
+    </div>
+  );
+}
 
 function AgentEmptyState() {
   const channel = useApp((state) =>

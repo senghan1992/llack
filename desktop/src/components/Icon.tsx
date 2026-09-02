@@ -236,3 +236,48 @@ export function IconCheck(props: IconProps) {
     </Svg>
   );
 }
+
+/** Settings. A gear reduced to hub and spokes, which is all 16px can carry. */
+export function IconGear(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="2.1" />
+      <path d="M8 2.4v2M8 11.6v2M2.4 8h2M11.6 8h2M4 4l1.4 1.4M10.6 10.6L12 12M12 4l-1.4 1.4M5.4 10.6L4 12" />
+    </Svg>
+  );
+}
+
+/**
+ * Expand the rail. Two chevrons pointing at the space the labels will take;
+ * the caller flips it with a transform when the rail is already expanded.
+ */
+export function IconChevrons(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.2 4.4L7.8 8l-3.6 3.6M8.6 4.4L12.2 8l-3.6 3.6" />
+    </Svg>
+  );
+}
+
+/**
+ * Share a message somewhere else: the box it lives in, and an arrow leaving it.
+ * Not the reply arrow — replying stays in place, sharing goes elsewhere.
+ */
+export function IconShare(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12.8 8.8v3.4a1 1 0 0 1-1 1H4.2a1 1 0 0 1-1-1V4.6a1 1 0 0 1 1-1h3.4" />
+      <path d="M10 2.9h3.1V6M13.1 2.9L8.4 7.6" />
+    </Svg>
+  );
+}
+
+/** A document with ruled lines: the composer's message templates. */
+export function IconTemplate(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.2" y="2.6" width="9.6" height="10.8" rx="1" />
+      <path d="M5.6 6h4.8M5.6 8.4h4.8M5.6 10.8h2.8" />
+    </Svg>
+  );
+}

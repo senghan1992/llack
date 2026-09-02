@@ -1127,6 +1127,9 @@ export const webAgent = {
   agentProviderConnect: () =>
     desktopOnly<AgentProviderStatus>("프로바이더 연결"),
 
+  agentProviderSetModel: () =>
+    desktopOnly<AgentProviderStatus>("모델 변경"),
+
   agentProviderDisconnect: () =>
     desktopOnly<AgentProviderStatus>("프로바이더 연결 해제"),
 

@@ -34,9 +34,9 @@ use super::tools::{
     self, ExecuteOutcome, HostCapabilities, ToolCatalog, ToolContext, ToolHost, ToolSpec,
 };
 
-/// The default model. Pinned rather than configurable in v1: a model string the
-/// user can type is a support burden, and the adapter seam is where a second
-/// model belongs.
+/// The model used until the user picks one. The choice itself comes from the
+/// account's own `/v1/models` (fetched by the panel through the byte proxy)
+/// and lands via [`AgentEngine::set_model`] — never as free-typed text.
 pub const DEFAULT_MODEL: &str = "claude-opus-5";
 
 /// The provider id v1 ships an adapter for.
@@ -278,6 +278,51 @@ impl AgentEngine {
             key_fingerprint: fingerprint.map(|f| f.tail),
             connected_at_ms: Some(now_ms()),
             last_ok_at_ms: Some(now_ms()),
+            last_error: None,
+        })?;
+        self.provider_status()
+    }
+
+    /// Switch models on an already-connected provider, without the key.
+    ///
+    /// The panel offers the models it fetched from the account through the byte
+    /// proxy, so what arrives here has normally been seen in a real `/v1/models`
+    /// response — but this is an IPC surface, so the string is still checked:
+    /// it later travels into a request path, and a model id is the one part of
+    /// that URL the webview gets to choose.
+    pub fn set_model(&self, model: &str) -> Result<ProviderStatus> {
+        let user_id = self.user()?;
+        if !self.credentials.has(DEFAULT_PROVIDER, &user_id)? {
+            return Err(Error::provider(
+                ProviderErrorCode::RequestRefused,
+                "프로바이더가 연결되어 있지 않습니다. 먼저 연결해주세요.",
+            ));
+        }
+
+        let model = model.trim();
+        let sane = !model.is_empty()
+            && model.len() <= 128
+            && model
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_'));
+        if !sane {
+            return Err(Error::provider(
+                ProviderErrorCode::RequestRefused,
+                "모델 이름에 사용할 수 없는 문자가 있습니다.",
+            ));
+        }
+
+        let existing = self.store.settings(&user_id)?;
+        self.store.save_settings(&ProviderSettings {
+            user_id: user_id.clone(),
+            provider_id: DEFAULT_PROVIDER.into(),
+            model: model.to_string(),
+            base_url: None,
+            key_fingerprint: existing.as_ref().and_then(|s| s.key_fingerprint.clone()),
+            connected_at_ms: existing.as_ref().and_then(|s| s.connected_at_ms),
+            last_ok_at_ms: existing.and_then(|s| s.last_ok_at_ms),
+            // A model choice supersedes whatever the old model last complained
+            // about; a stale 404 under a freshly chosen model reads as broken.
             last_error: None,
         })?;
         self.provider_status()
@@ -694,6 +739,52 @@ mod tests {
         let json = serde_json::to_string(&engine.provider_status().unwrap()).unwrap();
         assert!(!json.contains(KEY), "{json}");
         assert!(json.contains("XYZW"));
+    }
+
+    #[test]
+    fn the_model_can_be_switched_without_the_key() {
+        let dir = tempdir();
+        let engine = engine(&dir);
+        engine.set_user("u1");
+        engine.credentials.put(DEFAULT_PROVIDER, "u1", KEY).unwrap();
+
+        let status = engine.set_model("claude-sonnet-5").unwrap();
+        assert!(status.connected);
+        assert_eq!(status.model, "claude-sonnet-5");
+        // And it sticks: a fresh status read agrees.
+        assert_eq!(engine.provider_status().unwrap().model, "claude-sonnet-5");
+    }
+
+    #[test]
+    fn switching_models_clears_a_stale_error() {
+        let dir = tempdir();
+        let engine = engine(&dir);
+        engine.set_user("u1");
+        engine.credentials.put(DEFAULT_PROVIDER, "u1", KEY).unwrap();
+        engine
+            .remember_error("u1", "claude-opus-5", Some("옛 오류".into()))
+            .unwrap();
+
+        let status = engine.set_model("claude-sonnet-5").unwrap();
+        assert_eq!(status.last_error, None);
+    }
+
+    #[test]
+    fn set_model_refuses_without_a_connection_and_refuses_garbage() {
+        let dir = tempdir();
+        let engine = engine(&dir);
+        engine.set_user("u1");
+        // No key stored yet: nothing to attach the choice to.
+        assert!(engine.set_model("claude-sonnet-5").is_err());
+
+        engine.credentials.put(DEFAULT_PROVIDER, "u1", KEY).unwrap();
+        // The model id becomes part of a request path, so anything that could
+        // change the URL's shape is refused here.
+        for bad in ["", " ", "a/b", "a?b", "모델", "a\nb", "a b", "a#b"] {
+            assert!(engine.set_model(bad).is_err(), "accepted {bad:?}");
+        }
+        // A trimmed, plain id passes.
+        assert!(engine.set_model(" claude-opus-5 ").is_ok());
     }
 
     #[test]

@@ -105,6 +105,8 @@ interface AppStateShape {
 
   // ── UI ────────────────────────────────────────────────────────────────
   paletteOpen: boolean;
+  /** The settings dialog (provider connection lives there). */
+  settingsOpen: boolean;
   badge: number;
   /** Bottom-right toast stack, newest last. */
   notices: Notice[];
@@ -149,6 +151,7 @@ interface AppActions {
   openAppPanel: (installationId: Id | null) => void;
 
   setPalette: (open: boolean) => void;
+  setSettings: (open: boolean) => void;
   setPresence: (presence: Presence) => Promise<void>;
 
   // Realtime hooks, called by the event bridge.
@@ -206,6 +209,7 @@ export const useApp = create<AppStore>((set, get) => ({
   openPanelInstallationId: null,
 
   paletteOpen: false,
+  settingsOpen: false,
   badge: 0,
 
   // ── Shell ─────────────────────────────────────────────────────────────
@@ -681,6 +685,8 @@ export const useApp = create<AppStore>((set, get) => ({
   // ── UI ────────────────────────────────────────────────────────────────
 
   setPalette: (paletteOpen) => set({ paletteOpen }),
+
+  setSettings: (settingsOpen) => set({ settingsOpen }),
 
   setPresence: async (presence) => {
     try {

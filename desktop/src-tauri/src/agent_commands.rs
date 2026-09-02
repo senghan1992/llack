@@ -352,6 +352,26 @@ pub async fn agent_provider_connect(
     Ok(status)
 }
 
+/// Switch models on the connected provider.
+///
+/// No key crosses here: the choice attaches to the key already in the keychain,
+/// and the engine refuses when there is none. The list the user chose from was
+/// fetched from the account itself through the byte proxy (`GET /v1/models`),
+/// so this is a selection, not free-form configuration.
+#[tauri::command]
+pub fn agent_provider_set_model(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    model: String,
+) -> Result<ProviderStatus> {
+    let status = state.agent()?.set_model(&model)?;
+    let _ = app.emit(
+        AGENT_EVENT,
+        serde_json::json!({ "kind": "provider_changed", "status": status }),
+    );
+    Ok(status)
+}
+
 #[tauri::command]
 pub fn agent_provider_disconnect(
     app: AppHandle,

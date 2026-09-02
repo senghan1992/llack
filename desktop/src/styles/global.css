@@ -656,7 +656,7 @@ kbd {
  * still separates cleanly by going the other way: up to the card colour, with
  * a contact shadow and the signal underline.
  */
-.dock-tile > span,
+.dock-tile > span:not(.dock-label):not(.dock-glyph),
 .dock-tile > img {
   display: grid;
   width: 100%;
@@ -673,7 +673,7 @@ kbd {
     color 120ms var(--ease);
 }
 
-.dock-tile:hover > span,
+.dock-tile:hover > span:not(.dock-label):not(.dock-glyph),
 .dock-tile:hover > img {
   color: var(--ink);
   background: var(--n5);
@@ -701,9 +701,9 @@ kbd {
   box-shadow: 0 0 0 1px var(--edge), var(--contact);
 }
 
-.dock-tile:is(.is-active, .is-open) > span,
+.dock-tile:is(.is-active, .is-open) > span:not(.dock-label):not(.dock-glyph),
 .dock-tile:is(.is-active, .is-open) > img,
-.dock-tile:is(.is-active, .is-open):hover > span,
+.dock-tile:is(.is-active, .is-open):hover > span:not(.dock-label):not(.dock-glyph),
 .dock-tile:is(.is-active, .is-open):hover > img {
   color: var(--ink);
   background: transparent;
@@ -723,7 +723,7 @@ kbd {
   transform: translateX(-50%);
 }
 
-.dock-app > span {
+.dock-app > span:not(.dock-label):not(.dock-glyph) {
   font-size: 12px;
 }
 
@@ -761,6 +761,170 @@ kbd {
   background: var(--signal);
   border: 1px solid var(--ground);
   border-radius: var(--r-xs);
+}
+
+/*
+ * ── The dock, with names ─────────────────────────────────────────────
+ *
+ * Collapsed, the rail shows initials — and initials are not names: two apps
+ * that start with the same syllable are indistinguishable, which is exactly
+ * the complaint that motivated this. Expanding trades 132px of transcript for
+ * the names; the choice persists per machine.
+ *
+ * The labels exist in the markup at every width (`title` alone is mouse-only),
+ * but the *expanded layout* is gated at 1080px: that is the width where the
+ * stacked two-sheet case keeps its 360px transcript floor with the wide dock
+ * (948 + 132). Below it the toggle disappears and the rail renders collapsed
+ * regardless of the stored preference. Above 1433 the three-column case can
+ * still dip under the floor with everything open at once — that state is
+ * user-assembled from three explicit choices, each one step to undo, and the
+ * honest fix (auto-collapsing the dock mid-read) would move the rail out from
+ * under the pointer that just clicked it.
+ */
+.dock-label {
+  display: none;
+}
+
+.dock-toggle {
+  display: none;
+  width: var(--tile);
+  height: 28px;
+  margin-top: auto;
+  color: var(--ink-muted);
+  place-items: center;
+  border-radius: var(--r-md);
+}
+
+.dock-toggle:hover {
+  color: var(--ink);
+  background: var(--n4);
+}
+
+.dock-toggle .dock-label {
+  display: none;
+}
+
+@media (min-width: 1080px) {
+  .dock-toggle {
+    display: grid;
+  }
+
+  .shell:has(> .dock.is-expanded) {
+    --dock-w: 188px;
+  }
+
+  .dock.is-expanded {
+    align-items: stretch;
+    padding: 10px 8px;
+  }
+
+  .dock.is-expanded .dock-workspaces,
+  .dock.is-expanded .dock-apps {
+    align-items: stretch;
+  }
+
+  .dock.is-expanded .dock-divider {
+    width: auto;
+    margin: 5px 6px;
+  }
+
+  /* A tile becomes a row: the same plate, and the name beside it. */
+  .dock.is-expanded .dock-tile {
+    display: flex;
+    width: auto;
+    height: var(--tile);
+    align-items: center;
+    gap: 9px;
+    padding: 0 4px;
+  }
+
+  .dock.is-expanded .dock-tile > span:not(.dock-label):not(.dock-glyph),
+  .dock.is-expanded .dock-tile > img {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    font-size: 11.5px;
+    border-radius: var(--r-md);
+  }
+
+  .dock.is-expanded .dock-label {
+    display: block;
+    overflow: hidden;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dock.is-expanded .dock-tile:hover .dock-label,
+  .dock.is-expanded .dock-tile:is(.is-active, .is-open) .dock-label {
+    color: var(--ink);
+  }
+
+  /* The position marker turns with the layout: a bar under an icon becomes a
+     bar beside a row, the same signal on the other axis. */
+  .dock.is-expanded .dock-tile.is-active::after {
+    top: 50%;
+    bottom: auto;
+    left: -8px;
+    width: 2.5px;
+    height: 16px;
+    transform: translateY(-50%);
+  }
+
+  .dock.is-expanded .dock-badge {
+    position: static;
+    flex: none;
+    margin-left: auto;
+    border-color: transparent;
+  }
+
+  /* The glyph tiles: the icon keeps the plate's footprint so the labels align
+     into one column with the plated rows above. */
+  .dock.is-expanded .dock-add,
+  .dock.is-expanded .dock-tile.dock-agent {
+    background: none;
+  }
+
+  .dock.is-expanded .dock-add > svg,
+  .dock.is-expanded .dock-tile.dock-agent > svg {
+    flex: none;
+    width: 28px;
+  }
+
+  /* The `+` glyph takes the plate's footprint, same as the svgs. */
+  .dock.is-expanded .dock-glyph {
+    display: grid;
+    width: 28px;
+    flex: none;
+    font-size: 15px;
+    place-items: center;
+  }
+
+  .dock.is-expanded .dock-tile.dock-agent.is-open {
+    background: var(--card);
+  }
+
+  .dock.is-expanded .dock-toggle {
+    display: flex;
+    width: auto;
+    align-items: center;
+    gap: 9px;
+    padding: 0 4px;
+  }
+
+  .dock.is-expanded .dock-toggle > svg {
+    flex: none;
+    width: 28px;
+    transform: scaleX(-1);
+  }
+
+  .dock.is-expanded .dock-toggle .dock-label {
+    display: block;
+    font-size: 12px;
+  }
 }
 
 /* ── Sidebar: the board ──────────────────────────────────────────────── */
@@ -1054,6 +1218,23 @@ kbd {
   color: var(--ink-muted);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Settings sits with my identity: it is about my machine and my account. */
+.sidebar-settings {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  margin-left: auto;
+  color: var(--ink-muted);
+  place-items: center;
+  border-radius: var(--r-sm);
+}
+
+.sidebar-settings:hover {
+  color: var(--ink);
+  background: var(--hover);
 }
 
 /* ── Channel header ──────────────────────────────────────────────────── */
@@ -2084,6 +2265,63 @@ kbd {
   box-shadow: var(--e-3);
 }
 
+/* Files being dragged: say where they will land before they land. */
+.composer-drop {
+  position: absolute;
+  inset: 6px 12px 12px;
+  z-index: 6;
+  display: grid;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  place-items: center;
+  pointer-events: none;
+  background: var(--card);
+  border: 1.5px dashed var(--signal);
+  border-radius: var(--r-lg);
+}
+
+/* The share templates: same chassis as the mention picker, opened by a
+   button instead of a character. */
+.composer-templates {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 12px;
+  z-index: 5;
+  width: 232px;
+  padding: 4px;
+  margin: 0;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-3);
+}
+
+.composer-templates button {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: var(--r-md);
+}
+
+.composer-templates button:hover {
+  background: var(--hover);
+}
+
+.composer-templates strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.composer-templates span {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
 .mention-picker button {
   display: flex;
   width: 100%;
@@ -2368,6 +2606,139 @@ kbd {
   font-size: 12px;
   color: var(--ink-muted);
   text-align: center;
+}
+
+/* ── Settings ─────────────────────────────────────────────────────────
+ *
+ * The dialog where things are configured once: today the provider connection
+ * and the model choice. Same modal chassis as the rest; the section heading
+ * exists so a second section (알림, 테마…) lands with a shape already waiting.
+ */
+
+.settings .modal-header h2 {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.settings-body {
+  padding: 14px 16px 16px;
+}
+
+.settings-section h3 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+.settings-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.settings-provider-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--n2);
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.settings-provider-status strong {
+  font-size: 12px;
+}
+
+.settings-provider-status span {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-disconnect {
+  flex: none;
+  padding: 5px 10px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-secondary);
+  background: var(--card);
+  border-radius: var(--r-sm);
+  box-shadow: 0 0 0 1px var(--edge);
+}
+
+.settings-disconnect:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.settings-provider label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+/* Keys and model ids are tokens, so they set in mono. */
+.settings-provider input,
+.settings-provider select {
+  padding: 9px 11px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.settings-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+}
+
+.settings-note p + p {
+  margin-top: 6px;
+}
+
+.settings-hint {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.settings-error {
+  padding: 9px 11px;
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--signal-wash);
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--signal-edge);
+}
+
+.settings-connect {
+  padding: 10px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-inverse);
+  background: var(--signal);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-signal);
+  transition:
+    background 110ms var(--ease),
+    box-shadow 110ms var(--ease);
+}
+
+.settings-connect:hover:not(:disabled) {
+  background: var(--signal-press);
+}
+
+.settings-connect:disabled {
+  color: var(--ink-muted);
+  background: var(--n4);
+  cursor: not-allowed;
 }
 
 /*
@@ -2722,6 +3093,159 @@ kbd {
 }
 
 .new-dm-start:disabled {
+  color: var(--ink-muted);
+  background: var(--n4);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── Share a message ──────────────────────────────────────────────────
+ *
+ * The same chassis as 새 대화: a field, a list, a footer with one primary
+ * action. What differs is the preview at the top — the reader of this dialog
+ * has just left the message, and the quote confirms they grabbed the right one.
+ */
+
+.share-message .modal-header h2 {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.share-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.share-preview {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  margin: 0;
+  border-left: 2.5px solid var(--n5);
+}
+
+.share-preview strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.share-preview span {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  color: var(--ink-muted);
+  background: var(--n2);
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.share-field input {
+  flex: 1;
+  padding: 9px 0;
+  font-size: 12.5px;
+  background: none;
+  border: none;
+}
+
+.share-field input:focus {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.share-field:focus-within {
+  box-shadow: inset 0 0 0 1px var(--signal), var(--focus-ring);
+}
+
+.share-list {
+  min-height: 96px;
+  max-height: 220px;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.share-list li + li {
+  margin-top: 1px;
+}
+
+.share-list button {
+  display: flex;
+  width: 100%;
+  height: var(--row-h);
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+  text-align: left;
+  border-radius: var(--r-md);
+}
+
+.share-list button:hover {
+  background: var(--hover);
+}
+
+.share-list button.is-picked {
+  color: var(--ink);
+  background: var(--signal-select);
+  box-shadow: inset 2.5px 0 0 var(--signal);
+}
+
+.share-list button > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-comment {
+  padding: 9px 11px;
+  font-size: 12.5px;
+  resize: none;
+}
+
+.share-footer {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  padding: 11px 14px 13px;
+  border-top: 1px solid var(--rule);
+}
+
+.share-send {
+  flex: none;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-inverse);
+  background: var(--signal);
+  border-radius: var(--r-md);
+  box-shadow: var(--e-signal);
+  transition:
+    background 110ms var(--ease),
+    box-shadow 110ms var(--ease);
+}
+
+.share-send:hover:not(:disabled) {
+  background: var(--signal-press);
+  box-shadow: var(--e-signal-hover);
+}
+
+.share-send:disabled {
   color: var(--ink-muted);
   background: var(--n4);
   cursor: not-allowed;
@@ -3121,14 +3645,21 @@ kbd {
   gap: 7px;
 }
 
+/* A button since the model became choosable: clicking it opens settings. */
 .agent-model {
   overflow: hidden;
+  padding: 0;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 400;
   color: var(--ink-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-model:hover {
+  color: var(--ink);
+  text-decoration: underline;
 }
 
 /*
@@ -3632,38 +4163,14 @@ kbd {
   color: var(--ink);
 }
 
-.agent-setup label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--ink-muted);
-}
-
-/* An API key is a token, so it sets in mono. Everything else is the grammar. */
-.agent-setup input,
-.agent-setup select {
-  padding: 9px 11px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
 .agent-setup-note {
   font-size: 11px;
   line-height: 1.55;
   color: var(--ink-muted);
 }
 
-.agent-setup-error {
-  padding: 9px 11px;
-  font-size: 11px;
-  color: var(--ink);
-  background: var(--signal-wash);
-  border-radius: var(--r-md);
-  box-shadow: inset 0 0 0 1px var(--signal-edge);
-}
-
-.agent-setup-submit {
+/* The one action the panel offers before a provider exists: go to settings. */
+.agent-setup-open {
   padding: 10px 0;
   font-size: 12px;
   font-weight: 600;
@@ -3676,14 +4183,8 @@ kbd {
     box-shadow 110ms var(--ease);
 }
 
-.agent-setup-submit:hover:not(:disabled) {
+.agent-setup-open:hover {
   background: var(--signal-press);
-}
-
-.agent-setup-submit:disabled {
-  color: var(--ink-muted);
-  background: var(--n4);
-  cursor: not-allowed;
 }
 
 /*

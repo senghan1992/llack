@@ -12,7 +12,24 @@ import { colorForId, initials } from "@/lib/format";
 import { api } from "@/lib/ipc";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
-import { IconAgent, IconClose } from "./Icon";
+import { IconAgent, IconChevrons, IconClose } from "./Icon";
+
+/**
+ * Whether the rail shows names, remembered across launches.
+ *
+ * localStorage rather than the store or the server: it is a fact about this
+ * window's width budget, not about the account, and it must be readable before
+ * anything has signed in.
+ */
+const DOCK_EXPANDED_KEY = "llack.dock.expanded";
+
+function loadExpanded(): boolean {
+  try {
+    return window.localStorage.getItem(DOCK_EXPANDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function AppDock() {
   const workspaces = useApp((state) => state.workspaces);
@@ -26,13 +43,26 @@ export function AppDock() {
   const setAgentOpen = useAgent((state) => state.setOpen);
 
   const [directoryOpen, setDirectoryOpen] = useState(false);
+  const [expanded, setExpanded] = useState(loadExpanded);
+
+  const toggleExpanded = () => {
+    setExpanded((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(DOCK_EXPANDED_KEY, next ? "1" : "0");
+      } catch {
+        // Private browsing: the toggle still works, it just will not persist.
+      }
+      return next;
+    });
+  };
 
   const pinned = installations.filter(
     (installation) => installation.is_pinned && installation.app.panel_url,
   );
 
   return (
-    <div className="dock">
+    <div className={`dock ${expanded ? "is-expanded" : ""}`}>
       <div className="dock-workspaces">
         {workspaces.map((workspace) => (
           <button
@@ -51,6 +81,7 @@ export function AppDock() {
                 {initials(workspace.name)}
               </span>
             )}
+            <span className="dock-label">{workspace.name}</span>
             {workspace.id === activeWorkspaceId && badge > 0 ? (
               <em className="dock-badge">{badge > 99 ? "99+" : badge}</em>
             ) : null}
@@ -87,6 +118,7 @@ export function AppDock() {
                 {initials(installation.app.name)}
               </span>
             )}
+            <span className="dock-label">{installation.app.name}</span>
           </button>
         ))}
 
@@ -113,6 +145,7 @@ export function AppDock() {
           aria-pressed={agentOpen}
         >
           <IconAgent size={17} />
+          <span className="dock-label">에이전트</span>
         </button>
 
         <button
@@ -122,9 +155,31 @@ export function AppDock() {
           title="앱 추가"
           aria-label="앱 추가"
         >
-          +
+          <span className="dock-glyph" aria-hidden="true">
+            +
+          </span>
+          <span className="dock-label">앱 추가</span>
         </button>
       </div>
+
+      {/*
+        The rail's tiles are initials by default, and initials are not names:
+        "데" could be 데일리 스탠드업 or 데이터 대시보드. The toggle trades
+        transcript width for the names, remembers the choice, and hides itself
+        below the width where the trade stops being affordable (see the
+        `.dock-toggle` media rule).
+      */}
+      <button
+        type="button"
+        className="dock-toggle"
+        onClick={toggleExpanded}
+        aria-label={expanded ? "아이콘만 보기" : "이름 표시"}
+        title={expanded ? "아이콘만 보기" : "이름 표시"}
+        aria-pressed={expanded}
+      >
+        <IconChevrons size={14} />
+        <span className="dock-label">접기</span>
+      </button>
 
       {directoryOpen ? <AppDirectory onClose={() => setDirectoryOpen(false)} /> : null}
     </div>

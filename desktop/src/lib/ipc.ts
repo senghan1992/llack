@@ -320,6 +320,12 @@ const tauriAgent = {
   agentProviderConnect: (providerId: string, apiKey: string, model: string) =>
     call<AgentProviderStatus>("agent_provider_connect", { providerId, apiKey, model }),
 
+  /**
+   * Switch models on the already-connected provider. No key crosses: the choice
+   * attaches to the key in the keychain, and Rust refuses when there is none.
+   */
+  agentProviderSetModel: (model: string) =>
+    call<AgentProviderStatus>("agent_provider_set_model", { model }),
 
   agentProviderDisconnect: () => call<AgentProviderStatus>("agent_provider_disconnect"),
 
@@ -424,6 +430,63 @@ export const shell = {
     for (const file of await pickFilesInBrowser(true)) {
       onUploaded(await api.uploadFile(workspaceId, file));
     }
+  },
+
+  /**
+   * Files dragged onto the window.
+   *
+   * The two hosts report the same gesture through different machinery: the
+   * Tauri shell intercepts the OS drag (HTML5 drop never fires there while
+   * `dragDropEnabled` is on) and reports filesystem *paths*; a browser tab gets
+   * the HTML5 events and reports `File` objects. Both shapes are exactly what
+   * each host's `uploadFile` accepts, so the subscriber can pass them through.
+   */
+  onFileDrop: async (handlers: {
+    onOver?: () => void;
+    onLeave?: () => void;
+    onDrop: (sources: Array<string | File>) => void;
+  }): Promise<UnlistenFn> => {
+    if (isDesktopShell()) {
+      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+      return getCurrentWebview().onDragDropEvent((event) => {
+        if (event.payload.type === "enter" || event.payload.type === "over") {
+          handlers.onOver?.();
+        } else if (event.payload.type === "drop") {
+          handlers.onLeave?.();
+          if (event.payload.paths.length > 0) handlers.onDrop(event.payload.paths);
+        } else {
+          handlers.onLeave?.();
+        }
+      });
+    }
+
+    const hasFiles = (event: DragEvent) =>
+      Boolean(event.dataTransfer && [...event.dataTransfer.types].includes("Files"));
+    const onDragOver = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      // Without this the browser navigates to the dropped file.
+      event.preventDefault();
+      handlers.onOver?.();
+    };
+    const onDragLeave = (event: DragEvent) => {
+      // Only when the drag actually leaves the window, not an inner element.
+      if (event.relatedTarget === null) handlers.onLeave?.();
+    };
+    const onDrop = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      handlers.onLeave?.();
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length > 0) handlers.onDrop(files);
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
   },
 };
 

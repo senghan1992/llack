@@ -11,14 +11,55 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { shell } from "@/lib/ipc";
+import { api, shell } from "@/lib/ipc";
 import type { Id } from "@/lib/types";
 import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
-import { IconClose, IconPaperclip } from "./Icon";
+import { IconClose, IconPaperclip, IconTemplate } from "./Icon";
 
 const TYPING_THROTTLE_MS = 2_500;
+
+/**
+ * Message templates: the shares people make all day, pre-shaped.
+ *
+ * Deliberately just text. A schedule or a task shared here is a message —
+ * searchable, quotable, thread-able — not a record in a calendar this product
+ * does not have. The template's value is that nobody has to re-invent the
+ * fields, and the reader always finds 일시/담당/기한 in the same place.
+ */
+function shareTemplates(): Array<{ id: string; label: string; hint: string; body: string }> {
+  let tomorrow = "";
+  try {
+    tomorrow = new Intl.DateTimeFormat("ko-KR", {
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+    }).format(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  } catch {
+    // An exotic runtime without ko-KR data: the field just starts empty.
+  }
+  return [
+    {
+      id: "schedule",
+      label: "일정 공유",
+      hint: "일시·장소·참석",
+      body: `**[일정]** 제목\n- 일시: ${tomorrow} 14:00–15:00\n- 장소: \n- 참석: @\n- 안건: `,
+    },
+    {
+      id: "task",
+      label: "일 공유",
+      hint: "담당·기한",
+      body: "**[할 일]** 제목\n- 담당: @\n- 기한: \n- 내용: ",
+    },
+    {
+      id: "decision",
+      label: "결정 공유",
+      hint: "결론·근거·다음 단계",
+      body: "**[결정]** 제목\n- 결론: \n- 근거: \n- 다음 단계: ",
+    },
+  ];
+}
 
 interface ComposerProps {
   /** Set when composing inside a thread. */
@@ -49,9 +90,13 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
   const [alsoSend, setAlsoSend] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [dropping, setDropping] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastTypingSentAt = useRef(0);
+
+  const disabled = !channelId || Boolean(channel?.is_archived);
 
   // Swap the draft in and out when the target changes.
   useEffect(() => {
@@ -139,7 +184,74 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
     }
   };
 
-  const disabled = !channelId || channel?.is_archived;
+  /*
+   * Files dragged onto the window attach here.
+   *
+   * Only the channel composer subscribes — a thread composer subscribing too
+   * would mean one drop landing in two places. The sources arrive host-shaped
+   * (paths from the shell, `File`s from a tab) and `uploadFile` accepts each
+   * host's own shape, so they pass straight through.
+   */
+  useEffect(() => {
+    if (parentId || !workspaceId || disabled) return undefined;
+
+    const unlistenPromise = shell.onFileDrop({
+      onOver: () => setDropping(true),
+      onLeave: () => setDropping(false),
+      onDrop: (sources) => {
+        void (async () => {
+          setUploading(true);
+          try {
+            for (const source of sources) {
+              const file = await api.uploadFile(workspaceId, source);
+              setAttachments((current) => [
+                ...current,
+                { id: file.id, filename: file.filename },
+              ]);
+            }
+          } catch (error) {
+            reportError(error, "파일을 업로드하지 못했습니다.");
+          } finally {
+            setUploading(false);
+          }
+        })();
+      },
+    });
+
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [parentId, workspaceId, disabled, reportError]);
+
+  // The template menu closes like every other popover: outside click or Esc.
+  useEffect(() => {
+    if (!templatesOpen) return undefined;
+    const onClick = () => setTemplatesOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTemplatesOpen(false);
+    };
+    window.addEventListener("click", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [templatesOpen]);
+
+  /** Insert a template at the caret, on its own line, and put the caret after it. */
+  const insertTemplate = (text: string) => {
+    const element = textareaRef.current;
+    const caret = element?.selectionStart ?? body.length;
+    const before = body.slice(0, caret);
+    const glue = before && !before.endsWith("\n") ? "\n" : "";
+    const inserted = before + glue + text;
+    setBody(inserted + body.slice(caret));
+    setTemplatesOpen(false);
+    requestAnimationFrame(() => {
+      element?.focus();
+      element?.setSelectionRange(inserted.length, inserted.length);
+    });
+  };
 
   return (
     <div className="composer">
@@ -187,6 +299,34 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
                 aria-label="첨부 제거"
               >
                 <IconClose size={11} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {!parentId && dropping && !disabled ? (
+        <div className="composer-drop" aria-hidden="true">
+          파일을 놓으면 첨부됩니다
+        </div>
+      ) : null}
+
+      {templatesOpen ? (
+        <ul
+          className="composer-templates"
+          role="menu"
+          aria-label="공유 서식"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {shareTemplates().map((template) => (
+            <li key={template.id}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => insertTemplate(template.body)}
+              >
+                <strong>{template.label}</strong>
+                <span>{template.hint}</span>
               </button>
             </li>
           ))}
@@ -249,6 +389,20 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
         />
 
         <div className="composer-actions">
+          <button
+            type="button"
+            onClick={(event) => {
+              // The window listener that closes the menu must not see this click.
+              event.stopPropagation();
+              setTemplatesOpen((open) => !open);
+            }}
+            disabled={disabled}
+            title="공유 서식 (일정·할 일·결정)"
+            aria-label="공유 서식"
+            aria-expanded={templatesOpen}
+          >
+            <IconTemplate size={15} />
+          </button>
           <button
             type="button"
             onClick={() => void attachFiles()}

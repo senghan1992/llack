@@ -13,8 +13,10 @@ import {
   IconImage,
   IconPin,
   IconReply,
+  IconShare,
   IconTrash,
 } from "./Icon";
+import { ShareMessage } from "./ShareMessage";
 
 const QUICK_REACTIONS = ["👍", "🎉", "👀", "✅"];
 
@@ -37,6 +39,7 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
   const openChannel = useApp((state) => state.openChannel);
 
   const [editing, setEditing] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [draft, setDraft] = useState(message.body);
 
   const html = useMemo(
@@ -256,6 +259,14 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
             <IconReply size={13} />
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={() => setSharing(true)}
+          title="다른 대화로 공유"
+          aria-label="다른 대화로 공유"
+        >
+          <IconShare size={13} />
+        </button>
         {isMine ? (
           <>
             <button
@@ -277,6 +288,10 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
           </>
         ) : null}
       </div>
+
+      {sharing ? (
+        <ShareMessage message={message} onClose={() => setSharing(false)} />
+      ) : null}
     </article>
   );
 }

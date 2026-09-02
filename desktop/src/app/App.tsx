@@ -16,6 +16,7 @@ import { ChannelHeader } from "@/components/ChannelHeader";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
 import { MessageList } from "@/components/MessageList";
+import { Settings } from "@/components/Settings";
 import { Sidebar } from "@/components/Sidebar";
 import { SignIn } from "@/components/SignIn";
 import { ThreadPane } from "@/components/ThreadPane";
@@ -78,6 +79,7 @@ export function App() {
         </div>
       </main>
       <CommandPalette />
+      <Settings />
       <Notices />
     </div>
   );
@@ -218,7 +220,9 @@ function useKeyboardShortcuts() {
         return;
       }
       if (event.key === "Escape") {
-        if (store.paletteOpen) {
+        if (store.settingsOpen) {
+          store.setSettings(false);
+        } else if (store.paletteOpen) {
           store.setPalette(false);
         } else if (store.openThreadId) {
           void store.openThread(null);

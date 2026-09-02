@@ -164,6 +164,7 @@ pub fn run() {
             // agent — the whole IPC surface the panel has
             agent_commands::agent_provider_status,
             agent_commands::agent_provider_connect,
+            agent_commands::agent_provider_set_model,
             agent_commands::agent_provider_disconnect,
             agent_commands::agent_provider_request,
             agent_commands::agent_provider_abort,

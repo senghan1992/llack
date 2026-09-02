@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 
-import { ChannelMark, IconPlus } from "./Icon";
+import { ChannelMark, IconGear, IconPlus } from "./Icon";
 import type { Channel } from "@/lib/types";
 import { useApp } from "@/store/app";
 
@@ -26,6 +26,8 @@ export function Sidebar() {
   const activeWorkspace = useApp((state) =>
     state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId),
   );
+
+  const setSettings = useApp((state) => state.setSettings);
 
   const [creating, setCreating] = useState(false);
   const [startingDm, setStartingDm] = useState(false);
@@ -218,6 +220,15 @@ export function Sidebar() {
               {me.status_emoji ?? ""} {me.status_text ?? `@${me.handle}`}
             </span>
           </div>
+          <button
+            type="button"
+            className="sidebar-settings"
+            onClick={() => setSettings(true)}
+            aria-label="환경설정"
+            title="환경설정"
+          >
+            <IconGear size={15} />
+          </button>
         </footer>
       ) : null}
       <span className="sr-only">{people.size}명의 구성원</span>
