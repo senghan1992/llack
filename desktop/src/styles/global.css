@@ -845,12 +845,6 @@ kbd {
 }
 
 /*
- * The column's name. One step smaller than the section head and the same ink:
- * `--n7` measured 3.32:1 here, which is under AA for 9px text. The hierarchy
- * rests on size, which is enough — a label that has to be dimmer than legible
- * to sit below its neighbour was the wrong hierarchy to begin with.
- */
-/*
  * The column's name, one step under the section head it sits beside.
  *
  * Was 9px at +0.06em in `--n7` — 3.32:1, under AA, and the only 9px in the
@@ -968,6 +962,18 @@ kbd {
  * that was already tokenised for figures. Fixed-width digits mean a count
  * going from 9 to 10 does not nudge the column.
  */
+/*
+ * One declaration. The animation used to live in a second `.badge` block
+ * further down, separated by `.badge-mention` — which meant the two halves of
+ * one component could drift apart and a reader had to find both to know what a
+ * badge is.
+ *
+ * The flap: a departure board announces a change by turning the cell, and this
+ * is the one place that mechanism belongs — the count is the only thing on the
+ * board that changes by itself. One step, 160ms, no bounce. The component
+ * remounts the cell on a new value, so it runs exactly when the number moved
+ * and never on an unrelated re-render.
+ */
 .badge {
   justify-self: end;
   min-width: 19px;
@@ -981,24 +987,14 @@ kbd {
   text-align: center;
   background: var(--n4);
   border-radius: var(--r-xs);
+  animation: flap-tick 160ms var(--ease);
+  transform-origin: 50% 0;
 }
 
 /* A count addressed to you is the one thing that earns the colour. */
 .badge-mention {
   color: var(--ink-inverse);
   background: var(--signal);
-}
-
-/*
- * The flap. A departure board announces a change by turning the cell, and this
- * is the one place the world's own mechanism belongs: the count is the only
- * thing on the board that changes by itself. One step, 160ms, no bounce — the
- * component remounts the cell on a new value, so this runs exactly when the
- * number actually moved and never on an unrelated re-render.
- */
-.badge {
-  animation: flap-tick 160ms var(--ease);
-  transform-origin: 50% 0;
 }
 
 @keyframes flap-tick {
@@ -1905,7 +1901,16 @@ kbd {
   gap: 2px;
 }
 
-.composer-actions button {
+/*
+ * The icon buttons in the composer's tray — and only those.
+ *
+ * `:not(.composer-send)` because the send button is not an icon button: it has
+ * a label, its own width and the accent fill. Without the exclusion it matched
+ * here and then needed `!important` on four properties to win, which is a
+ * specificity workaround sitting inside the app's one primary-button recipe —
+ * the last place that should be hard to read.
+ */
+.composer-actions button:not(.composer-send) {
   display: grid;
   width: 28px;
   height: 28px;
@@ -1917,12 +1922,21 @@ kbd {
     color 110ms var(--ease);
 }
 
-.composer-actions button:hover:not(:disabled) {
+.composer-actions button:not(.composer-send):hover:not(:disabled) {
   color: var(--ink);
   background: var(--hover);
 }
 
-.composer-actions button:disabled {
+/*
+ * The exclusion has to be on every rule in the group, not just the base one.
+ *
+ * This selector is (0,2,1) and `.composer-send:disabled` is (0,2,0), so the
+ * tray's disabled ink won — and a disabled send button rendered near-white on
+ * light grey, measured at 1.46:1. It was invisible while the send button
+ * carried `!important` on its colour, which is exactly the failure mode an
+ * `!important` inside a component recipe hides.
+ */
+.composer-actions button:not(.composer-send):disabled {
   color: var(--n6);
   cursor: not-allowed;
 }
@@ -1948,16 +1962,15 @@ kbd {
  *
  * A press shadow rather than a transform: the button sits inside a card with
  * 5px of padding, so lifting it on hover would break the concentric fit the
- * radius rule set up. The `!important` is inherited from the shared
- * `.composer-actions button` rule this specialises.
+ * radius rule set up.
  */
 .composer-send {
-  width: auto !important;
+  height: 28px;
   padding: 0 12px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--ink-inverse) !important;
-  background: var(--signal) !important;
+  color: var(--ink-inverse);
+  background: var(--signal);
   border-radius: var(--r-lg);
   box-shadow: var(--e-signal);
   transition:
@@ -1966,7 +1979,7 @@ kbd {
 }
 
 .composer-send:hover:not(:disabled) {
-  background: var(--signal-press) !important;
+  background: var(--signal-press);
   box-shadow: var(--e-signal-hover);
 }
 
@@ -1975,8 +1988,9 @@ kbd {
 }
 
 .composer-send:disabled {
-  color: var(--ink-muted) !important;
-  background: var(--n4) !important;
+  color: var(--ink-muted);
+  background: var(--n4);
+  cursor: not-allowed;
   box-shadow: none;
 }
 
@@ -2197,7 +2211,9 @@ kbd {
   overflow: hidden;
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  /* Negative, like every other Korean label. +0.02em here was the same device
+     the micro-label rule retired, surviving in the one place nobody looked. */
+  letter-spacing: -0.004em;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -2357,9 +2373,14 @@ kbd {
 /*
  * The palette's field is the palette's own top edge, so it is the one field
  * that is not a well: a well inside a 16px card with no padding would need a
- * radius it cannot have. It keeps the hairline under it and takes the accent
- * ring on focus like everything else — which it previously had no focus style
- * for at all.
+ * radius it cannot have.
+ *
+ * It is therefore also the one field that does not take the ring — a 3px
+ * spread around an element flush to the card's top corners would be clipped on
+ * two sides and drawn on two, which reads as a rendering fault. It marks focus
+ * on the hairline it already has instead, in the same accent. That is the
+ * whole exception, and it is the only one; it previously had no focus style at
+ * all.
  */
 .palette input {
   width: 100%;
@@ -3090,7 +3111,7 @@ kbd {
 
 /*
  * Only what differs from the shared sheet-header title above: the model chip
- * sits on the title's baseline rather than centred with it, so a 10.5px
+ * sits on the title's baseline rather than centred with it, so a 10px
  * monospace name lines up with a 12px semibold Korean label instead of
  * floating in the middle of it.
  */
@@ -3400,7 +3421,6 @@ kbd {
   font-size: 10px;
   font-weight: 600;
   color: var(--ink-muted);
-  text-transform: none;
 }
 
 .agent-approval-high .agent-approval-risk {
@@ -3552,9 +3572,6 @@ kbd {
   background: var(--signal);
   place-items: center;
   border-radius: var(--r-lg);
-}
-
-.agent-send {
   box-shadow: var(--e-signal);
   transition:
     background 110ms var(--ease),
@@ -3835,6 +3852,13 @@ kbd {
 @media (max-width: 720px) {
   :root {
     --gutter: 34px;
+    /*
+     * The trailing track collapses: laid out horizontally the rows are a row
+     * of cards, not columns, so there is no count column for the add control
+     * to stay clear of. Was declared in a second `:root` in the middle of this
+     * block.
+     */
+    --rail-tail: 0px;
   }
 
   .shell {
@@ -3878,14 +3902,6 @@ kbd {
     display: none;
   }
 
-  .sidebar-item {
-    grid-template-columns: auto auto auto;
-  }
-
-  :root {
-    --rail-tail: 0px;
-  }
-
   /* One horizontal strip of rows, ranked left to right. */
   .sidebar-scroll {
     display: flex;
@@ -3904,13 +3920,16 @@ kbd {
     gap: 6px;
   }
 
-  .sidebar-item {
-    flex: none;
-  }
-
+  /*
+   * One declaration, not three. This rule had accumulated as
+   * `grid-template-columns` in one block, `flex: none` in a second and the
+   * card in a third, with a stray nested `:root` between them — each pass
+   * adding its own rather than editing the one that was there.
+   */
   .sidebar-item {
     width: auto;
     height: 30px;
+    flex: none;
     grid-template-columns: auto auto auto;
     padding: 0 11px;
     background: var(--card);
@@ -3921,11 +3940,6 @@ kbd {
     max-width: 12ch;
   }
 
-  /*
-   * Stacked, the card's side margins would leave a gutter on a phone-width
-   * screen where every pixel is transcript. It keeps its top margin and its
-   * corners, and loses the sides.
-   */
   /*
    * Stacked, the side gutters would eat a phone-width screen where every pixel
    * is transcript. The cards keep their top corners and lose the sides.
