@@ -41,6 +41,7 @@ import type {
   AgentEvent,
   AgentProviderStatus,
   AgentSessionSummary,
+  AgentToolResult,
   AgentToolSpec,
 } from "./agent/types";
 import { pickFilesInBrowser, webAgent, webApi, webEvents } from "./web";
@@ -319,6 +320,7 @@ const tauriAgent = {
   agentProviderConnect: (providerId: string, apiKey: string, model: string) =>
     call<AgentProviderStatus>("agent_provider_connect", { providerId, apiKey, model }),
 
+
   agentProviderDisconnect: () => call<AgentProviderStatus>("agent_provider_disconnect"),
 
   /** The tools this host advertises. Computed in Rust, filtered by capability. */
@@ -337,10 +339,12 @@ const tauriAgent = {
    * run. Everything about whether this is allowed is decided in Rust.
    */
   agentToolCall: (sessionId: string, name: string, args: unknown, rationale?: string) =>
-    call<{ content: unknown; artifact: string | null; is_error: boolean; taints: boolean }>(
-      "agent_tool_call",
-      { sessionId, name, args, rationale: rationale ?? null },
-    ),
+    call<AgentToolResult>("agent_tool_call", {
+      sessionId,
+      name,
+      args,
+      rationale: rationale ?? null,
+    }),
 
   /**
    * Answer a pending approval.

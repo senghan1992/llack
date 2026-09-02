@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ProviderErrorCode, Result};
 use crate::session::TokenStore;
 
 /// Every provider whose credential may be on this machine.
@@ -63,26 +63,35 @@ impl KeyFingerprint {
 /// it, something that is plainly not a key.
 pub fn vet_key(provider_id: &str, key: &str) -> Result<()> {
     if key.is_empty() {
-        return Err(Error::Other("API 키를 입력해주세요.".into()));
+        return Err(Error::provider(
+            ProviderErrorCode::KeyRejected,
+            "API 키를 입력해주세요.",
+        ));
     }
     // A newline in a header value is request splitting. It cannot be allowed
     // to reach the proxy even though the proxy checks again.
     if key.chars().any(|c| c.is_whitespace()) {
-        return Err(Error::Other(
-            "API 키에 공백이나 줄바꿈이 들어 있습니다. 앞뒤를 확인해주세요.".into(),
+        return Err(Error::provider(
+            ProviderErrorCode::KeyRejected,
+            "API 키에 공백이나 줄바꿈이 들어 있습니다. 앞뒤를 확인해주세요.",
         ));
     }
     if !key.is_ascii() {
-        return Err(Error::Other(
-            "API 키에 ASCII 가 아닌 문자가 있습니다. 복사 과정에서 섞인 것 같습니다.".into(),
+        return Err(Error::provider(
+            ProviderErrorCode::KeyRejected,
+            "API 키에 ASCII 가 아닌 문자가 있습니다. 복사 과정에서 섞인 것 같습니다.",
         ));
     }
     if key.len() < 12 {
-        return Err(Error::Other("API 키가 너무 짧습니다.".into()));
+        return Err(Error::provider(
+            ProviderErrorCode::KeyRejected,
+            "API 키가 너무 짧습니다.",
+        ));
     }
     if provider_id == "anthropic" && !key.starts_with("sk-ant-") {
-        return Err(Error::Other(
-            "Anthropic API 키는 sk-ant- 로 시작합니다.".into(),
+        return Err(Error::provider(
+            ProviderErrorCode::KeyRejected,
+            "Anthropic API 키는 sk-ant- 로 시작합니다.",
         ));
     }
     Ok(())
@@ -138,7 +147,12 @@ impl CredentialStore {
     pub(crate) fn key(&self, provider_id: &str, user_id: &str) -> Result<String> {
         self.tokens
             .load(&key_account(provider_id, user_id))?
-            .ok_or_else(|| Error::Other("연결된 프로바이더가 없습니다.".into()))
+            .ok_or_else(|| {
+                Error::provider(
+                    ProviderErrorCode::NotConnected,
+                    "연결된 프로바이더가 없습니다.",
+                )
+            })
     }
 
     pub fn delete(&self, provider_id: &str, user_id: &str) -> Result<()> {

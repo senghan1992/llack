@@ -27,13 +27,14 @@ impl KeychainTokenStore {
         // Probe once at construction rather than on every access, and treat a
         // "not found" result as success — the slot is simply empty.
         let keychain_available = match keyring::Entry::new(SERVICE, "__probe__") {
-            Ok(entry) => !matches!(entry.get_password(), Err(keyring::Error::PlatformFailure(_))),
+            Ok(entry) => !matches!(
+                entry.get_password(),
+                Err(keyring::Error::PlatformFailure(_))
+            ),
             Err(_) => false,
         };
         if !keychain_available {
-            tracing::warn!(
-                "OS keychain unavailable; credentials will not persist across restarts"
-            );
+            tracing::warn!("OS keychain unavailable; credentials will not persist across restarts");
         }
         Self {
             fallback: MemoryTokenStore::new(),

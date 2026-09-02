@@ -21,19 +21,17 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { BetaRunnableTool } from "@anthropic-ai/sdk/lib/tools/BetaRunnableTool";
 import type { BetaTool } from "@anthropic-ai/sdk/resources/beta";
 
-import type { AgentToolSpec } from "@/lib/agent/types";
+import type {
+  AgentToolResult,
+  AgentToolRun,
+  AgentToolSpec,
+  AgentVerdict,
+} from "@/lib/agent/types";
+import { asCommandError } from "@/lib/errors";
 import { agentHost } from "@/lib/ipc";
 import { useAgent } from "@/store/agent";
 
 import type { ProviderAdapter } from "./anthropic";
-
-/** What `agent_tool_call` returns. */
-interface ToolCallResult {
-  content: unknown;
-  artifact: string | null;
-  is_error: boolean;
-  taints: boolean;
-}
 
 /**
  * Wrap one Rust tool as a runnable the SDK can call.
@@ -69,30 +67,28 @@ function runnable(
         summary: null,
       });
 
-      let result: ToolCallResult;
+      let result: AgentToolResult;
       try {
-        result = (await agentHost.agentToolCall(
-          sessionId,
-          spec.name,
-          args,
-        )) as ToolCallResult;
+        result = await agentHost.agentToolCall(sessionId, spec.name, args);
       } catch (error) {
-        // A rejected command means the gate refused before running anything —
-        // a denial, a timeout, a hard refusal. It becomes a tool *result* so
-        // the model is told and the turn survives.
-        const message =
-          error instanceof Error ? error.message : "도구를 실행할 수 없습니다.";
+        // A rejected command means the call did not reach the gate at all —
+        // no session, no agent, a malformed argument. It becomes a tool
+        // *result* so the model is told and the turn survives.
+        const envelope = asCommandError(error);
         store.finishToolRun(turnId, runId, {
-          state: message.includes("거부") ? "denied" : "refused",
-          summary: message,
+          state: stateFor(envelope.code),
+          summary: envelope.message,
         });
-        return JSON.stringify({ error: message });
+        return JSON.stringify({ error: envelope.message });
       }
 
       if (result.taints) store.markTainted();
 
       store.finishToolRun(turnId, runId, {
-        state: result.is_error ? "error" : "ok",
+        // The verdict, not `is_error`. A call the user declined is not a
+        // failure, and painting it as one reads as the agent being broken
+        // rather than as it doing what it was told.
+        state: stateFromVerdict(result.verdict, result.is_error),
         artifact: result.artifact,
         summary: summarise(result),
       });
@@ -109,8 +105,34 @@ function runnable(
   };
 }
 
+/** How a card should render, given what the gate decided. */
+function stateFromVerdict(
+  verdict: AgentVerdict,
+  isError: boolean,
+): AgentToolRun["state"] {
+  switch (verdict) {
+    case "denied":
+    case "expired":
+    case "cancelled":
+      // All three are "no answer to act on". Grouped because the distinction
+      // matters to the audit log, not to a card in a transcript.
+      return "denied";
+    case "refused":
+      return "refused";
+    default:
+      return isError ? "error" : "ok";
+  }
+}
+
+/** How a card should render when the command itself rejected. */
+function stateFor(code: string): AgentToolRun["state"] {
+  if (code.startsWith("approval_")) return "denied";
+  if (code === "policy_refused") return "refused";
+  return "error";
+}
+
 /** A one-line description of a tool result for the card. */
-function summarise(result: ToolCallResult): string | null {
+function summarise(result: AgentToolResult): string | null {
   const content = result.content;
   if (content && typeof content === "object") {
     const record = content as Record<string, unknown>;

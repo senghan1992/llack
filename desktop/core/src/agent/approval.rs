@@ -36,7 +36,7 @@ use tokio::sync::oneshot;
 
 use crate::agent::audit::DecisionSource;
 use crate::agent::policy::{ApprovalFacts, Grain, Risk};
-use crate::error::{Error, Result};
+use crate::error::{ApprovalErrorCode, Error, Result};
 use crate::ids::new_ulid;
 
 /// How long a request waits before it is denied.
@@ -240,7 +240,10 @@ impl ApprovalBroker {
                 Some(entry) if entry.nonce != nonce => {
                     // Do not remove it: a wrong nonce is a failed attempt, not
                     // a reason to cancel the user's real pending request.
-                    return Err(Error::Other("승인 토큰이 일치하지 않습니다.".into()));
+                    return Err(Error::approval(
+                        ApprovalErrorCode::Stale,
+                        "승인 토큰이 일치하지 않습니다.",
+                    ));
                 }
                 Some(_) => map.remove(request_id).expect("checked just above"),
             }

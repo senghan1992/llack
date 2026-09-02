@@ -59,7 +59,10 @@ pub fn start(app: AppHandle, state: Arc<AppState>, workspace_id: Option<String>)
 
 async fn handle_event(app: &AppHandle, state: &Arc<AppState>, event: RealtimeEvent) {
     match event {
-        RealtimeEvent::Connected { ref session_id, ref workspace_ids } => {
+        RealtimeEvent::Connected {
+            ref session_id,
+            ref workspace_ids,
+        } => {
             tracing::info!(session_id, "realtime connected");
             let _ = app.emit(
                 EVENT_CONNECTION,
@@ -86,7 +89,10 @@ async fn handle_event(app: &AppHandle, state: &Arc<AppState>, event: RealtimeEve
             }
         }
 
-        RealtimeEvent::Disconnected { ref reason, will_retry_in_ms } => {
+        RealtimeEvent::Disconnected {
+            ref reason,
+            will_retry_in_ms,
+        } => {
             tracing::warn!(reason, ?will_retry_in_ms, "realtime disconnected");
             let _ = app.emit(
                 EVENT_CONNECTION,
@@ -112,10 +118,7 @@ async fn handle_event(app: &AppHandle, state: &Arc<AppState>, event: RealtimeEve
             );
             if let (Some(workspace_id), Ok(sync)) = (state.active_workspace(), state.sync()) {
                 if let Ok(channels) = sync.refresh_channels(&workspace_id).await {
-                    let _ = app.emit(
-                        EVENT_SYNC,
-                        serde_json::json!({ "kind": "sidebar_changed" }),
-                    );
+                    let _ = app.emit(EVENT_SYNC, serde_json::json!({ "kind": "sidebar_changed" }));
                     // Refresh the channels the user is most likely looking at.
                     for channel in channels.iter().take(10) {
                         let _ = sync.refresh_history(&channel.id, 80).await;
@@ -145,7 +148,12 @@ async fn handle_event(app: &AppHandle, state: &Arc<AppState>, event: RealtimeEve
             let Ok(sync) = state.sync() else { return };
             match sync.apply(&frame) {
                 Ok(SyncEffect::Ignored) => {}
-                Ok(SyncEffect::Notify { title, body, channel_id, message_id }) => {
+                Ok(SyncEffect::Notify {
+                    title,
+                    body,
+                    channel_id,
+                    message_id,
+                }) => {
                     show_notification(app, &title, &body);
                     let _ = app.emit(
                         EVENT_SYNC,
@@ -163,8 +171,7 @@ async fn handle_event(app: &AppHandle, state: &Arc<AppState>, event: RealtimeEve
                     // Unread counters may have moved; refresh the badge.
                     if let Some(workspace_id) = state.active_workspace() {
                         if let Ok(total) = sync.badge_count(&workspace_id) {
-                            let _ =
-                                app.emit(EVENT_BADGE, serde_json::json!({ "count": total }));
+                            let _ = app.emit(EVENT_BADGE, serde_json::json!({ "count": total }));
                         }
                     }
                 }
@@ -184,13 +191,7 @@ fn show_notification(app: &AppHandle, title: &str, body: &str) {
     if focused {
         return;
     }
-    if let Err(err) = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-    {
+    if let Err(err) = app.notification().builder().title(title).body(body).show() {
         tracing::warn!(error = %err, "could not show a notification");
     }
 }

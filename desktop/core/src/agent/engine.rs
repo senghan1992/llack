@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ProviderErrorCode, Result};
 use crate::session::TokenStore;
 
 use super::approval::{ApprovalBroker, ApprovalNotifier};
@@ -190,7 +190,10 @@ impl AgentEngine {
         self.user_id
             .read()
             .clone()
-            .ok_or_else(|| Error::Other("로그인이 필요합니다.".into()))
+            // `Unauthenticated`, not `Other`: the panel's error handling already
+            // routes this code to the sign-in screen, and a generic code would
+            // show "unknown error" on a state the app knows exactly how to fix.
+            .ok_or_else(|| Error::Unauthenticated("로그인이 필요합니다.".into()))
     }
 
     // ── Provider ─────────────────────────────────────────────────────────
@@ -256,10 +259,14 @@ impl AgentEngine {
         // The probe is not abortable and does not need to be: it is one small
         // GET with a short life, and it holds no user-visible stream.
         if let Some(message) = provider::describe_status(collector.status()) {
+            let code = match collector.status() {
+                401 | 403 | 404 => ProviderErrorCode::KeyRejected,
+                _ => ProviderErrorCode::Unavailable,
+            };
             // Recorded so the panel can explain itself after a restart, and so
             // the user is not left wondering why the chip says disconnected.
             self.remember_error(&user_id, &model, Some(message.clone()))?;
-            return Err(Error::Other(message));
+            return Err(Error::provider(code, message));
         }
 
         let fingerprint = self.credentials.put(DEFAULT_PROVIDER, &user_id, key)?;

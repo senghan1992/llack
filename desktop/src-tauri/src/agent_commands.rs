@@ -326,9 +326,22 @@ pub fn agent_provider_status(state: State<'_, Arc<AppState>>) -> Result<Provider
 pub async fn agent_provider_connect(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
+    provider_id: Option<String>,
     api_key: String,
     model: Option<String>,
 ) -> Result<ProviderStatus> {
+    // Accepted and checked rather than ignored. The webview's contract already
+    // sends it, and serde would have silently dropped an unknown field — which
+    // would make "connect to provider X" quietly connect to Anthropic instead
+    // the day a second adapter is added to the UI before it exists here.
+    if let Some(requested) = provider_id.as_deref() {
+        if requested != llack_core::agent::DEFAULT_PROVIDER {
+            return Err(Error::provider(
+                llack_core::error::ProviderErrorCode::RequestRefused,
+                format!("아직 지원하지 않는 프로바이더입니다: {requested}"),
+            ));
+        }
+    }
     let status = state.agent()?.connect_provider(&api_key, model).await?;
     // The key is dropped here with the argument. Nothing keeps a copy: the
     // keychain has it, and `String` has no other owner.
@@ -464,6 +477,7 @@ pub async fn agent_tool_call(
         artifact: outcome.output.artifact,
         is_error: outcome.output.is_error,
         taints: outcome.taints,
+        verdict: outcome.verdict,
     })
 }
 
@@ -473,6 +487,12 @@ pub struct ToolCallResult {
     pub artifact: Option<String>,
     pub is_error: bool,
     pub taints: bool,
+    /// What the gate decided.
+    ///
+    /// Without this the panel cannot tell "you declined this" from "the tool
+    /// failed", and a card the user deliberately denied renders as a fault —
+    /// which reads as the agent being broken rather than as it being obedient.
+    pub verdict: llack_core::agent::Verdict,
 }
 
 #[tauri::command]

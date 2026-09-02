@@ -39,8 +39,93 @@ pub enum Error {
     #[error("invalid configuration: {0}")]
     Config(String),
 
+    /// The model provider refused, is unreachable, or was never connected.
+    ///
+    /// Separate from [`Error::Api`] because that one carries the *Llack*
+    /// server's error envelope, and separate from [`Error::Other`] because the
+    /// panel has to branch on these: "your key was rejected" opens the setup
+    /// form, "rate limited" offers a retry, and telling them apart by
+    /// substring-matching a Korean sentence is exactly what `code()` exists to
+    /// prevent.
+    #[error("{message}")]
+    Provider {
+        code: ProviderErrorCode,
+        message: String,
+    },
+
+    /// An approval was not granted.
+    ///
+    /// Not a failure of the tool — a decision about it, or the absence of one.
+    /// The loop tells the model and carries on, and the card that is on screen
+    /// needs to know which of the four it was.
+    #[error("{message}")]
+    Approval {
+        code: ApprovalErrorCode,
+        message: String,
+    },
+
     #[error("{0}")]
     Other(String),
+}
+
+/// Why a provider request did not succeed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderErrorCode {
+    /// No key in the keychain. The panel shows the setup form.
+    NotConnected,
+    /// The provider rejected the key (401/403).
+    KeyRejected,
+    /// Rate limited or provider-side failure — retrying may work.
+    Unavailable,
+    /// The request never left this machine: vetting refused it.
+    RequestRefused,
+    /// The stream was cut before it ended.
+    Truncated,
+}
+
+impl ProviderErrorCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotConnected => "provider_not_connected",
+            Self::KeyRejected => "provider_key_rejected",
+            Self::Unavailable => "provider_unavailable",
+            Self::RequestRefused => "provider_request_refused",
+            Self::Truncated => "provider_truncated",
+        }
+    }
+
+    /// Whether the same request could plausibly succeed on a retry.
+    pub fn is_retryable(self) -> bool {
+        matches!(self, Self::Unavailable | Self::Truncated)
+    }
+}
+
+/// What happened to an approval request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalErrorCode {
+    /// The user said no.
+    Denied,
+    /// Nobody answered in time.
+    Expired,
+    /// The turn ended before an answer arrived.
+    Cancelled,
+    /// The id or nonce did not match anything answerable. Distinct from the
+    /// three above: it means the *panel* is out of step, not the user.
+    Stale,
+    /// The policy refused outright — no approval could have helped.
+    Refused,
+}
+
+impl ApprovalErrorCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Denied => "approval_denied",
+            Self::Expired => "approval_expired",
+            Self::Cancelled => "approval_cancelled",
+            Self::Stale => "approval_stale",
+            Self::Refused => "policy_refused",
+        }
+    }
 }
 
 impl Error {
@@ -54,6 +139,8 @@ impl Error {
             Error::Cache(_) => "cache_error",
             Error::Realtime(_) => "realtime_error",
             Error::Config(_) => "config_error",
+            Error::Provider { code, .. } => code.as_str(),
+            Error::Approval { code, .. } => code.as_str(),
             Error::Other(_) => "unknown_error",
         }
     }
@@ -73,7 +160,24 @@ impl Error {
         match self {
             Error::Network(_) => true,
             Error::Api { status, .. } => *status == 429 || *status >= 500,
+            Error::Provider { code, .. } => code.is_retryable(),
             _ => false,
+        }
+    }
+
+    /// Build a provider error.
+    pub fn provider(code: ProviderErrorCode, message: impl Into<String>) -> Self {
+        Error::Provider {
+            code,
+            message: message.into(),
+        }
+    }
+
+    /// Build an approval error.
+    pub fn approval(code: ApprovalErrorCode, message: impl Into<String>) -> Self {
+        Error::Approval {
+            code,
+            message: message.into(),
         }
     }
 
@@ -136,4 +240,86 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Small helper so `?` works on things that only carry a message.
 pub fn other<E: fmt::Display>(err: E) -> Error {
     Error::Other(err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The codes are a contract with the webview, which branches on them. A
+    /// renamed variant that silently changes a code would turn a handled state
+    /// into "unknown error" with no compile error anywhere.
+    #[test]
+    fn the_agent_codes_are_stable_strings() {
+        assert_eq!(
+            Error::provider(ProviderErrorCode::NotConnected, "x").code(),
+            "provider_not_connected"
+        );
+        assert_eq!(
+            Error::provider(ProviderErrorCode::KeyRejected, "x").code(),
+            "provider_key_rejected"
+        );
+        assert_eq!(
+            Error::provider(ProviderErrorCode::RequestRefused, "x").code(),
+            "provider_request_refused"
+        );
+        assert_eq!(
+            Error::approval(ApprovalErrorCode::Denied, "x").code(),
+            "approval_denied"
+        );
+        assert_eq!(
+            Error::approval(ApprovalErrorCode::Stale, "x").code(),
+            "approval_stale"
+        );
+        assert_eq!(
+            Error::approval(ApprovalErrorCode::Refused, "x").code(),
+            "policy_refused"
+        );
+    }
+
+    /// The panel groups by prefix (`approval_*` renders as declined), so the
+    /// prefixes have to hold.
+    #[test]
+    fn approval_codes_share_a_prefix_and_provider_codes_share_theirs() {
+        for code in [
+            ApprovalErrorCode::Denied,
+            ApprovalErrorCode::Expired,
+            ApprovalErrorCode::Cancelled,
+            ApprovalErrorCode::Stale,
+        ] {
+            assert!(code.as_str().starts_with("approval_"), "{code:?}");
+        }
+        for code in [
+            ProviderErrorCode::NotConnected,
+            ProviderErrorCode::KeyRejected,
+            ProviderErrorCode::Unavailable,
+            ProviderErrorCode::RequestRefused,
+            ProviderErrorCode::Truncated,
+        ] {
+            assert!(code.as_str().starts_with("provider_"), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_transient_provider_failure_is_retryable() {
+        assert!(Error::provider(ProviderErrorCode::Unavailable, "x").is_retryable());
+        assert!(Error::provider(ProviderErrorCode::Truncated, "x").is_retryable());
+        // Retrying a refused URL or a rejected key just fails again, and a
+        // retry loop on a 401 looks like a brute-force attempt from outside.
+        assert!(!Error::provider(ProviderErrorCode::KeyRejected, "x").is_retryable());
+        assert!(!Error::provider(ProviderErrorCode::RequestRefused, "x").is_retryable());
+        assert!(!Error::provider(ProviderErrorCode::NotConnected, "x").is_retryable());
+    }
+
+    #[test]
+    fn the_envelope_carries_the_code_and_the_message() {
+        let json = serde_json::to_value(Error::provider(
+            ProviderErrorCode::KeyRejected,
+            "API 키가 거부되었습니다.",
+        ))
+        .unwrap();
+        assert_eq!(json["code"], "provider_key_rejected");
+        assert_eq!(json["message"], "API 키가 거부되었습니다.");
+        assert_eq!(json["requires_reauth"], false);
+    }
 }

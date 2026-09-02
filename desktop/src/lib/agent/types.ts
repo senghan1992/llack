@@ -83,6 +83,24 @@ export interface AgentToolSpec {
  * `artifact` is the RLM seam surfacing in the UI: a card can say "400 messages"
  * and offer to show a slice, rather than dumping the value into the panel.
  */
+/** What the gate decided about a call. Mirrors `audit::Verdict`. */
+export type AgentVerdict =
+  | "auto"
+  | "approved"
+  | "denied"
+  | "refused"
+  | "expired"
+  | "cancelled";
+
+/** What `agent_tool_call` resolves with. Mirrors `ToolCallResult`. */
+export interface AgentToolResult {
+  content: unknown;
+  artifact: string | null;
+  is_error: boolean;
+  taints: boolean;
+  verdict: AgentVerdict;
+}
+
 export interface AgentToolRun {
   id: string;
   name: string;

@@ -224,10 +224,7 @@ pub async fn open_dm(
 }
 
 #[tauri::command]
-pub async fn join_channel(
-    state: State<'_, Arc<AppState>>,
-    channel_id: String,
-) -> Result<Channel> {
+pub async fn join_channel(state: State<'_, Arc<AppState>>, channel_id: String) -> Result<Channel> {
     let channel = state.api()?.join_channel(&channel_id).await?;
     state.cache.put_channels(std::slice::from_ref(&channel))?;
     if let Ok(realtime) = state.realtime() {
@@ -270,9 +267,9 @@ pub async fn mark_read(
         .await?;
     if let Some(workspace_id) = state.active_workspace() {
         // The badge is derived from cached counters, so refresh them.
-        let _ = state.sync().and_then(|s| {
-            tauri::async_runtime::block_on(s.refresh_channels(&workspace_id))
-        });
+        let _ = state
+            .sync()
+            .and_then(|s| tauri::async_runtime::block_on(s.refresh_channels(&workspace_id)));
         update_badge(&app, &state, &workspace_id);
     }
     Ok(membership)
@@ -286,7 +283,9 @@ pub async fn cached_history(
     channel_id: String,
     limit: Option<u32>,
 ) -> Result<Vec<Message>> {
-    state.cache.channel_history(&channel_id, limit.unwrap_or(80))
+    state
+        .cache
+        .channel_history(&channel_id, limit.unwrap_or(80))
 }
 
 #[tauri::command]
@@ -378,7 +377,9 @@ pub async fn send_message(
         }
         Err(err) => {
             let retryable = err.is_retryable();
-            state.cache.mark_result(&entry.id, &err.to_string(), retryable)?;
+            state
+                .cache
+                .mark_result(&entry.id, &err.to_string(), retryable)?;
             if retryable {
                 // Queued for the drain loop; the UI shows a pending bubble.
                 Ok(SendResult {
@@ -406,10 +407,7 @@ pub async fn edit_message(
 }
 
 #[tauri::command]
-pub async fn delete_message(
-    state: State<'_, Arc<AppState>>,
-    message_id: String,
-) -> Result<()> {
+pub async fn delete_message(state: State<'_, Arc<AppState>>, message_id: String) -> Result<()> {
     state.api()?.delete_message(&message_id).await?;
     state.cache.remove_message(&message_id)?;
     Ok(())
@@ -587,10 +585,7 @@ pub async fn install_app(
 }
 
 #[tauri::command]
-pub async fn uninstall_app(
-    state: State<'_, Arc<AppState>>,
-    installation_id: String,
-) -> Result<()> {
+pub async fn uninstall_app(state: State<'_, Arc<AppState>>, installation_id: String) -> Result<()> {
     state.api()?.uninstall_app(&installation_id).await
 }
 
@@ -652,13 +647,19 @@ pub async fn prune_cache(
 /// Recompute the dock/taskbar badge from cached unread counters.
 fn update_badge(app: &AppHandle, state: &Arc<AppState>, workspace_id: &str) {
     let Ok(sync) = state.sync() else { return };
-    let Ok(total) = sync.badge_count(workspace_id) else { return };
+    let Ok(total) = sync.badge_count(workspace_id) else {
+        return;
+    };
 
     // The UI also renders its own in-window badges.
     let _ = app.emit("llack://badge", serde_json::json!({ "count": total }));
 
     if let Some(window) = app.get_webview_window("main") {
-        let label = if total > 0 { Some(total.to_string()) } else { None };
+        let label = if total > 0 {
+            Some(total.to_string())
+        } else {
+            None
+        };
         // Not every platform supports a badge; ignore failures rather than
         // surfacing an error the user cannot act on.
         let _ = window.set_badge_label(label);

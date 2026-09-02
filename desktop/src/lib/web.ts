@@ -17,7 +17,12 @@
  * - No OS notifications, tray badge or `llack://` deep links.
  */
 
-import type { AgentEvent, AgentProviderStatus, AgentToolSpec } from "./agent/types";
+import type {
+  AgentEvent,
+  AgentProviderStatus,
+  AgentToolResult,
+  AgentToolSpec,
+} from "./agent/types";
 import { asCommandError, commandError } from "./errors";
 import type {
   AppInstallation,
@@ -1159,7 +1164,11 @@ export const webAgent = {
     return `fake-session-${fakeAgent.sessionSeq}`;
   },
 
-  agentToolCall: async (_sessionId: string, name: string, args: unknown) => {
+  agentToolCall: async (
+    _sessionId: string,
+    name: string,
+    args: unknown,
+  ): Promise<AgentToolResult> => {
     fakeAgent.calls.push({ name, args });
     if (name.startsWith("host.")) {
       // Exactly what the real gate does for a host tool in a browser: refuse,
@@ -1169,6 +1178,7 @@ export const webAgent = {
         artifact: null,
         is_error: true,
         taints: false,
+        verdict: "refused",
       };
     }
     return {
@@ -1176,6 +1186,7 @@ export const webAgent = {
       artifact: null,
       is_error: false,
       taints: name.startsWith("chat."),
+      verdict: "auto",
     };
   },
 

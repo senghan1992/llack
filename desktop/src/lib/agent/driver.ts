@@ -110,11 +110,11 @@ class ScriptedDriver implements TurnDriver {
       summary: null,
     });
     try {
-      const result = (await agentHost.agentToolCall(
+      const result = await agentHost.agentToolCall(
         this.sessionId,
         "chat.read_channel",
         { channel_id: "current" },
-      )) as { artifact: string | null; is_error: boolean; taints: boolean };
+      );
       if (result.taints) store.markTainted();
       store.finishToolRun(turnId, runId, {
         state: result.is_error ? "error" : "ok",

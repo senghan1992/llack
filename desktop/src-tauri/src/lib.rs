@@ -81,8 +81,7 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
-                    let urls: Vec<String> =
-                        event.urls().iter().map(ToString::to_string).collect();
+                    let urls: Vec<String> = event.urls().iter().map(ToString::to_string).collect();
                     let _ = handle.emit("llack://deep-link", serde_json::json!({ "urls": urls }));
                     tray::reveal_main_window(&handle);
                 });

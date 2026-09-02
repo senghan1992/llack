@@ -26,7 +26,7 @@
 //! compiled in every environment this repo is worked on. The streaming glue
 //! there is deliberately thin.
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ProviderErrorCode, Result};
 
 use super::credential::CredentialStore;
 
@@ -113,34 +113,50 @@ pub fn vet_request(
     let method = match method.to_ascii_uppercase().as_str() {
         "POST" => "POST",
         "GET" => "GET",
-        other => return Err(Error::Other(format!("허용되지 않은 메서드입니다: {other}"))),
+        other => {
+            return Err(Error::provider(
+                ProviderErrorCode::RequestRefused,
+                format!("허용되지 않은 메서드입니다: {other}"),
+            ))
+        }
     };
 
     // ── Origin. Exact scheme, exact host, and the host must be followed by
     //    `/` — `https://api.anthropic.com.evil.test/` starts with the allowed
     //    string and is a different site.
     let expected = format!("https://{ALLOWED_HOST}");
-    let rest = url
-        .strip_prefix(&expected)
-        .ok_or_else(|| Error::Other(format!("{ALLOWED_HOST} 외의 주소로는 요청할 수 없습니다.")))?;
+    let rest = url.strip_prefix(&expected).ok_or_else(|| {
+        Error::provider(
+            ProviderErrorCode::RequestRefused,
+            format!("{ALLOWED_HOST} 외의 주소로는 요청할 수 없습니다."),
+        )
+    })?;
     if !rest.starts_with('/') {
-        return Err(Error::Other(format!(
-            "{ALLOWED_HOST} 외의 주소로는 요청할 수 없습니다."
-        )));
+        return Err(Error::provider(
+            ProviderErrorCode::RequestRefused,
+            format!("{ALLOWED_HOST} 외의 주소로는 요청할 수 없습니다."),
+        ));
     }
 
     // ── Path. `/v1/` only, and no `..` or userinfo tricks in what follows.
     let path = rest.split(['?', '#']).next().unwrap_or(rest);
     if !path.starts_with("/v1/") {
-        return Err(Error::Other("/v1/ 경로만 사용할 수 있습니다.".into()));
+        return Err(Error::provider(
+            ProviderErrorCode::RequestRefused,
+            "/v1/ 경로만 사용할 수 있습니다.",
+        ));
     }
     if path.contains("..") || path.contains("//") || url.contains('@') || url.contains('\\') {
-        return Err(Error::Other(
-            "경로에 사용할 수 없는 문자가 있습니다.".into(),
+        return Err(Error::provider(
+            ProviderErrorCode::RequestRefused,
+            "경로에 사용할 수 없는 문자가 있습니다.",
         ));
     }
     if !url.is_ascii() || url.chars().any(|c| c.is_control()) {
-        return Err(Error::Other("주소에 제어 문자가 있습니다.".into()));
+        return Err(Error::provider(
+            ProviderErrorCode::RequestRefused,
+            "주소에 제어 문자가 있습니다.",
+        ));
     }
 
     // ── Headers. Forward the allowlist, drop everything else silently — the
@@ -153,9 +169,10 @@ pub fn vet_request(
             continue;
         }
         if !header_value_is_sane(value) {
-            return Err(Error::Other(format!(
-                "헤더 {lower} 의 값에 사용할 수 없는 문자가 있습니다."
-            )));
+            return Err(Error::provider(
+                ProviderErrorCode::RequestRefused,
+                format!("헤더 {lower} 의 값에 사용할 수 없는 문자가 있습니다."),
+            ));
         }
         headers.push((lower, value.clone()));
     }
@@ -259,7 +276,7 @@ pub async fn relay(
                 "프로바이더 요청이 실패했습니다.".to_string()
             };
             sink.failed(&message);
-            return Err(Error::Other(message));
+            return Err(Error::provider(ProviderErrorCode::Unavailable, message));
         }
     };
 
@@ -283,7 +300,7 @@ pub async fn relay(
             Err(_) => {
                 let message = "응답이 중간에 끊겼습니다.".to_string();
                 sink.failed(&message);
-                return Err(Error::Other(message));
+                return Err(Error::provider(ProviderErrorCode::Truncated, message));
             }
         }
     }
