@@ -107,12 +107,12 @@ make compose-up     # Postgres, Redis, MinIO, API
 
 | 영역 | 상태 | 검증 |
 | --- | --- | --- |
-| 백엔드 API (76 엔드포인트) | 동작 | pytest 77개 통과 |
+| 백엔드 API (80+ 엔드포인트) | 동작 | pytest 99개 통과 |
 | 실시간 게이트웨이 (WebSocket) | 동작 | 종단 검증 17항목 통과 |
 | 미니앱 플랫폼 + 권한 경계 | 동작 | 종단 검증 25항목 통과 |
-| Rust 코어 (API/캐시/동기화) | 동작 | cargo test 50개 통과 |
+| Rust 코어 (API/캐시/동기화/에이전트) | 동작 | cargo test 189개 통과 |
 | Tauri 셸 (창·트레이·알림·패널) | 코드 완성 | 이 환경에서는 링크 불가 (아래 참고) |
-| React UI | 동작 | tsc 통과, 빌드 성공 |
+| React UI | 동작 | tsc 통과 · 헤드리스 브라우저 스모크 27검사 (`make smoke-ui`) |
 | 미니앱 SDK + 예제 앱 | 동작 | 로드 및 동작 확인 |
 
 **Tauri 셸에 대하여**: 이 개발 환경(Amazon Linux 2023)에는 `webkit2gtk` 패키지가 없어
@@ -184,10 +184,10 @@ llack/
 │   │   └── api/v1/          라우터 (auth, channels, messages, apps, …)
 │   ├── alembic/             마이그레이션
 │   ├── scripts/             시드, 종단 검증
-│   └── tests/               77개
+│   └── tests/               99개
 │
 ├── desktop/                 데스크톱 클라이언트
-│   ├── core/                ★ 순수 Rust: API·실시간·캐시·동기화 (50개 테스트)
+│   ├── core/                ★ 순수 Rust: API·실시간·캐시·동기화·에이전트 (189개 테스트)
 │   ├── src-tauri/           얇은 Tauri 셸: 창, 트레이, 알림, IPC
 │   └── src/                 React UI
 │
@@ -210,8 +210,9 @@ llack/
 
 ```bash
 make help           # 전체 명령
-make test           # 백엔드 77개 + Rust 50개
+make test           # 백엔드 99개 + Rust 189개
 make smoke          # 실행 중인 서버에 대한 종단 검증
+make smoke-ui       # 헤드리스 브라우저로 UI 흐름 27검사
 make lint           # ruff + tsc + clippy
 make reset-db       # DB 초기화 후 재시드
 ```

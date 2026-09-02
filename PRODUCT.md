@@ -108,7 +108,8 @@ Slack/Teams 를 기능으로 앞서려는 것이 아니라, 매일 쓰면서 불
   (김앨리스/@alice, 이밥/@bob, 박캐롤/@carol, 최데이브/@dave), 채널 5개
   (`#배포` `#개발` `#공지` `#디자인` `🔒경영`) + `#general` `#random`,
   DM 1개, 미니앱 1개("데일리 스탠드업"). `backend/scripts/seed.py`.
-- **검증 자산**: pytest 77개, cargo test 50개, 종단 검증 스크립트
+- **검증 자산**: pytest 99개, cargo test 189개, 헤드리스 브라우저 스모크 27검사
+  (`scripts/smoke_ui.py`, `scripts/smoke_flows.py`), 종단 검증 스크립트
   (`backend/scripts/smoke_realtime.py`, `smoke_apps.py`).
 - **예제 미니앱**: `examples/apps/standup/` (매니페스트 + 패널 UI + SDK 사용 예).
 - **문서**: `docs/ARCHITECTURE.md`, `docs/APP_PLATFORM.md`, `docs/DEPLOY.md`, `docs/ROADMAP.md`,
