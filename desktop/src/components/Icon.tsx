@@ -238,11 +238,16 @@ export function IconCheck(props: IconProps) {
 }
 
 /** Settings. A gear reduced to hub and spokes, which is all 16px can carry. */
+/**
+ * A cogwheel: a toothed ring around a hub. The previous drawing was a circle
+ * with eight detached rays — which is the sun, i.e. a light-theme toggle, and
+ * it was read as exactly that. Teeth must touch the ring they turn.
+ */
 export function IconGear(props: IconProps) {
   return (
     <Svg {...props}>
-      <circle cx="8" cy="8" r="2.1" />
-      <path d="M8 2.4v2M8 11.6v2M2.4 8h2M11.6 8h2M4 4l1.4 1.4M10.6 10.6L12 12M12 4l-1.4 1.4M5.4 10.6L4 12" />
+      <path d="M7.20 3.88L7.31 1.44L8.69 1.44L8.80 3.88L10.35 4.52L12.15 2.87L13.13 3.85L11.48 5.65L12.12 7.20L14.56 7.31L14.56 8.69L12.12 8.80L11.48 10.35L13.13 12.15L12.15 13.13L10.35 11.48L8.80 12.12L8.69 14.56L7.31 14.56L7.20 12.12L5.65 11.48L3.85 13.13L2.87 12.15L4.52 10.35L3.88 8.80L1.44 8.69L1.44 7.31L3.88 7.20L4.52 5.65L2.87 3.85L3.85 2.87L5.65 4.52Z" />
+      <circle cx="8" cy="8" r="1.9" />
     </Svg>
   );
 }
