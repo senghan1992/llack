@@ -31,13 +31,47 @@ export const DEFAULT_MODELS: ProviderModel[] = [
   { id: "claude-sonnet-5", displayName: "Claude Sonnet 5" },
 ];
 
+/**
+ * OpenAI-compatible gateways have no shared default. These match Rust's
+ * connect-time fallback (`gpt-5`) and a common smaller sibling; the account's
+ * real list replaces them after connecting.
+ */
+export const OPENAI_DEFAULT_MODELS: ProviderModel[] = [
+  { id: "gpt-5", displayName: "gpt-5" },
+  { id: "gpt-4o", displayName: "gpt-4o" },
+];
+
+export function defaultModelsFor(providerId: string): ProviderModel[] {
+  return providerId === "openai" ? OPENAI_DEFAULT_MODELS : DEFAULT_MODELS;
+}
+
 interface ModelsResponse {
   data?: Array<{ id?: unknown; display_name?: unknown }>;
 }
 
-export async function listProviderModels(): Promise<ProviderModel[]> {
+export interface ModelListQuery {
+  /** "anthropic" | "openai". */
+  providerId: string;
+  /** OpenAI-compatible base, e.g. "https://api.openai.com"; ignored for Anthropic. */
+  baseUrl?: string | null;
+}
+
+/**
+ * The models the connected account can run.
+ *
+ * Both providers expose `GET /v1/models` returning `{ data: [{ id }] }`, so one
+ * parser covers both; only the origin differs, and for an OpenAI-compatible
+ * gateway that origin is whatever base the user connected — the same host the
+ * byte proxy was told to allow.
+ */
+export async function listProviderModels(query: ModelListQuery): Promise<ProviderModel[]> {
   const ipcFetch = createIpcFetch();
-  const response = await ipcFetch("https://api.anthropic.com/v1/models?limit=100", {
+  const url =
+    query.providerId === "openai"
+      ? `${(query.baseUrl ?? "https://api.openai.com").replace(/\/+$/, "")}/v1/models`
+      : "https://api.anthropic.com/v1/models?limit=100";
+
+  const response = await ipcFetch(url, {
     method: "GET",
     headers: { accept: "application/json" },
   });

@@ -18,10 +18,14 @@
  */
 
 import type {
+  AgentAuditEntries,
   AgentEvent,
+  AgentMemory,
   AgentProviderStatus,
+  AgentSkill,
   AgentToolResult,
   AgentToolSpec,
+  McpServerView,
 } from "./agent/types";
 import { demoRequest, isDemoBuild } from "@/lib/demo";
 import { asCommandError, commandError } from "./errors";
@@ -1739,4 +1743,22 @@ export const webAgent = {
   agentFocus: async (_sessionId: string, _channelId: string | null): Promise<void> => {},
 
   agentPickRoot: () => desktopOnly<string | null>("폴더 선택"),
+
+  // v2 surfaces: all need the Rust engine (keychain, store, jsonl audit).
+  agentMcpList: async (): Promise<McpServerView[]> => [],
+  agentMcpAdd: () => desktopOnly<McpServerView>("MCP 서버 등록"),
+  agentMcpRemove: () => desktopOnly<void>("MCP 서버 제거"),
+  agentMcpSetEnabled: () => desktopOnly<McpServerView>("MCP 서버 설정"),
+  agentMcpTools: async (): Promise<AgentToolSpec[]> => [],
+  agentMcpRefresh: async (): Promise<McpServerView[]> => [],
+  agentArtifactPut: () => desktopOnly<{ handle: string; bytes: number }>("아티팩트 저장"),
+  agentMemoriesList: async (): Promise<AgentMemory[]> => [],
+  agentMemoryAdd: () => desktopOnly<AgentMemory>("기억 저장"),
+  agentMemoryDelete: () => desktopOnly<void>("기억 삭제"),
+  agentSkillsList: async (): Promise<AgentSkill[]> => [],
+  agentSkillRead: () => desktopOnly<string>("스킬 읽기"),
+  agentSkillSave: () => desktopOnly<AgentSkill>("스킬 저장"),
+  agentSkillDelete: () => desktopOnly<void>("스킬 삭제"),
+  agentAuditEntries: async (): Promise<AgentAuditEntries> => ({ dates: [], entries: [], verified: false }),
+  agentNativeDialogs: async (): Promise<boolean> => false,
 };

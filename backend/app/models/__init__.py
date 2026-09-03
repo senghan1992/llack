@@ -5,7 +5,7 @@ from app.models.audit import AuditEvent
 from app.models.base import Base
 from app.models.channel import Channel, ChannelMember
 from app.models.file import FileObject
-from app.models.message import Message, MessageAttachment, Reaction
+from app.models.message import Message, MessageAttachment, MessageClientKey, Reaction
 from app.models.saved import LinkPreview, SavedItem
 from app.models.server import ServerSetting
 from app.models.user import PasswordResetCode, Session, User
@@ -24,6 +24,7 @@ __all__ = [
     "LinkPreview",
     "Message",
     "MessageAttachment",
+    "MessageClientKey",
     "Reaction",
     "SavedItem",
     "Session",

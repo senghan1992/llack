@@ -49,6 +49,7 @@ export function AgentPanel() {
   const openSettings = useApp((state) => state.setSettings);
 
   const [draft, setDraft] = useState("");
+  const [auditOpen, setAuditOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   /**
    * One driver per session, holding the API-shaped message history.
@@ -121,7 +122,7 @@ export function AgentPanel() {
       if (driverRef.current?.sessionId !== session) {
         driverRef.current = {
           sessionId: session,
-          driver: createDriver(session, provider?.model ?? ""),
+          driver: createDriver(session, provider),
         };
       }
       // The engine needs to know which channel "this channel" means, and the
@@ -171,10 +172,22 @@ export function AgentPanel() {
             채널 읽음
           </span>
         ) : null}
+        {capabilities.computerControl ? (
+          <button
+            type="button"
+            className="agent-audit-open"
+            onClick={() => setAuditOpen(true)}
+            title="에이전트가 실행한 도구의 감사 기록"
+          >
+            감사 기록
+          </button>
+        ) : null}
         <button type="button" onClick={() => setOpen(false)} aria-label="에이전트 닫기">
           <IconClose size={13} />
         </button>
       </header>
+
+      {auditOpen ? <AgentAuditModal onClose={() => setAuditOpen(false)} /> : null}
 
       {banner ? <p className="agent-banner">{banner}</p> : null}
 
@@ -366,17 +379,147 @@ function AgentTurnView({ turn }: { turn: ReturnType<typeof useAgent.getState>["t
 function AgentToolCard({
   run,
 }: {
-  run: { id: string; name: string; state: string; artifact: string | null; summary: string | null };
+  run: {
+    id: string;
+    name: string;
+    state: string;
+    artifact: string | null;
+    summary: string | null;
+    image?: string | null;
+  };
 }) {
   return (
     <div className={`agent-tool agent-tool-${run.state}`}>
-      <code>{run.name}</code>
-      {run.summary ? <span>{run.summary}</span> : null}
-      {run.artifact ? (
-        <span className="agent-tool-artifact" title={run.artifact}>
-          저장됨
-        </span>
+      <div className="agent-tool-line">
+        <code>{run.name}</code>
+        {run.summary ? <span>{run.summary}</span> : null}
+        {run.artifact ? (
+          <span className="agent-tool-artifact" title={run.artifact}>
+            저장됨
+          </span>
+        ) : null}
+      </div>
+      {run.image ? (
+        <img className="agent-tool-image" src={run.image} alt={`${run.name} 결과 이미지`} />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The agent's audit log, read from Rust.
+ *
+ * Every gated call — approved, denied, or auto — is appended to a hash-chained
+ * JSONL file per day; this is the window onto it. `verified` reflects whether
+ * that chain still checks out, so a tampered or truncated log shows as
+ * unverified rather than silently reading clean.
+ */
+function AgentAuditModal({ onClose }: { onClose: () => void }) {
+  const [dates, setDates] = useState<string[]>([]);
+  const [date, setDate] = useState<string | null>(null);
+  const [entries, setEntries] = useState<Array<Record<string, unknown>>>([]);
+  const [verified, setVerified] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void agentHost
+      .agentAuditEntries(date, 200)
+      .then((result) => {
+        if (cancelled) return;
+        setDates(result.dates);
+        setEntries(result.entries);
+        setVerified(result.verified);
+        // On first load, pin the selector to the day the log actually returned.
+        if (date === null && result.dates.length > 0) {
+          setDate(result.dates[result.dates.length - 1] ?? null);
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : "감사 기록을 읽지 못했습니다.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="presentation">
+      <div
+        className="modal agent-audit"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-label="에이전트 감사 기록"
+      >
+        <header className="modal-header">
+          <h2>감사 기록</h2>
+          <button type="button" onClick={onClose} aria-label="닫기">
+            <IconClose size={13} />
+          </button>
+        </header>
+
+        <div className="agent-audit-controls">
+          {dates.length > 0 ? (
+            <label>
+              날짜
+              <select value={date ?? ""} onChange={(event) => setDate(event.target.value || null)}>
+                {dates.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <span className={verified ? "agent-audit-ok" : "agent-audit-bad"}>
+            {verified ? "체인 검증됨" : "체인 검증 실패 — 기록이 변조되었을 수 있습니다"}
+          </span>
+        </div>
+
+        <div className="modal-body agent-audit-body">
+          {error ? (
+            <p className="settings-error">{error}</p>
+          ) : loading ? (
+            <p className="settings-hint">불러오는 중…</p>
+          ) : entries.length === 0 ? (
+            <p className="settings-empty">이 날짜의 기록이 없습니다.</p>
+          ) : (
+            <ul className="agent-audit-list">
+              {entries.map((entry, index) => (
+                <li key={index}>
+                  <AgentAuditRow entry={entry} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One audit entry, rendered from whatever fields the JSONL row carries. */
+function AgentAuditRow({ entry }: { entry: Record<string, unknown> }) {
+  const str = (key: string): string | null => {
+    const value = entry[key];
+    return typeof value === "string" && value ? value : null;
+  };
+  const tool = str("tool") ?? str("action") ?? "(도구)";
+  const verdict = str("verdict");
+  const at = str("at") ?? str("ts") ?? str("timestamp");
+  return (
+    <div className="agent-audit-row">
+      <div className="agent-audit-line">
+        <code>{tool}</code>
+        {verdict ? <span className={`agent-audit-verdict agent-audit-${verdict}`}>{verdict}</span> : null}
+        {at ? <span className="agent-audit-at">{at}</span> : null}
+      </div>
+      {str("detail") ? <span className="agent-audit-detail">{str("detail")}</span> : null}
     </div>
   );
 }

@@ -65,6 +65,12 @@ pub enum ToolCall {
     ChatPostMessage { channel_id: String, body: String },
     /// Slice or filter an artifact already in the store.
     ArtifactQuery { handle: String, op: String },
+    /// Compute over an artifact with a sandboxed script. Pure: no I/O, no
+    /// network, a bounded operation count — so it is automatic like a query.
+    ArtifactEval { handle: String },
+    /// Hand a sub-task to a nested agent turn. The host loop runs it; when it
+    /// reaches Rust the executor refuses, so this only has to classify.
+    AgentDelegate,
     /// Run a program on the user's machine.
     HostExec { argv: Vec<String>, cwd: PathBuf },
     /// Read a file on the user's machine.
@@ -75,8 +81,40 @@ pub enum ToolCall {
     /// approval card can show what is about to land on disk — the audit log
     /// still records only the byte count (see `redact_args`).
     HostWriteFile { path: PathBuf, content: String },
-    /// A tool contributed by a connected MCP server.
-    Mcp { server: String, tool: String },
+    /// Save a note to the agent's long-term memory. Automatic in a clean
+    /// session; in a tainted one it is class 3, because a memory saved from
+    /// attacker-controlled text would carry that text — and its instructions —
+    /// into every future session.
+    MemorySave { text: String },
+    /// Search saved notes. A read of the user's own state, so it is automatic
+    /// and does not taint.
+    MemorySearch { query: String },
+    /// Delete a saved note.
+    MemoryForget { id: String },
+    /// List the skill files on disk. Reading the user's own notes; automatic.
+    SkillList,
+    /// Read one skill file by name. Automatic.
+    SkillRead { name: String },
+    /// Capture the screen. A read of everything currently visible — including
+    /// other apps' windows — so it is asked, but it does not run a program.
+    HostScreenshot { display: Option<u32> },
+    /// Move and click the pointer. Synthesises input to whatever is focused, so
+    /// it is class 3: a wrong click can act in another application entirely.
+    HostClick { x: i32, y: i32, button: String },
+    /// Type text through synthesised key events. Class 3 for the same reason as
+    /// a click, and worse: it can drive any focused field.
+    HostType { text: String },
+    /// A tool contributed by a connected MCP server. Carries the server's
+    /// display name and endpoint so the approval card can name *where* the
+    /// call is going — the model's prose never gets to.
+    Mcp {
+        server_id: String,
+        server_name: String,
+        endpoint: String,
+        tool: String,
+        /// A short rendering of the arguments, for the card only.
+        args_preview: String,
+    },
     /// A name the catalog does not know.
     Unknown { name: String },
 }
@@ -334,6 +372,16 @@ pub fn classify(call: &ToolCall, ctx: &SessionContext) -> Decision {
 
         ToolCall::ArtifactQuery { .. } => Decision::Auto { taints: false },
 
+        // A REPL over a stored value that cannot touch the disk or the network
+        // and runs under a hard operation cap is a calculator, not a side
+        // effect. Reading the *result* of computing over tainted text does not
+        // re-taint — the taint is already set by whatever read the channel.
+        ToolCall::ArtifactEval { .. } => Decision::Auto { taints: false },
+
+        // Delegation is a control-flow instruction to the host loop, not an
+        // action on the world. The sub-agent's own tool calls are each gated.
+        ToolCall::AgentDelegate => Decision::Auto { taints: false },
+
         // ── Class 1: automatic, but pulls attacker-controlled text in ───
         //
         // These are the whole point of an agent attached to a chat app, so
@@ -403,16 +451,98 @@ pub fn classify(call: &ToolCall, ctx: &SessionContext) -> Decision {
             ],
         ),
 
+        // ── Memory ──────────────────────────────────────────────────────
+        //
+        // Searching and listing are reads of the user's own state: automatic,
+        // and they do not taint. Saving is automatic *only while the session is
+        // clean*. Once a channel has been read, a "save this" is a channel
+        // message asking to persist attacker text — and a persisted memory is
+        // replayed into future sessions with the authority of something the
+        // user chose to keep — so a tainted save drops to the native dialog.
+        ToolCall::MemorySearch { .. } => Decision::Auto { taints: false },
+
+        ToolCall::MemorySave { text } => {
+            if ctx.tainted {
+                approve(
+                    Risk::High,
+                    Grain::Once,
+                    "기억을 장기 저장합니다",
+                    vec![fact("내용", preview(text, 400))],
+                )
+            } else {
+                Decision::Auto { taints: false }
+            }
+        }
+
+        ToolCall::MemoryForget { id } => approve(
+            escalate(Risk::Moderate, ctx),
+            Grain::Once,
+            "저장된 기억을 삭제합니다",
+            vec![fact("기억", id.clone())],
+        ),
+
+        // ── Skills: reading the user's own note files ───────────────────
+        ToolCall::SkillList => Decision::Auto { taints: false },
+        ToolCall::SkillRead { .. } => Decision::Auto { taints: false },
+
+        // ── Screen and input control ────────────────────────────────────
+        //
+        // A screenshot is a read, but of the whole display rather than a file
+        // the user named, so it is asked at moderate risk. Clicking and typing
+        // synthesise input into whatever happens to be focused — which may be
+        // another application, a browser logged into a bank, the OS itself — so
+        // they are class 3, asked every time on the native dialog, never
+        // remembered.
+        ToolCall::HostScreenshot { display } => approve(
+            escalate(Risk::Moderate, ctx),
+            Grain::Once,
+            "화면을 캡처합니다",
+            vec![fact(
+                "디스플레이",
+                display
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "기본".into()),
+            )],
+        ),
+
+        ToolCall::HostClick { x, y, button } => approve(
+            Risk::High,
+            Grain::Once,
+            "화면의 한 지점을 클릭합니다",
+            vec![
+                fact("좌표", format!("{x}, {y}")),
+                fact("버튼", button.clone()),
+            ],
+        ),
+
+        ToolCall::HostType { text } => approve(
+            Risk::High,
+            Grain::Once,
+            "키보드 입력을 흉내 냅니다",
+            vec![fact("입력", preview(text, 400))],
+        ),
+
         // ── Tools from a connected MCP server ───────────────────────────
         //
         // A server's tool descriptions are themselves untrusted text arriving
         // with higher apparent authority than a chat message, so nothing from
         // one is ever automatic or remembered.
-        ToolCall::Mcp { server, tool } => approve(
+        ToolCall::Mcp {
+            server_name,
+            endpoint,
+            tool,
+            args_preview,
+            ..
+        } => approve(
             Risk::High,
             Grain::Once,
             "연결된 서버의 도구를 실행합니다",
-            vec![fact("서버", server.clone()), fact("도구", tool.clone())],
+            vec![
+                fact("서버", server_name.clone()),
+                fact("연결", endpoint.clone()),
+                fact("도구", tool.clone()),
+                fact("인수", preview(args_preview, 400)),
+            ],
         ),
 
         ToolCall::Unknown { name } => Decision::Refuse {
@@ -1289,17 +1419,144 @@ mod tests {
     fn mcp_tools_are_never_automatic_or_remembered() {
         match classify(
             &ToolCall::Mcp {
-                server: "notion".into(),
+                server_id: "01SRV".into(),
+                server_name: "Notion".into(),
+                endpoint: "https://mcp.notion.example/".into(),
                 tool: "search".into(),
+                args_preview: "{\"query\":\"x\"}".into(),
             },
             &ctx(),
         ) {
             Decision::Approve {
                 risk: Risk::High,
                 grain: Grain::Once,
+                facts,
+            } => {
+                // The endpoint is a fact so the user sees where the call goes,
+                // and it comes from the server record, not from model prose.
+                assert!(facts.facts.iter().any(|f| f.label == "연결"));
+            }
+            other => panic!("expected High/Once, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_repl_and_a_delegation_are_automatic() {
+        assert_eq!(
+            classify(
+                &ToolCall::ArtifactEval {
+                    handle: "art_1".into()
+                },
+                &ctx()
+            ),
+            Decision::Auto { taints: false }
+        );
+        assert_eq!(
+            classify(&ToolCall::AgentDelegate, &ctx()),
+            Decision::Auto { taints: false }
+        );
+    }
+
+    // ── Memory ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn searching_and_listing_memory_is_automatic_and_does_not_taint() {
+        assert_eq!(
+            classify(
+                &ToolCall::MemorySearch {
+                    query: "배포".into()
+                },
+                &ctx()
+            ),
+            Decision::Auto { taints: false }
+        );
+        // And the same in a tainted session — a read of the user's own notes
+        // never tightens.
+        assert_eq!(
+            classify(
+                &ToolCall::MemorySearch {
+                    query: "배포".into()
+                },
+                &tainted()
+            ),
+            Decision::Auto { taints: false }
+        );
+    }
+
+    #[test]
+    fn saving_a_memory_is_automatic_when_clean_but_class_three_when_tainted() {
+        let call = ToolCall::MemorySave {
+            text: "화요일에 배포".into(),
+        };
+        assert_eq!(classify(&call, &ctx()), Decision::Auto { taints: false });
+        match classify(&call, &tainted()) {
+            Decision::Approve {
+                risk: Risk::High,
+                grain: Grain::Once,
                 ..
             } => {}
-            other => panic!("expected High/Once, got {other:?}"),
+            other => panic!("a tainted save must be High/Once, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn forgetting_a_memory_asks_and_names_the_id_from_the_call() {
+        match classify(&ToolCall::MemoryForget { id: "01MEM".into() }, &ctx()) {
+            Decision::Approve {
+                risk: Risk::Moderate,
+                facts,
+                ..
+            } => assert!(facts.facts.iter().any(|f| f.value == "01MEM")),
+            other => panic!("expected a moderate approval, got {other:?}"),
+        }
+    }
+
+    // ── Skills ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn reading_skills_is_automatic() {
+        assert_eq!(
+            classify(&ToolCall::SkillList, &ctx()),
+            Decision::Auto { taints: false }
+        );
+        assert_eq!(
+            classify(
+                &ToolCall::SkillRead {
+                    name: "deploy".into()
+                },
+                &ctx()
+            ),
+            Decision::Auto { taints: false }
+        );
+    }
+
+    // ── Screen and input control ────────────────────────────────────────
+
+    #[test]
+    fn a_screenshot_is_a_moderate_read_and_clicking_or_typing_is_class_three() {
+        match classify(&ToolCall::HostScreenshot { display: None }, &ctx()) {
+            Decision::Approve {
+                risk: Risk::Moderate,
+                ..
+            } => {}
+            other => panic!("a screenshot must be a moderate approval, got {other:?}"),
+        }
+        for call in [
+            ToolCall::HostClick {
+                x: 10,
+                y: 20,
+                button: "left".into(),
+            },
+            ToolCall::HostType { text: "hi".into() },
+        ] {
+            match classify(&call, &ctx()) {
+                Decision::Approve {
+                    risk: Risk::High,
+                    grain: Grain::Once,
+                    ..
+                } => {}
+                other => panic!("{call:?} must be High/Once, got {other:?}"),
+            }
         }
     }
 

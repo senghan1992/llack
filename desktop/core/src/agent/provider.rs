@@ -30,26 +30,130 @@ use crate::error::{Error, ProviderErrorCode, Result};
 
 use super::credential::CredentialStore;
 
-/// The only host the proxy will talk to.
-///
-/// A single constant rather than configuration. The moment this is a setting,
-/// "point the agent at my company's gateway" and "point the agent at the
-/// attacker's collector" are the same feature — and the request carries a live
-/// API key.
+/// Anthropic's host. Kept as a named constant because most of the codebase and
+/// its tests refer to it directly.
 pub const ALLOWED_HOST: &str = "api.anthropic.com";
 
-/// The API version pinned for outbound requests.
+/// OpenAI's default host.
+pub const OPENAI_HOST: &str = "api.openai.com";
+
+/// The API version pinned for outbound Anthropic requests.
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
+
+/// The host a connected provider is allowed to reach.
+///
+/// Still not free configuration: it is either a provider's own fixed host, or —
+/// for OpenAI only — a base URL the user typed when connecting, so an
+/// OpenAI-compatible company gateway works. That URL is captured at connect
+/// time and stored beside the key; a request cannot name a different host than
+/// the one the connection was set up with. The moment *any* host a request
+/// names is honoured, "point at my gateway" and "point at the collector" become
+/// the same feature with a live key attached, which is exactly what
+/// [`Provider::allowed_host`] refuses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provider {
+    pub id: ProviderId,
+    /// The host to talk to. For Anthropic this is always `api.anthropic.com`;
+    /// for OpenAI it is the connected base URL's host, defaulting to
+    /// `api.openai.com`.
+    pub host: String,
+}
+
+/// The providers this build has an adapter for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderId {
+    Anthropic,
+    OpenAi,
+}
+
+impl ProviderId {
+    pub fn parse(id: &str) -> Option<Self> {
+        match id {
+            "anthropic" => Some(ProviderId::Anthropic),
+            "openai" => Some(ProviderId::OpenAi),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProviderId::Anthropic => "anthropic",
+            ProviderId::OpenAi => "openai",
+        }
+    }
+}
+
+impl Provider {
+    /// Anthropic, whose host is fixed.
+    pub fn anthropic() -> Self {
+        Self {
+            id: ProviderId::Anthropic,
+            host: ALLOWED_HOST.to_string(),
+        }
+    }
+
+    /// A provider from its id and an optional connect-time base URL.
+    ///
+    /// Anthropic ignores `base_url` — its host is not negotiable. OpenAI takes
+    /// the host of a valid https base URL, or its default; an http URL or a URL
+    /// with userinfo is refused, because both are ways to smuggle the key
+    /// somewhere it should not go.
+    pub fn resolve(id: ProviderId, base_url: Option<&str>) -> Result<Self> {
+        let host = match (id, base_url) {
+            (ProviderId::Anthropic, _) => ALLOWED_HOST.to_string(),
+            (ProviderId::OpenAi, None) => OPENAI_HOST.to_string(),
+            (ProviderId::OpenAi, Some(url)) => {
+                let parsed = url::Url::parse(url).map_err(|_| {
+                    Error::provider(
+                        ProviderErrorCode::RequestRefused,
+                        "base_url 을 해석할 수 없습니다.",
+                    )
+                })?;
+                if parsed.scheme() != "https" {
+                    return Err(Error::provider(
+                        ProviderErrorCode::RequestRefused,
+                        "base_url 은 https 여야 합니다.",
+                    ));
+                }
+                if !parsed.username().is_empty() || parsed.password().is_some() {
+                    return Err(Error::provider(
+                        ProviderErrorCode::RequestRefused,
+                        "base_url 에 자격증명을 넣을 수 없습니다.",
+                    ));
+                }
+                parsed
+                    .host_str()
+                    .ok_or_else(|| {
+                        Error::provider(
+                            ProviderErrorCode::RequestRefused,
+                            "base_url 에 호스트가 없습니다.",
+                        )
+                    })?
+                    .to_string()
+            }
+        };
+        Ok(Self { id, host })
+    }
+
+    fn allowed_host(&self) -> &str {
+        &self.host
+    }
+}
 
 /// Client headers the proxy will forward.
 ///
 /// An allowlist, not a denylist. A denylist has to anticipate every header that
 /// could redirect, authenticate, or split a request; this only has to name the
-/// four the SDK actually needs.
+/// handful each SDK actually needs. Both providers' telemetry headers are here;
+/// forwarding an unused one is harmless, and the auth headers are never on this
+/// list — they are set by us, below.
 const FORWARDABLE: &[&str] = &[
     "content-type",
     "accept",
     "anthropic-beta",
+    "openai-beta",
+    "openai-organization",
+    "openai-project",
     "x-stainless-retry-count",
 ];
 
@@ -71,7 +175,7 @@ impl VettedRequest {
         self.headers
             .iter()
             .map(|(name, value)| {
-                if name == "x-api-key" {
+                if name == "x-api-key" || name == "authorization" {
                     (name.clone(), "***".into())
                 } else {
                     (name.clone(), value.clone())
@@ -106,9 +210,10 @@ pub fn vet_request(
     client_headers: &[(String, String)],
     body: Vec<u8>,
     credentials: &CredentialStore,
-    provider_id: &str,
+    provider: &Provider,
     user_id: &str,
 ) -> Result<VettedRequest> {
+    let allowed_host = provider.allowed_host();
     // ── Method. Two verbs, because two are all the SDK needs.
     let method = match method.to_ascii_uppercase().as_str() {
         "POST" => "POST",
@@ -124,17 +229,17 @@ pub fn vet_request(
     // ── Origin. Exact scheme, exact host, and the host must be followed by
     //    `/` — `https://api.anthropic.com.evil.test/` starts with the allowed
     //    string and is a different site.
-    let expected = format!("https://{ALLOWED_HOST}");
+    let expected = format!("https://{allowed_host}");
     let rest = url.strip_prefix(&expected).ok_or_else(|| {
         Error::provider(
             ProviderErrorCode::RequestRefused,
-            format!("{ALLOWED_HOST} 외의 주소로는 요청할 수 없습니다."),
+            format!("{allowed_host} 외의 주소로는 요청할 수 없습니다."),
         )
     })?;
     if !rest.starts_with('/') {
         return Err(Error::provider(
             ProviderErrorCode::RequestRefused,
-            format!("{ALLOWED_HOST} 외의 주소로는 요청할 수 없습니다."),
+            format!("{allowed_host} 외의 주소로는 요청할 수 없습니다."),
         ));
     }
 
@@ -177,11 +282,20 @@ pub fn vet_request(
         headers.push((lower, value.clone()));
     }
 
-    // ── The two headers only we may set. Pushed last and never taken from the
-    //    client, so `x-api-key` is not something the webview can influence and
-    //    the version cannot be downgraded to one with different semantics.
-    headers.push(("x-api-key".into(), credentials.key(provider_id, user_id)?));
-    headers.push(("anthropic-version".into(), ANTHROPIC_VERSION.into()));
+    // ── The auth headers only we may set. Pushed last and never taken from
+    //    the client, so the key is not something the webview can influence and
+    //    (for Anthropic) the version cannot be downgraded to different
+    //    semantics. Each provider signs its own way.
+    let key = credentials.key(provider.id.as_str(), user_id)?;
+    match provider.id {
+        ProviderId::Anthropic => {
+            headers.push(("x-api-key".into(), key));
+            headers.push(("anthropic-version".into(), ANTHROPIC_VERSION.into()));
+        }
+        ProviderId::OpenAi => {
+            headers.push(("authorization".into(), format!("Bearer {key}")));
+        }
+    }
 
     Ok(VettedRequest {
         url: url.to_string(),
@@ -191,13 +305,39 @@ pub fn vet_request(
     })
 }
 
-/// The request that proves a key without spending tokens.
+/// The request that proves an Anthropic key without spending tokens.
 ///
 /// A `GET` on the model, not a one-token `POST`: it needs no body, bills
 /// nothing, and a 404 tells the user their key works but the model does not
 /// exist — which is a different problem from a 401 and should read differently.
 pub fn validation_request(model: &str) -> (String, &'static str) {
     (format!("https://{ALLOWED_HOST}/v1/models/{model}"), "GET")
+}
+
+/// The connect-time probe for a provider: a cheap `GET` that proves the key.
+///
+/// Anthropic checks the specific model (so a 404 means "key works, model does
+/// not"); OpenAI lists models (its per-model GET needs no different key), which
+/// also works against a compatible gateway.
+pub fn validation_request_for(provider: &Provider, model: &str) -> (String, &'static str) {
+    match provider.id {
+        ProviderId::Anthropic => (
+            format!("https://{}/v1/models/{model}", provider.host),
+            "GET",
+        ),
+        ProviderId::OpenAi => (format!("https://{}/v1/models", provider.host), "GET"),
+    }
+}
+
+/// The auth headers for a connect-time probe, before the key is stored.
+pub fn probe_headers(provider: &Provider, key: &str) -> Vec<(String, String)> {
+    match provider.id {
+        ProviderId::Anthropic => vec![
+            ("x-api-key".into(), key.to_string()),
+            ("anthropic-version".into(), ANTHROPIC_VERSION.into()),
+        ],
+        ProviderId::OpenAi => vec![("authorization".into(), format!("Bearer {key}"))],
+    }
 }
 
 /// Turn a provider status code into something worth showing a person.
@@ -333,9 +473,17 @@ mod tests {
             &owned,
             b"{}".to_vec(),
             &creds(),
-            "anthropic",
+            &Provider::anthropic(),
             "u1",
         )
+    }
+
+    fn openai_creds() -> CredentialStore {
+        let store = CredentialStore::new(Arc::new(MemoryTokenStore::default()));
+        store
+            .put("openai", "u1", "sk-openai-abcdefghijklmnop")
+            .unwrap();
+        store
     }
 
     fn header(request: &VettedRequest, name: &str) -> Option<String> {
@@ -501,7 +649,7 @@ mod tests {
                     &[],
                     Vec::new(),
                     &creds(),
-                    "anthropic",
+                    &Provider::anthropic(),
                     "u1",
                 )
                 .is_err(),
@@ -514,7 +662,7 @@ mod tests {
             &[],
             Vec::new(),
             &creds(),
-            "anthropic",
+            &Provider::anthropic(),
             "u1",
         )
         .is_ok());
@@ -529,7 +677,7 @@ mod tests {
             &[],
             Vec::new(),
             &empty,
-            "anthropic",
+            &Provider::anthropic(),
             "u1",
         )
         .is_err());
@@ -545,7 +693,7 @@ mod tests {
             &[],
             body.clone(),
             &creds(),
-            "anthropic",
+            &Provider::anthropic(),
             "u1",
         )
         .unwrap();
@@ -562,13 +710,125 @@ mod tests {
         assert!(!format!("{redacted:?}").contains(KEY));
     }
 
+    // ── OpenAI: a second provider on its own host ───────────────────────
+
+    #[test]
+    fn a_connected_provider_only_reaches_its_own_host() {
+        let openai = Provider::resolve(ProviderId::OpenAi, None).unwrap();
+        // OpenAI's own endpoint passes and is signed with a bearer token.
+        let request = vet_request(
+            "https://api.openai.com/v1/chat/completions",
+            "POST",
+            &[],
+            b"{}".to_vec(),
+            &openai_creds(),
+            &openai,
+            "u1",
+        )
+        .unwrap();
+        assert!(request
+            .headers
+            .iter()
+            .any(|(n, v)| n == "authorization" && v.starts_with("Bearer ")));
+        assert!(
+            !request.headers.iter().any(|(n, _)| n == "x-api-key"),
+            "openai must not get an anthropic header"
+        );
+        // Anthropic's host is refused for an OpenAI connection, and vice versa.
+        assert!(vet_request(
+            "https://api.anthropic.com/v1/messages",
+            "POST",
+            &[],
+            b"{}".to_vec(),
+            &openai_creds(),
+            &openai,
+            "u1",
+        )
+        .is_err());
+        assert!(vet("https://api.openai.com/v1/chat/completions", &[]).is_err());
+    }
+
+    #[test]
+    fn an_openai_compatible_gateway_host_is_taken_from_the_connect_url() {
+        let gateway =
+            Provider::resolve(ProviderId::OpenAi, Some("https://llm.corp.example/v1")).unwrap();
+        assert_eq!(gateway.host, "llm.corp.example");
+        assert!(vet_request(
+            "https://llm.corp.example/v1/chat/completions",
+            "POST",
+            &[],
+            b"{}".to_vec(),
+            &openai_creds(),
+            &gateway,
+            "u1",
+        )
+        .is_ok());
+        // The default OpenAI host is now *not* this connection's host.
+        assert!(vet_request(
+            "https://api.openai.com/v1/chat/completions",
+            "POST",
+            &[],
+            b"{}".to_vec(),
+            &openai_creds(),
+            &gateway,
+            "u1",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn a_base_url_that_could_leak_the_key_is_refused() {
+        // http would put the bearer token on the wire in clear; userinfo would
+        // send it to whatever host hides after the @.
+        assert!(Provider::resolve(ProviderId::OpenAi, Some("http://gw.example/v1")).is_err());
+        assert!(
+            Provider::resolve(ProviderId::OpenAi, Some("https://user:pw@gw.example/")).is_err()
+        );
+        // Anthropic ignores a base_url entirely: its host is not negotiable.
+        assert_eq!(
+            Provider::resolve(ProviderId::Anthropic, Some("https://evil.example/"))
+                .unwrap()
+                .host,
+            ALLOWED_HOST
+        );
+    }
+
+    #[test]
+    fn an_openai_bearer_is_redacted_in_logs() {
+        let openai = Provider::resolve(ProviderId::OpenAi, None).unwrap();
+        let request = vet_request(
+            "https://api.openai.com/v1/models",
+            "GET",
+            &[],
+            Vec::new(),
+            &openai_creds(),
+            &openai,
+            "u1",
+        )
+        .unwrap();
+        let redacted = request.redacted_headers();
+        assert!(redacted
+            .iter()
+            .any(|(n, v)| n == "authorization" && v == "***"));
+        assert!(!format!("{redacted:?}").contains("sk-openai"));
+    }
+
     #[test]
     fn validation_uses_a_get_that_bills_nothing() {
         let (url, method) = validation_request("claude-opus-5");
         assert_eq!(method, "GET");
         assert_eq!(url, "https://api.anthropic.com/v1/models/claude-opus-5");
         // And it must survive its own vetting.
-        assert!(vet_request(&url, method, &[], Vec::new(), &creds(), "anthropic", "u1").is_ok());
+        assert!(vet_request(
+            &url,
+            method,
+            &[],
+            Vec::new(),
+            &creds(),
+            &Provider::anthropic(),
+            "u1"
+        )
+        .is_ok());
     }
 
     // ── The sink contract ────────────────────────────────────────────────

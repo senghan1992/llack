@@ -28,22 +28,28 @@ pub mod approval;
 pub mod audit;
 pub mod credential;
 pub mod engine;
+pub mod mcp;
 pub mod policy;
 pub mod provider;
+pub mod skills;
 pub mod store;
 pub mod tools;
 
 pub use approval::{ApprovalBroker, ApprovalNotifier, ApprovalRequest, Outcome, SilentNotifier};
-pub use audit::{AuditActor, AuditEntry, AuditLog, DecisionSource, Phase, Verdict};
+pub use audit::{
+    AuditActor, AuditEntriesView, AuditEntry, AuditLog, DecisionSource, Phase, Verdict,
+};
 pub use engine::{AgentEngine, ProviderStatus, DEFAULT_MODEL, DEFAULT_PROVIDER};
+pub use mcp::{McpServer, McpServerView, Transport as McpTransport};
 pub use policy::{
     ApprovalFacts, Decision, Fact, Grain, Risk, SessionContext, ToolCall, AUTO_READ_BYTE_CAP,
 };
+pub use skills::AgentSkill;
 pub use store::{
-    AgentMessage, AgentSession, AgentStore, Artifact, ArtifactOp, ArtifactPreview, ArtifactSlice,
-    ProviderSettings, INLINE_BYTE_LIMIT,
+    AgentMemory, AgentMessage, AgentSession, AgentStore, Artifact, ArtifactOp, ArtifactPreview,
+    ArtifactSlice, ProviderSettings, INLINE_BYTE_LIMIT,
 };
 pub use tools::{
-    ChatLine, ExecOutput, HostCapabilities, ToolCatalog, ToolContext, ToolHost, ToolOutput,
-    ToolSource, ToolSpec,
+    ChatLine, ExecOutput, HostCapabilities, McpInvoker, ToolCatalog, ToolContext, ToolHost,
+    ToolOutput, ToolSource, ToolSpec,
 };

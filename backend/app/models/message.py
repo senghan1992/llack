@@ -33,11 +33,10 @@ class Message(Base, ULIDPrimaryKey, Timestamps, SoftDelete):
         Index("ix_messages_channel_id_id", "channel_id", "id"),
         # The thread query.
         Index("ix_messages_parent_id_id", "parent_id", "id"),
-        # Idempotent send: the client generates client_msg_id, so a retried
-        # POST after a flaky network does not double-post.
-        UniqueConstraint(
-            "channel_id", "client_msg_id", name="uq_messages_channel_id_client_msg_id"
-        ),
+        # No unique key on (channel_id, client_msg_id) here: on Postgres this
+        # table is range-partitioned by `id`, and a unique constraint on a
+        # partitioned table must include the partition key. Idempotent sends
+        # are enforced by `MessageClientKey` instead.
     )
 
     channel_id: Mapped[str] = mapped_column(
@@ -94,6 +93,26 @@ class Message(Base, ULIDPrimaryKey, Timestamps, SoftDelete):
     @property
     def is_thread_reply(self) -> bool:
         return self.parent_id is not None
+
+
+class MessageClientKey(Base, Timestamps):
+    """One row per (channel, client_msg_id): the idempotency key for sends.
+
+    The client mints `client_msg_id` before the first attempt; a retry after a
+    dropped response inserts the same key, hits this primary key, and reads
+    back the message that already exists. Kept apart from `messages` so that
+    table can be partitioned by time without losing the uniqueness guarantee.
+    """
+
+    __tablename__ = "message_client_keys"
+
+    channel_id: Mapped[str] = mapped_column(
+        ULID, ForeignKey("channels.id", ondelete="CASCADE"), primary_key=True
+    )
+    client_msg_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    message_id: Mapped[str] = mapped_column(
+        ULID, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
 
 class Reaction(Base, ULIDPrimaryKey, Timestamps):

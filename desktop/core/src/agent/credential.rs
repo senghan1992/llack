@@ -22,7 +22,12 @@ use crate::session::TokenStore;
 ///
 /// v1 ships one adapter. The constant exists so `clear_for_user` stays correct
 /// when the second one lands.
-pub const PROVIDERS: &[&str] = &["anthropic"];
+pub const PROVIDERS: &[&str] = &["anthropic", "openai"];
+
+/// The keychain account for an MCP server's bearer token.
+pub fn mcp_account(server_id: &str) -> String {
+    format!("mcp:{server_id}")
+}
 
 /// The keychain account for a provider key.
 fn key_account(provider_id: &str, user_id: &str) -> String {
@@ -157,6 +162,28 @@ impl CredentialStore {
 
     pub fn delete(&self, provider_id: &str, user_id: &str) -> Result<()> {
         self.tokens.delete(&key_account(provider_id, user_id))
+    }
+
+    /// Store a secret under an arbitrary account (MCP bearer tokens).
+    ///
+    /// The same keychain-only discipline as a provider key: written on the way
+    /// in, read only for an outbound request, never returned to the webview.
+    pub fn put_secret(&self, account: &str, secret: &str) -> Result<()> {
+        self.tokens.save(account, secret)
+    }
+
+    /// Read a stored secret. `pub(crate)` like [`Self::key`]: only the MCP
+    /// client, reached through the engine, calls it.
+    pub(crate) fn secret(&self, account: &str) -> Result<Option<String>> {
+        self.tokens.load(account)
+    }
+
+    pub fn has_secret(&self, account: &str) -> Result<bool> {
+        Ok(self.tokens.load(account)?.is_some())
+    }
+
+    pub fn delete_secret(&self, account: &str) -> Result<()> {
+        self.tokens.delete(account)
     }
 
     /// Forget everything this user's agent stored in the keychain.

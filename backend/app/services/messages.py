@@ -18,7 +18,7 @@ from app.core.ids import is_ulid, new_ulid
 from app.core.logging import get_logger
 from app.models.channel import Channel, ChannelMember
 from app.models.file import FileObject
-from app.models.message import Message, MessageAttachment, Reaction
+from app.models.message import Message, MessageAttachment, MessageClientKey, Reaction
 from app.models.user import User
 from app.services.dnd import in_dnd
 from app.services.text import (
@@ -180,6 +180,18 @@ async def create_message(
     if channel.is_archived:
         raise Forbidden("This channel is archived.", code="channel_archived")
 
+    # Serialise writers per channel, and do it *first*. A send bumps every
+    # member's unread counter with one UPDATE and then touches the channel row;
+    # two concurrent sends into the same channel used to lock those member rows
+    # in different orders and deadlock (Postgres: "deadlock detected" under a
+    # 20-user load test). Taking the channel row lock before anything else gives
+    # every writer the same lock order. SQLite serialises writes on its own and
+    # has no row locks, so the statement is skipped there.
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        await db.execute(
+            select(Channel.id).where(Channel.id == channel.id).with_for_update()
+        )
+
     if client_msg_id:
         existing = await db.scalar(
             select(Message)
@@ -220,6 +232,15 @@ async def create_message(
         broadcast=extract_broadcast(normalised_body) if everyone else None,
     )
     db.add(message)
+    # The idempotency key lives in its own table (see MessageClientKey): two
+    # retries racing here collide on that primary key, not on `messages`.
+    client_key = (
+        MessageClientKey(channel_id=channel.id, client_msg_id=client_msg_id, message_id=message.id)
+        if client_msg_id
+        else None
+    )
+    if client_key is not None:
+        db.add(client_key)
 
     if file_ids:
         await _attach_files(
@@ -237,6 +258,8 @@ async def create_message(
         if not client_msg_id:
             raise
         db.expunge(message)
+        if client_key is not None:
+            db.expunge(client_key)
         existing = await db.scalar(
             select(Message)
             .where(Message.channel_id == channel.id, Message.client_msg_id == client_msg_id)

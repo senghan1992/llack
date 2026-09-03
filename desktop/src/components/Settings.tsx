@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_MODELS,
+  defaultModelsFor,
   listProviderModels,
   type ProviderModel,
 } from "@/lib/agent/models";
@@ -35,6 +36,12 @@ import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
 import { IconClose, IconSearch } from "./Icon";
+import {
+  AgentMemorySection,
+  AgentSkillsSection,
+  McpSection,
+  NativeDialogSection,
+} from "./SettingsAgent";
 import {
   AuditSection,
   DeveloperSection,
@@ -124,6 +131,30 @@ export function Settings() {
             <h3>에이전트 프로바이더</h3>
             <ProviderSection />
           </section>
+
+          {capabilities.computerControl ? (
+            <>
+              <section className="settings-section">
+                <h3>에이전트 · MCP 서버</h3>
+                <McpSection />
+              </section>
+
+              <section className="settings-section">
+                <h3>에이전트 · 기억</h3>
+                <AgentMemorySection />
+              </section>
+
+              <section className="settings-section">
+                <h3>에이전트 · 스킬</h3>
+                <AgentSkillsSection />
+              </section>
+
+              <section className="settings-section">
+                <h3>에이전트 · 승인 대화상자</h3>
+                <NativeDialogSection />
+              </section>
+            </>
+          ) : null}
 
           <section className="settings-section">
             <h3>계정</h3>
@@ -1095,11 +1126,14 @@ function ConnectedProvider() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const providerId = provider?.provider_id ?? "anthropic";
+  const baseUrl = provider?.base_url ?? null;
+
   // Ask the account which models it can run. Through the byte proxy, so this
   // is the same trust boundary as every agent request.
   useEffect(() => {
     let cancelled = false;
-    void listProviderModels()
+    void listProviderModels({ providerId, baseUrl })
       .then((list) => {
         if (!cancelled) setModels(list);
       })
@@ -1108,12 +1142,12 @@ function ConnectedProvider() {
         setModelsError(
           caught instanceof Error ? caught.message : "모델 목록을 가져오지 못했습니다.",
         );
-        setModels(DEFAULT_MODELS);
+        setModels(defaultModelsFor(providerId));
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [providerId, baseUrl]);
 
   const currentModel = provider?.model ?? "";
   // The stored model is always choosable, even if the fetched list somehow
@@ -1162,9 +1196,10 @@ function ConnectedProvider() {
   return (
     <div className="settings-provider">
       <div className="settings-provider-status">
-        <strong>Anthropic</strong>
+        <strong>{providerId === "openai" ? "OpenAI 호환" : "Anthropic"}</strong>
         <span>
           연결됨
+          {baseUrl ? ` · ${baseUrl}` : ""}
           {provider?.key_fingerprint ? ` · 키 ····${provider.key_fingerprint}` : ""}
         </span>
         <button
@@ -1222,17 +1257,39 @@ function ConnectForm() {
   const provider = useAgent((state) => state.provider);
   const setProvider = useAgent((state) => state.setProvider);
 
+  const [providerId, setProviderId] = useState<"anthropic" | "openai">("anthropic");
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("https://api.openai.com");
   const [model, setModel] = useState(DEFAULT_MODELS[0]?.id ?? "claude-opus-5");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isOpenAi = providerId === "openai";
+  const modelOptions = defaultModelsFor(providerId);
+
+  // Switching provider resets the model to that provider's default; a Claude id
+  // sent to an OpenAI gateway would just fail the validation call.
+  const changeProvider = (next: "anthropic" | "openai") => {
+    setProviderId(next);
+    setModel(defaultModelsFor(next)[0]?.id ?? "");
+    setError(null);
+  };
 
   const connect = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const status = await agentHost.agentProviderConnect("anthropic", apiKey, model);
+      const trimmedBase = baseUrl.trim().replace(/\/+$/, "");
+      if (isOpenAi && !/^https:\/\//.test(trimmedBase)) {
+        throw new Error("기본 URL 은 https 로 시작해야 합니다.");
+      }
+      const status = await agentHost.agentProviderConnect(
+        providerId,
+        apiKey,
+        model,
+        isOpenAi ? trimmedBase : undefined,
+      );
       setProvider(status);
       // Dropped from component state the moment Rust has it.
       setApiKey("");
@@ -1249,29 +1306,77 @@ function ConnectForm() {
 
   return (
     <form className="settings-provider" onSubmit={connect}>
+      <label>
+        프로바이더
+        <select
+          value={providerId}
+          onChange={(event) => changeProvider(event.target.value as "anthropic" | "openai")}
+        >
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI 호환 (OpenAI · Azure · vLLM · Ollama 등)</option>
+        </select>
+      </label>
+
       <ol className="settings-steps">
-        <li>
-          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-            console.anthropic.com
-          </a>
-          에서 API 키를 만듭니다.
-        </li>
-        <li>아래에 키를 붙여넣고 연결을 누릅니다. 키가 맞는지 한 번 확인합니다.</li>
-        <li>
-          연결되면 계정에서 쓸 수 있는 모델 목록이 여기에 나타나고, 왼쪽 도크의
-          에이전트 버튼으로 대화를 시작할 수 있습니다.
-        </li>
+        {isOpenAi ? (
+          <>
+            <li>OpenAI 호환 게이트웨이의 기본 URL 과 API 키를 준비합니다.</li>
+            <li>
+              아래에 붙여넣고 연결을 누릅니다. 연결 시 <code>/v1/models</code> 로 키를 한 번
+              확인합니다.
+            </li>
+            <li>연결되면 그 게이트웨이의 모델 목록이 여기에 나타납니다.</li>
+          </>
+        ) : (
+          <>
+            <li>
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
+                console.anthropic.com
+              </a>
+              에서 API 키를 만듭니다.
+            </li>
+            <li>아래에 키를 붙여넣고 연결을 누릅니다. 키가 맞는지 한 번 확인합니다.</li>
+            <li>
+              연결되면 계정에서 쓸 수 있는 모델 목록이 여기에 나타나고, 왼쪽 도크의
+              에이전트 버튼으로 대화를 시작할 수 있습니다.
+            </li>
+          </>
+        )}
       </ol>
+
+      {isOpenAi ? (
+        <label>
+          기본 URL
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder="https://api.openai.com"
+            autoComplete="off"
+            spellCheck={false}
+            required
+          />
+        </label>
+      ) : null}
 
       <label>
         모델
-        <select value={model} onChange={(event) => setModel(event.target.value)}>
-          {DEFAULT_MODELS.map((entry) => (
+        <input
+          list="connect-model-options"
+          value={model}
+          onChange={(event) => setModel(event.target.value)}
+          placeholder={modelOptions[0]?.id ?? ""}
+          autoComplete="off"
+          spellCheck={false}
+          required
+        />
+        <datalist id="connect-model-options">
+          {modelOptions.map((entry) => (
             <option key={entry.id} value={entry.id}>
               {entry.displayName}
             </option>
           ))}
-        </select>
+        </datalist>
       </label>
 
       <label>
@@ -1280,7 +1385,7 @@ function ConnectForm() {
           type="password"
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
-          placeholder="sk-ant-…"
+          placeholder={isOpenAi ? "sk-…" : "sk-ant-…"}
           autoComplete="off"
           spellCheck={false}
           required
@@ -1296,7 +1401,7 @@ function ConnectForm() {
         <p className="settings-error">{provider.last_error}</p>
       ) : null}
 
-      <button type="submit" className="settings-connect" disabled={busy || !apiKey}>
+      <button type="submit" className="settings-connect" disabled={busy || !apiKey || !model}>
         {busy ? "확인 중…" : "연결"}
       </button>
     </form>

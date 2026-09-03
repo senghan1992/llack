@@ -42,16 +42,63 @@ export interface AgentApprovalRequest {
    */
   rationale: string | null;
   remembering_offered: boolean;
+  /**
+   * True when this approval is being answered in a native OS dialog (class-3
+   * calls, when the setting is on). The in-app card then shows a waiting state
+   * with disabled buttons — the webview cannot resolve the request, only the
+   * dialog can.
+   */
+  native?: boolean;
 }
 
 /** What the provider connection looks like, minus the secret. */
 export interface AgentProviderStatus {
   connected: boolean;
+  /** "anthropic" | "openai" (OpenAI-compatible) | "fake" in the browser. */
   provider_id: string;
   model: string;
   /** Last four characters of the key, for display. Never the key. */
   key_fingerprint: string | null;
   last_error: string | null;
+  /** OpenAI-compatible gateways: the base the byte proxy allows. */
+  base_url?: string | null;
+}
+
+/** An MCP server as Rust lists it — never its credential. */
+export interface McpServerView {
+  id: string;
+  name: string;
+  transport: "http" | "stdio";
+  url?: string | null;
+  command?: string | null;
+  args?: string[];
+  enabled: boolean;
+  tool_count: number;
+  /** Epoch ms of the last successful handshake, or null. */
+  last_ok_at_ms?: number | null;
+  last_error?: string | null;
+  has_credential: boolean;
+}
+
+export interface AgentMemory {
+  id: string;
+  text: string;
+  tags: string[];
+  created_at?: number | string | null;
+  last_used_at?: number | string | null;
+}
+
+export interface AgentSkill {
+  name: string;
+  title: string;
+  description: string;
+  bytes: number;
+}
+
+export interface AgentAuditEntries {
+  dates: string[];
+  entries: Array<Record<string, unknown>>;
+  verified: boolean;
 }
 
 /** One stored conversation. Mirrors `store::AgentSession`. */
@@ -109,6 +156,8 @@ export interface AgentToolRun {
   state: "running" | "ok" | "error" | "denied" | "refused";
   artifact: string | null;
   summary: string | null;
+  /** A screenshot the tool returned for the model, shown in the card too. */
+  image?: string | null;
 }
 
 /** One turn's worth of rendered content in the panel. */

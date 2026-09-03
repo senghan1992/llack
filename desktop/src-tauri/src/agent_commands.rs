@@ -21,11 +21,12 @@ use std::sync::Arc;
 
 use llack_core::agent::provider::ByteSink;
 use llack_core::agent::{
-    ApprovalNotifier, ApprovalRequest, ChatLine, ExecOutput, Outcome, ProviderStatus, ToolHost,
+    AgentMemory, AgentSkill, ApprovalNotifier, ApprovalRequest, ChatLine, ExecOutput, Outcome,
+    ProviderStatus, ToolHost,
 };
 use llack_core::error::{Error, Result};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::state::AppState;
 
@@ -49,12 +50,68 @@ impl PanelNotifier {
     }
 }
 
+impl PanelNotifier {
+    /// Ask the operating system, on a blocking thread, and feed the answer back
+    /// into the broker.
+    ///
+    /// This is what makes a class-3 approval un-scriptable: the webview cannot
+    /// draw over or click this dialog, because it is drawn by the OS. The body
+    /// is built only from the facts Rust computed — never from the model's
+    /// rationale, which is exactly the string an attacker could write.
+    fn prompt_native(&self, request: &ApprovalRequest) {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+        let app = self.app.clone();
+        let id = request.id.clone();
+        let nonce = request.nonce.clone();
+        let title = request.facts.title.to_string();
+        // Rust-computed facts only. One per line, "라벨: 값".
+        let body = request
+            .facts
+            .facts
+            .iter()
+            .map(|f| format!("{}: {}", f.label, f.value))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // A separate thread: `opened` is called from inside the broker's async
+        // `ask`, and a blocking dialog there would stall the runtime. The thread
+        // resolves the request when the user answers.
+        std::thread::spawn(move || {
+            let approved = app
+                .dialog()
+                .message(body)
+                .title(title)
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "허용".into(),
+                    "거부".into(),
+                ))
+                .blocking_show();
+
+            // `remember` is always false: a class-3 decision is never carried
+            // past the single call it was asked for.
+            if let Some(state) = app.try_state::<Arc<AppState>>() {
+                if let Ok(engine) = state.agent() {
+                    let _ = engine.resolve_approval(&id, &nonce, approved, false);
+                }
+            }
+        });
+    }
+}
+
 impl ApprovalNotifier for PanelNotifier {
     fn opened(&self, request: &ApprovalRequest) {
+        // The panel is always told, so the in-app card renders. When `native`
+        // is set the card shows a disabled "운영체제 대화상자에서 결정합니다"
+        // state and the real decision happens in the OS dialog below.
         let _ = self.app.emit(
             AGENT_EVENT,
             serde_json::json!({ "kind": "approval_pending", "request": request }),
         );
+        if request.native {
+            self.prompt_native(request);
+        }
     }
 
     fn closed(&self, request_id: &str, outcome: Outcome) {
@@ -260,6 +317,94 @@ impl ToolHost for DesktopHost {
             .await?;
         Ok(sent.id)
     }
+
+    /// Capture the screen. Compiled in only under `screen-control`; without the
+    /// feature the trait's default refuses, and the tool is never even exposed.
+    ///
+    /// The full PNG and a downscaled JPEG are encoded here — core has no image
+    /// crate — and both are handed back base64-encoded. This whole block ships
+    /// unverified: `src-tauri` cannot be compiled in this environment.
+    #[cfg(feature = "screen-control")]
+    async fn screenshot(
+        &self,
+        display: Option<u32>,
+    ) -> Result<llack_core::agent::tools::Screenshot> {
+        use base64::Engine;
+        use image::codecs::jpeg::JpegEncoder;
+        use image::{ColorType, ImageEncoder};
+
+        let monitors = xcap::Monitor::all()
+            .map_err(|e| Error::Other(format!("화면을 찾을 수 없습니다: {e}")))?;
+        let index = display.unwrap_or(0) as usize;
+        let monitor = monitors
+            .get(index)
+            .ok_or_else(|| Error::Other(format!("디스플레이 {index} 가 없습니다.")))?;
+        let rgba = monitor
+            .capture_image()
+            .map_err(|e| Error::Other(format!("화면을 캡처할 수 없습니다: {e}")))?;
+
+        let (w, h) = (rgba.width(), rgba.height());
+
+        // The full-resolution PNG becomes the artifact.
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&rgba, w, h, ColorType::Rgba8.into())
+            .map_err(|e| Error::Other(format!("PNG 인코딩에 실패했습니다: {e}")))?;
+        let png_b64 = base64::engine::general_purpose::STANDARD.encode(png.into_inner());
+
+        // A ~1280px-wide JPEG is what the model actually looks at.
+        let target = 1280u32;
+        let scaled = if w > target {
+            let nh = (h as f32 * target as f32 / w as f32).round() as u32;
+            image::imageops::resize(&rgba, target, nh, image::imageops::FilterType::Triangle)
+        } else {
+            rgba
+        };
+        let rgb = image::DynamicImage::ImageRgba8(scaled).to_rgb8();
+        let mut jpeg = std::io::Cursor::new(Vec::new());
+        JpegEncoder::new_with_quality(&mut jpeg, 80)
+            .write_image(&rgb, rgb.width(), rgb.height(), ColorType::Rgb8.into())
+            .map_err(|e| Error::Other(format!("JPEG 인코딩에 실패했습니다: {e}")))?;
+        let image_b64 = base64::engine::general_purpose::STANDARD.encode(jpeg.into_inner());
+
+        Ok(llack_core::agent::tools::Screenshot {
+            png_b64,
+            image_b64,
+            mime: "image/jpeg".into(),
+        })
+    }
+
+    #[cfg(feature = "screen-control")]
+    async fn click(&self, x: i32, y: i32, button: &str) -> Result<()> {
+        use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
+
+        let mut enigo = Enigo::new(&Settings::default())
+            .map_err(|e| Error::Other(format!("입력 장치를 열 수 없습니다: {e}")))?;
+        enigo
+            .move_mouse(x, y, Coordinate::Abs)
+            .map_err(|e| Error::Other(format!("포인터를 옮길 수 없습니다: {e}")))?;
+        let button = match button {
+            "right" => Button::Right,
+            "middle" => Button::Middle,
+            _ => Button::Left,
+        };
+        enigo
+            .button(button, Direction::Click)
+            .map_err(|e| Error::Other(format!("클릭할 수 없습니다: {e}")))?;
+        Ok(())
+    }
+
+    #[cfg(feature = "screen-control")]
+    async fn type_text(&self, text: &str) -> Result<()> {
+        use enigo::{Enigo, Keyboard, Settings};
+
+        let mut enigo = Enigo::new(&Settings::default())
+            .map_err(|e| Error::Other(format!("입력 장치를 열 수 없습니다: {e}")))?;
+        enigo
+            .text(text)
+            .map_err(|e| Error::Other(format!("입력할 수 없습니다: {e}")))?;
+        Ok(())
+    }
 }
 
 /// Flatten a message for the model.
@@ -359,20 +504,16 @@ pub async fn agent_provider_connect(
     provider_id: Option<String>,
     api_key: String,
     model: Option<String>,
+    base_url: Option<String>,
 ) -> Result<ProviderStatus> {
-    // Accepted and checked rather than ignored. The webview's contract already
-    // sends it, and serde would have silently dropped an unknown field — which
-    // would make "connect to provider X" quietly connect to Anthropic instead
-    // the day a second adapter is added to the UI before it exists here.
-    if let Some(requested) = provider_id.as_deref() {
-        if requested != llack_core::agent::DEFAULT_PROVIDER {
-            return Err(Error::provider(
-                llack_core::error::ProviderErrorCode::RequestRefused,
-                format!("아직 지원하지 않는 프로바이더입니다: {requested}"),
-            ));
-        }
-    }
-    let status = state.agent()?.connect_provider(&api_key, model).await?;
+    // The engine validates the provider id (anthropic | openai) and, for
+    // OpenAI, the optional gateway base URL; an unknown one is refused there
+    // rather than silently defaulting.
+    let provider = provider_id.unwrap_or_else(|| llack_core::agent::DEFAULT_PROVIDER.to_string());
+    let status = state
+        .agent()?
+        .connect_provider(&provider, &api_key, model, base_url)
+        .await?;
     // The key is dropped here with the argument. Nothing keeps a copy: the
     // keychain has it, and `String` has no other owner.
     let _ = app.emit(
@@ -614,4 +755,165 @@ pub fn agent_verify_audit(
     state: State<'_, Arc<AppState>>,
 ) -> Result<llack_core::agent::audit::VerifyReport> {
     state.agent()?.verify_audit()
+}
+
+// ── MCP servers ───────────────────────────────────────────────────────────────
+
+/// The connected servers, as the panel may see them (never a token).
+#[tauri::command]
+pub fn agent_mcp_list(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<llack_core::agent::McpServerView>> {
+    state.agent()?.mcp_list()
+}
+
+/// Add a server. The engine handshakes and lists its tools first, so a bad URL
+/// or a wrong token fails here rather than leaving a dead entry in the list.
+#[tauri::command]
+pub async fn agent_mcp_add(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    transport: String,
+    url: Option<String>,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    token: Option<String>,
+) -> Result<llack_core::agent::McpServerView> {
+    state
+        .agent()?
+        .mcp_add(
+            &name,
+            &transport,
+            url,
+            command,
+            args.unwrap_or_default(),
+            token,
+        )
+        .await
+}
+
+#[tauri::command]
+pub fn agent_mcp_remove(state: State<'_, Arc<AppState>>, server_id: String) -> Result<()> {
+    state.agent()?.mcp_remove(&server_id)
+}
+
+#[tauri::command]
+pub async fn agent_mcp_set_enabled(
+    state: State<'_, Arc<AppState>>,
+    server_id: String,
+    enabled: bool,
+) -> Result<llack_core::agent::McpServerView> {
+    state.agent()?.mcp_set_enabled(&server_id, enabled).await
+}
+
+/// The tools one server contributed, for a settings "what can it do".
+#[tauri::command]
+pub fn agent_mcp_tools(
+    state: State<'_, Arc<AppState>>,
+    server_id: String,
+) -> Result<Vec<llack_core::agent::ToolSpec>> {
+    Ok(state.agent()?.mcp_tools(&server_id))
+}
+
+/// Reconnect every enabled server and rebuild the MCP tool catalog.
+#[tauri::command]
+pub async fn agent_mcp_refresh(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<llack_core::agent::McpServerView>> {
+    state.agent()?.refresh_mcp().await
+}
+
+/// Store a sub-agent's answer as an artifact and hand back its handle, so the
+/// parent turn holds a handle rather than the whole thing.
+#[tauri::command]
+pub fn agent_artifact_put(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    label: String,
+    text: String,
+) -> Result<serde_json::Value> {
+    let (handle, bytes) = state.agent()?.artifact_put(&session_id, &label, &text)?;
+    Ok(serde_json::json!({ "handle": handle, "bytes": bytes }))
+}
+
+// ── Memory ──────────────────────────────────────────────────────────────────
+
+/// The user's saved memories, most recently used first.
+#[tauri::command]
+pub fn agent_memories_list(
+    state: State<'_, Arc<AppState>>,
+    limit: Option<u32>,
+) -> Result<Vec<AgentMemory>> {
+    state.agent()?.memories_list(limit.unwrap_or(50).min(500))
+}
+
+/// Save a memory the user typed directly. A note authored by the user is not
+/// subject to the taint rule the `memory.save` tool applies to the model.
+#[tauri::command]
+pub fn agent_memory_add(
+    state: State<'_, Arc<AppState>>,
+    text: String,
+    tags: Option<Vec<String>>,
+) -> Result<AgentMemory> {
+    state.agent()?.memory_add(&text, &tags.unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn agent_memory_delete(state: State<'_, Arc<AppState>>, id: String) -> Result<()> {
+    state.agent()?.memory_delete(&id)
+}
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn agent_skills_list(state: State<'_, Arc<AppState>>) -> Result<Vec<AgentSkill>> {
+    state.agent()?.skills_list()
+}
+
+#[tauri::command]
+pub fn agent_skill_read(state: State<'_, Arc<AppState>>, name: String) -> Result<String> {
+    state.agent()?.skill_read(&name)
+}
+
+#[tauri::command]
+pub fn agent_skill_save(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    body: String,
+) -> Result<AgentSkill> {
+    state.agent()?.skill_save(&name, &body)
+}
+
+#[tauri::command]
+pub fn agent_skill_delete(state: State<'_, Arc<AppState>>, name: String) -> Result<()> {
+    state.agent()?.skill_delete(&name)
+}
+
+// ── Settings & audit ──────────────────────────────────────────────────────────
+
+/// Read (`enabled` omitted) or set whether class-3 approvals use a native OS
+/// dialog. Returns the value now in effect. Default on; a headless host turns
+/// it off so a build with no windowing does not block on a dialog.
+#[tauri::command]
+pub fn agent_native_dialogs(
+    state: State<'_, Arc<AppState>>,
+    enabled: Option<bool>,
+) -> Result<bool> {
+    state.agent()?.native_dialogs(enabled)
+}
+
+/// One day's audit records for the "what did it do on my machine" screen.
+///
+/// `date` is `YYYY-MM-DD`; an absent or unknown one shows the most recent day.
+/// The response also carries every day that has a log (for a date picker) and
+/// whether the whole chain still verifies.
+#[tauri::command]
+pub fn agent_audit_entries(
+    state: State<'_, Arc<AppState>>,
+    date: Option<String>,
+    limit: Option<usize>,
+) -> Result<llack_core::agent::AuditEntriesView> {
+    state
+        .agent()?
+        .audit_entries(date.as_deref(), Some(limit.unwrap_or(200).min(2000)))
 }

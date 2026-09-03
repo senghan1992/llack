@@ -32,6 +32,7 @@ from app.core.ratelimit import configure_from_settings as configure_rate_limiter
 from app.realtime.bus import get_bus, reset_bus
 from app.realtime.hub import get_hub, reset_hub
 from app.realtime.presence import get_presence_store, reset_presence_store
+from app.services import partition_worker as partition_service
 
 configure_logging()
 log = get_logger(__name__)
@@ -59,6 +60,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await get_presence_store().start()
     configure_rate_limiter()
     metrics.bind_ws_gauge(lambda: get_hub().connection_count)
+    # Postgres only (a no-op elsewhere): the month's partition must exist
+    # before the first message of the month, not after the first tick.
+    await partition_service.ensure_partitions_on_startup()
     await workers.start()
     try:
         yield

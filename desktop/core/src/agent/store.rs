@@ -42,7 +42,13 @@ use crate::ids::new_ulid;
 
 /// Bumped for every forward migration. Unlike the cache's version, a mismatch
 /// here migrates rather than rebuilds.
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 3;
+
+/// The ceiling on a single memory. A note is a hint for a later turn, not a
+/// document store; anything longer is almost certainly a paste that belongs in
+/// an artifact, and letting one grow without bound would quietly turn the
+/// memory table into an unbounded context on every recall.
+pub const MEMORY_TEXT_CAP: usize = 2000;
 
 /// How much of an artifact a preview may carry.
 pub const PREVIEW_LINES: usize = 3;
@@ -251,8 +257,358 @@ impl AgentStore {
             )?;
         }
 
+        if version < 2 {
+            // MCP servers the user connected. The credential is *not* here —
+            // it lives in the keychain, keyed by `id` — so this table can be
+            // read for display without touching a secret.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS mcp_servers (
+                     id            TEXT PRIMARY KEY,
+                     user_id       TEXT NOT NULL,
+                     name          TEXT NOT NULL,
+                     transport     TEXT NOT NULL,
+                     url           TEXT,
+                     command       TEXT,
+                     args          TEXT NOT NULL,
+                     enabled       INTEGER NOT NULL DEFAULT 1,
+                     created_at_ms INTEGER NOT NULL,
+                     last_ok_at_ms INTEGER,
+                     last_error    TEXT
+                 );
+                 CREATE INDEX IF NOT EXISTS ix_mcp_servers_user
+                     ON mcp_servers (user_id, created_at_ms);",
+            )?;
+        }
+
+        if version < 3 {
+            // Two unrelated things land in the same step because they share a
+            // version bump, not a purpose.
+            //
+            // `agent_memories` is the agent's own long-term notes: durable, per
+            // user, and never re-fetchable, so it belongs here rather than in
+            // the disposable cache. `source_session` records where a note came
+            // from so a later audit can tell an operator "this was saved while
+            // reading a channel" — the one fact that decides whether a memory is
+            // trustworthy.
+            //
+            // `agent_prefs` is a tiny key/value table for machine-local
+            // switches (whether class-3 approvals use the OS dialog). It is not
+            // user-scoped: it is a property of *this install*, not of an
+            // account, and it must be readable before anyone signs in.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS agent_memories (
+                     id             TEXT PRIMARY KEY,
+                     user_id        TEXT NOT NULL,
+                     text           TEXT NOT NULL,
+                     tags           TEXT NOT NULL,
+                     created_at     INTEGER NOT NULL,
+                     last_used_at   INTEGER,
+                     source_session TEXT
+                 );
+                 CREATE INDEX IF NOT EXISTS ix_agent_memories_recent
+                     ON agent_memories (user_id, last_used_at DESC, created_at DESC);
+
+                 CREATE TABLE IF NOT EXISTS agent_prefs (
+                     key   TEXT PRIMARY KEY,
+                     value TEXT NOT NULL
+                 );",
+            )?;
+        }
+
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         Ok(())
+    }
+
+    // ── Memories ────────────────────────────────────────────────────────
+
+    /// Save a note. `text` is capped at [`MEMORY_TEXT_CAP`] characters; a
+    /// longer one is refused rather than silently truncated, because a note cut
+    /// mid-sentence is worse than no note.
+    pub fn add_memory(
+        &self,
+        user_id: &str,
+        text: &str,
+        tags: &[String],
+        source_session: Option<&str>,
+    ) -> Result<AgentMemory> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(Error::Other("빈 기억은 저장할 수 없습니다.".into()));
+        }
+        if text.chars().count() > MEMORY_TEXT_CAP {
+            return Err(Error::Other(format!(
+                "기억은 {MEMORY_TEXT_CAP}자를 넘을 수 없습니다."
+            )));
+        }
+        let memory = AgentMemory {
+            id: new_ulid(),
+            text: text.to_string(),
+            tags: tags.to_vec(),
+            created_at: Some(now_ms()),
+            last_used_at: None,
+        };
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO agent_memories
+                 (id, user_id, text, tags, created_at, last_used_at, source_session)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                memory.id,
+                user_id,
+                memory.text,
+                serde_json::to_string(&memory.tags).unwrap_or_else(|_| "[]".into()),
+                memory.created_at,
+                memory.last_used_at,
+                source_session,
+            ],
+        )?;
+        Ok(memory)
+    }
+
+    /// The most recently used (then most recently created) memories.
+    pub fn list_memories(&self, user_id: &str, limit: u32) -> Result<Vec<AgentMemory>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, text, tags, created_at, last_used_at
+             FROM agent_memories WHERE user_id = ?1
+             ORDER BY COALESCE(last_used_at, created_at) DESC, created_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![user_id, limit], memory_from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Find memories matching `query` in their text or tags, most recent first,
+    /// and mark the hits as just used so recall keeps a note near the top.
+    pub fn search_memories(
+        &self,
+        user_id: &str,
+        query: &str,
+        limit: u32,
+    ) -> Result<Vec<AgentMemory>> {
+        let conn = self.conn()?;
+        // `escape` so a user searching for `50%` or `a_b` gets a literal match
+        // rather than a wildcard.
+        let pattern = format!(
+            "%{}%",
+            query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let mut stmt = conn.prepare(
+            "SELECT id, text, tags, created_at, last_used_at
+             FROM agent_memories
+             WHERE user_id = ?1
+               AND (text LIKE ?2 ESCAPE '\\' OR tags LIKE ?2 ESCAPE '\\')
+             ORDER BY COALESCE(last_used_at, created_at) DESC, created_at DESC
+             LIMIT ?3",
+        )?;
+        let mut rows = stmt
+            .query_map(rusqlite::params![user_id, pattern, limit], memory_from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        if !rows.is_empty() {
+            let now = now_ms();
+            for memory in &mut rows {
+                conn.execute(
+                    "UPDATE agent_memories SET last_used_at = ?2 WHERE id = ?1",
+                    rusqlite::params![memory.id, now],
+                )?;
+                // Reflect the touch in what we return, so a caller sees the note
+                // it just used as freshly used rather than reading stale state.
+                memory.last_used_at = Some(now);
+            }
+        }
+        Ok(rows)
+    }
+
+    /// Forget one note. Scoped to the user so a stale id from another account
+    /// cannot delete something it never owned.
+    pub fn delete_memory(&self, user_id: &str, id: &str) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "DELETE FROM agent_memories WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![id, user_id],
+        )?;
+        Ok(())
+    }
+
+    // ── Preferences ─────────────────────────────────────────────────────
+
+    /// Read a machine-local preference, if it has ever been set.
+    pub fn get_pref(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn()?;
+        Ok(conn
+            .query_row(
+                "SELECT value FROM agent_prefs WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Set a machine-local preference.
+    pub fn set_pref(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO agent_prefs (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
+    // ── MCP servers ───────────────────────────────────────────────────────
+
+    /// Insert or replace a server record. The credential is stored separately
+    /// in the keychain by the engine; nothing here touches it.
+    pub fn save_mcp_server(&self, server: &crate::agent::mcp::McpServer) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO mcp_servers
+                 (id, user_id, name, transport, url, command, args, enabled,
+                  created_at_ms, last_ok_at_ms, last_error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET
+                 name          = excluded.name,
+                 transport     = excluded.transport,
+                 url           = excluded.url,
+                 command       = excluded.command,
+                 args          = excluded.args,
+                 enabled       = excluded.enabled,
+                 last_ok_at_ms = excluded.last_ok_at_ms,
+                 last_error    = excluded.last_error",
+            rusqlite::params![
+                server.id,
+                server.user_id,
+                server.name,
+                server.transport.as_str(),
+                server.url,
+                server.command,
+                serde_json::to_string(&server.args).unwrap_or_else(|_| "[]".into()),
+                server.enabled as i32,
+                server.created_at_ms,
+                server.last_ok_at_ms,
+                server.last_error,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn mcp_servers(&self, user_id: &str) -> Result<Vec<crate::agent::mcp::McpServer>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, name, transport, url, command, args, enabled,
+                    created_at_ms, last_ok_at_ms, last_error
+             FROM mcp_servers WHERE user_id = ?1 ORDER BY created_at_ms",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![user_id], |row| {
+                let transport: String = row.get(3)?;
+                let args: String = row.get(6)?;
+                let enabled: i32 = row.get(7)?;
+                Ok(crate::agent::mcp::McpServer {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    name: row.get(2)?,
+                    transport: crate::agent::mcp::Transport::parse(&transport)
+                        .unwrap_or(crate::agent::mcp::Transport::Http),
+                    url: row.get(4)?,
+                    command: row.get(5)?,
+                    args: serde_json::from_str(&args).unwrap_or_default(),
+                    enabled: enabled != 0,
+                    created_at_ms: row.get(8)?,
+                    last_ok_at_ms: row.get(9)?,
+                    last_error: row.get(10)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn mcp_server(&self, id: &str) -> Result<Option<crate::agent::mcp::McpServer>> {
+        Ok(self.mcp_servers_by_id(id)?.into_iter().next())
+    }
+
+    fn mcp_servers_by_id(&self, id: &str) -> Result<Vec<crate::agent::mcp::McpServer>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, name, transport, url, command, args, enabled,
+                    created_at_ms, last_ok_at_ms, last_error
+             FROM mcp_servers WHERE id = ?1",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![id], |row| {
+                let transport: String = row.get(3)?;
+                let args: String = row.get(6)?;
+                let enabled: i32 = row.get(7)?;
+                Ok(crate::agent::mcp::McpServer {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    name: row.get(2)?,
+                    transport: crate::agent::mcp::Transport::parse(&transport)
+                        .unwrap_or(crate::agent::mcp::Transport::Http),
+                    url: row.get(4)?,
+                    command: row.get(5)?,
+                    args: serde_json::from_str(&args).unwrap_or_default(),
+                    enabled: enabled != 0,
+                    created_at_ms: row.get(8)?,
+                    last_ok_at_ms: row.get(9)?,
+                    last_error: row.get(10)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn set_mcp_enabled(&self, id: &str, enabled: bool) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE mcp_servers SET enabled = ?2 WHERE id = ?1",
+            rusqlite::params![id, enabled as i32],
+        )?;
+        Ok(())
+    }
+
+    pub fn mcp_touch(&self, id: &str, error: Option<&str>) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE mcp_servers SET last_ok_at_ms = ?2, last_error = ?3 WHERE id = ?1",
+            rusqlite::params![
+                id,
+                if error.is_none() {
+                    Some(now_ms())
+                } else {
+                    None::<i64>
+                },
+                error,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_mcp_server(&self, id: &str) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "DELETE FROM mcp_servers WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+        Ok(())
+    }
+
+    /// Put a large value in the artifact store from outside a tool handler
+    /// (a sub-agent's answer). Returns the handle and byte count.
+    pub fn store_text(&self, session_id: &str, label: &str, text: &str) -> Result<(String, u64)> {
+        let (artifact, _) = self.put_artifact(
+            session_id,
+            label,
+            text,
+            serde_json::json!({ "label": label }),
+        )?;
+        Ok((artifact.id, artifact.bytes))
     }
 
     /// The schema version currently on disk.
@@ -710,6 +1066,32 @@ pub struct ArtifactPreview {
     pub inline: Option<String>,
 }
 
+/// One saved note the agent may recall in a later turn.
+///
+/// `created_at` and `last_used_at` are epoch milliseconds. They are `Option`
+/// so the shape survives a future migration that adds a memory without a
+/// timestamp, and so the field names match the panel's own type exactly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentMemory {
+    pub id: String,
+    pub text: String,
+    pub tags: Vec<String>,
+    pub created_at: Option<i64>,
+    pub last_used_at: Option<i64>,
+}
+
+/// Read a memory out of a `SELECT id, text, tags, created_at, last_used_at` row.
+fn memory_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentMemory> {
+    let tags: String = row.get(2)?;
+    Ok(AgentMemory {
+        id: row.get(0)?,
+        text: row.get(1)?,
+        tags: serde_json::from_str(&tags).unwrap_or_default(),
+        created_at: row.get(3)?,
+        last_used_at: row.get(4)?,
+    })
+}
+
 /// The provider selection, minus the secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderSettings {
@@ -748,6 +1130,68 @@ mod tests {
     #[test]
     fn a_fresh_store_is_at_the_current_schema_version() {
         assert_eq!(store().schema_version().unwrap(), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn mcp_servers_round_trip_and_forget_cleanly() {
+        use crate::agent::mcp::{McpServer, Transport};
+        let store = store();
+        let server = McpServer {
+            id: "01SRV".into(),
+            user_id: "u1".into(),
+            name: "Notion".into(),
+            transport: Transport::Http,
+            url: Some("https://mcp.notion.example/".into()),
+            command: None,
+            args: vec![],
+            enabled: true,
+            created_at_ms: now_ms(),
+            last_ok_at_ms: None,
+            last_error: None,
+        };
+        store.save_mcp_server(&server).unwrap();
+        let loaded = store.mcp_servers("u1").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(
+            loaded[0].url.as_deref(),
+            Some("https://mcp.notion.example/")
+        );
+        assert!(store.mcp_servers("u2").unwrap().is_empty());
+
+        store.set_mcp_enabled("01SRV", false).unwrap();
+        assert!(!store.mcp_server("01SRV").unwrap().unwrap().enabled);
+        store.mcp_touch("01SRV", Some("연결 실패")).unwrap();
+        assert_eq!(
+            store
+                .mcp_server("01SRV")
+                .unwrap()
+                .unwrap()
+                .last_error
+                .as_deref(),
+            Some("연결 실패")
+        );
+
+        // A stdio server keeps its command and args across the round trip.
+        store
+            .save_mcp_server(&McpServer {
+                id: "01STD".into(),
+                user_id: "u1".into(),
+                name: "local".into(),
+                transport: Transport::Stdio,
+                url: None,
+                command: Some("mcp-fs".into()),
+                args: vec!["--root".into(), "/tmp".into()],
+                enabled: true,
+                created_at_ms: now_ms(),
+                last_ok_at_ms: None,
+                last_error: None,
+            })
+            .unwrap();
+        let std_server = store.mcp_server("01STD").unwrap().unwrap();
+        assert_eq!(std_server.args, vec!["--root", "/tmp"]);
+
+        store.delete_mcp_server("01SRV").unwrap();
+        assert_eq!(store.mcp_servers("u1").unwrap().len(), 1);
     }
 
     #[test]
@@ -1071,5 +1515,121 @@ mod tests {
 
         store.clear_settings("01ALICE").unwrap();
         assert!(store.settings("01ALICE").unwrap().is_none());
+    }
+
+    // ── Memories ────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_memory_round_trips_with_its_tags() {
+        let store = store();
+        let memory = store
+            .add_memory(
+                "01ALICE",
+                "배포는 화요일에",
+                &["deploy".into(), "schedule".into()],
+                Some("01SESSION"),
+            )
+            .unwrap();
+        assert!(memory.created_at.is_some());
+        assert!(memory.last_used_at.is_none());
+
+        let listed = store.list_memories("01ALICE", 10).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].text, "배포는 화요일에");
+        assert_eq!(listed[0].tags, vec!["deploy", "schedule"]);
+    }
+
+    #[test]
+    fn another_users_memories_are_neither_listed_nor_searchable() {
+        let store = store();
+        store
+            .add_memory("01ALICE", "앨리스의 기억", &[], None)
+            .unwrap();
+        assert!(store.list_memories("01BOB", 10).unwrap().is_empty());
+        assert!(store
+            .search_memories("01BOB", "기억", 10)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn an_over_long_or_empty_memory_is_refused_rather_than_truncated() {
+        let store = store();
+        assert!(store.add_memory("01ALICE", "   ", &[], None).is_err());
+        let long = "가".repeat(MEMORY_TEXT_CAP + 1);
+        assert!(store.add_memory("01ALICE", &long, &[], None).is_err());
+        // Exactly at the cap is fine.
+        assert!(store
+            .add_memory("01ALICE", &"나".repeat(MEMORY_TEXT_CAP), &[], None)
+            .is_ok());
+    }
+
+    #[test]
+    fn searching_matches_text_or_tags_and_marks_the_hit_as_used() {
+        let store = store();
+        store
+            .add_memory("01ALICE", "스테이징 URL", &["infra".into()], None)
+            .unwrap();
+        store
+            .add_memory("01ALICE", "관련 없는 메모", &["misc".into()], None)
+            .unwrap();
+
+        // A tag match counts, not just a body match.
+        let by_tag = store.search_memories("01ALICE", "infra", 10).unwrap();
+        assert_eq!(by_tag.len(), 1);
+        assert_eq!(by_tag[0].text, "스테이징 URL");
+        assert!(
+            by_tag[0].last_used_at.is_some(),
+            "a hit must be marked as just used"
+        );
+
+        let by_text = store.search_memories("01ALICE", "메모", 10).unwrap();
+        assert_eq!(by_text.len(), 1);
+        assert_eq!(by_text[0].text, "관련 없는 메모");
+    }
+
+    #[test]
+    fn a_wildcard_in_the_query_is_matched_literally() {
+        let store = store();
+        store
+            .add_memory("01ALICE", "쿠폰은 50% 할인", &[], None)
+            .unwrap();
+        store
+            .add_memory("01ALICE", "그냥 텍스트", &[], None)
+            .unwrap();
+        // `%` must not behave as a wildcard that matches everything.
+        let hits = store.search_memories("01ALICE", "50%", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].text, "쿠폰은 50% 할인");
+    }
+
+    #[test]
+    fn forgetting_a_memory_removes_it_but_only_for_its_owner() {
+        let store = store();
+        let memory = store.add_memory("01ALICE", "지울 기억", &[], None).unwrap();
+        // Another user cannot delete it.
+        store.delete_memory("01BOB", &memory.id).unwrap();
+        assert_eq!(store.list_memories("01ALICE", 10).unwrap().len(), 1);
+        // The owner can.
+        store.delete_memory("01ALICE", &memory.id).unwrap();
+        assert!(store.list_memories("01ALICE", 10).unwrap().is_empty());
+    }
+
+    // ── Preferences ─────────────────────────────────────────────────────
+
+    #[test]
+    fn a_pref_round_trips_and_updates_in_place() {
+        let store = store();
+        assert_eq!(store.get_pref("native_dialogs").unwrap(), None);
+        store.set_pref("native_dialogs", "0").unwrap();
+        assert_eq!(
+            store.get_pref("native_dialogs").unwrap().as_deref(),
+            Some("0")
+        );
+        store.set_pref("native_dialogs", "1").unwrap();
+        assert_eq!(
+            store.get_pref("native_dialogs").unwrap().as_deref(),
+            Some("1")
+        );
     }
 }

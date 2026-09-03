@@ -14,7 +14,7 @@ from pydantic import EmailStr, Field
 from app.api.deps import DbSession, ServerAdmin
 from app.core.mailer import send_via_smtp
 from app.schemas.common import Payload
-from app.services import audit
+from app.services import audit, partitions
 from app.services import server_settings as server_settings_service
 from app.services.server_settings import SmtpConfig
 
@@ -123,3 +123,31 @@ async def test_smtp(
     except Exception as exc:  # noqa: BLE001 — the error text is the product here
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     return {"ok": True, "sent_to": admin.email}
+
+
+@router.get("/partitions", response_model=dict)
+async def get_partitions(db: DbSession, _admin: ServerAdmin) -> dict:
+    """How `messages` is laid out on disk — Postgres monthly partitions.
+
+    Operators use this to see which months exist, how big each is, and whether
+    the default partition is empty (it should be; rows there mean the
+    maintenance worker missed a month).
+    """
+    conn = await db.connection()
+    dialect = conn.dialect.name
+    partitioned = await partitions.is_partitioned(conn)
+    rows = await partitions.list_partitions(conn) if partitioned else []
+    return {
+        "dialect": dialect,
+        "partitioned": partitioned,
+        "partitions": [
+            {
+                "name": row.name,
+                "from_id": row.from_id,
+                "to_id": row.to_id,
+                "rows": row.rows,
+                "bytes": row.bytes,
+            }
+            for row in rows
+        ],
+    }

@@ -439,6 +439,81 @@ pub fn read_all(dir: impl AsRef<Path>) -> Result<Vec<AuditRecord>> {
     Ok(out)
 }
 
+/// What the "what did it do on my machine" screen is handed.
+///
+/// `entries` are the raw records for one day, left as JSON values rather than
+/// typed [`AuditRecord`]s so a viewer can show a field this build has not
+/// learned about yet — a forward-compatible screen for an append-only file.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AuditEntriesView {
+    /// Every day that has a log file, oldest first — the dates a picker offers.
+    pub dates: Vec<String>,
+    /// The chosen day's records, oldest first, capped at `limit`.
+    pub entries: Vec<serde_json::Value>,
+    /// Whether the whole chain still verifies. Shown once for the screen, not
+    /// per row: a broken chain is a property of the log, not of one entry.
+    pub verified: bool,
+}
+
+/// Read one day's audit records for display.
+///
+/// `date` is a `YYYY-MM-DD` string; an unknown or absent one falls back to the
+/// most recent day that has a file, so the screen always opens on something.
+/// `limit` caps how many of that day's records come back, keeping the most
+/// recent — a busy day must not hand the UI tens of thousands of rows.
+pub fn entries_for(
+    dir: impl AsRef<Path>,
+    date: Option<&str>,
+    limit: Option<usize>,
+) -> Result<AuditEntriesView> {
+    let dir = dir.as_ref();
+    let files = log_files(dir)?;
+    let dates: Vec<String> = files
+        .iter()
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+        .collect();
+
+    // The chain is checked over the whole log, not just the shown day — a
+    // tampered entry on a day the user is not looking at still breaks trust.
+    let verified = verify(dir)?.is_intact();
+
+    // Pick the file: the requested date if it exists, else the most recent.
+    let chosen = date
+        .filter(|d| dates.iter().any(|have| have == d))
+        .map(|d| dir.join(format!("{d}.jsonl")))
+        .or_else(|| files.last().cloned());
+
+    let mut entries: Vec<serde_json::Value> = Vec::new();
+    if let Some(path) = chosen {
+        let file = File::open(&path)
+            .map_err(|e| Error::Other(format!("could not read {}: {e}", path.display())))?;
+        for line in BufReader::new(file).lines() {
+            let line =
+                line.map_err(|e| Error::Other(format!("could not read an audit line: {e}")))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                entries.push(value);
+            }
+        }
+    }
+
+    // Keep the most recent `limit`, but return them oldest-first so the screen
+    // reads top to bottom in time order.
+    if let Some(limit) = limit {
+        if entries.len() > limit {
+            entries.drain(0..entries.len() - limit);
+        }
+    }
+
+    Ok(AuditEntriesView {
+        dates,
+        entries,
+        verified,
+    })
+}
+
 /// Log files, sorted by name — which is date order, because of the filename.
 fn log_files(dir: &Path) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
@@ -698,6 +773,48 @@ mod tests {
         assert_eq!(report.records, 0);
         assert!(report.is_intact());
         assert_eq!(report.head, CHAIN_GENESIS);
+    }
+
+    #[test]
+    fn the_viewer_returns_a_days_records_oldest_first_and_capped() {
+        let dir = temp_dir("view");
+        let log = AuditLog::open(&dir, actor(), None).unwrap();
+        for _ in 0..5 {
+            log.append(AuditEntry::intent("host.exec", exec_args(), "approve_high"))
+                .unwrap();
+        }
+
+        let view = entries_for(&dir, None, Some(3)).unwrap();
+        assert_eq!(view.dates.len(), 1, "one file means one date");
+        assert!(view.verified);
+        assert_eq!(view.entries.len(), 3, "the cap keeps only the last three");
+        // Oldest-first: the three kept are seq 3, 4, 5.
+        assert_eq!(view.entries[0]["seq"], serde_json::json!(3));
+        assert_eq!(view.entries[2]["seq"], serde_json::json!(5));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_viewer_falls_back_to_the_latest_day_for_an_unknown_date() {
+        let dir = temp_dir("view-fallback");
+        let log = AuditLog::open(&dir, actor(), None).unwrap();
+        log.append(AuditEntry::intent("host.exec", exec_args(), "approve_high"))
+            .unwrap();
+
+        let view = entries_for(&dir, Some("1999-01-01"), None).unwrap();
+        assert_eq!(
+            view.entries.len(),
+            1,
+            "an unknown date shows the latest day"
+        );
+
+        let empty = entries_for(temp_dir("view-empty"), None, None).unwrap();
+        assert!(empty.dates.is_empty());
+        assert!(empty.entries.is_empty());
+        assert!(empty.verified, "an empty log is intact");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[cfg(unix)]

@@ -60,11 +60,15 @@ import type {
   WorkspaceRole,
 } from "./types";
 import type {
+  AgentAuditEntries,
   AgentEvent,
+  AgentMemory,
   AgentProviderStatus,
   AgentSessionSummary,
+  AgentSkill,
   AgentToolResult,
   AgentToolSpec,
+  McpServerView,
 } from "./agent/types";
 import { pickFilesInBrowser, webAgent, webApi, webEvents } from "./web";
 
@@ -575,8 +579,13 @@ const tauriAgent = {
    * The key crosses to Rust once, here, and never comes back — every later
    * request is signed by the byte proxy on the Rust side.
    */
-  agentProviderConnect: (providerId: string, apiKey: string, model: string) =>
-    call<AgentProviderStatus>("agent_provider_connect", { providerId, apiKey, model }),
+  agentProviderConnect: (providerId: string, apiKey: string, model: string, baseUrl?: string | null) =>
+    call<AgentProviderStatus>("agent_provider_connect", {
+      providerId,
+      apiKey,
+      model,
+      baseUrl: baseUrl ?? null,
+    }),
 
   /**
    * Switch models on the already-connected provider. No key crosses: the choice
@@ -637,6 +646,46 @@ const tauriAgent = {
 
   /** Let the user choose a directory the agent may read without asking. */
   agentPickRoot: () => call<string | null>("agent_pick_root"),
+
+  // ── MCP servers (v2) ─────────────────────────────────────────────────
+  agentMcpList: () => call<McpServerView[]>("agent_mcp_list"),
+  agentMcpAdd: (input: {
+    name: string;
+    transport: "http" | "stdio";
+    url?: string | null;
+    command?: string | null;
+    args?: string[];
+    token?: string | null;
+  }) =>
+    call<McpServerView>("agent_mcp_add", {
+      name: input.name,
+      transport: input.transport,
+      url: input.url ?? null,
+      command: input.command ?? null,
+      args: input.args ?? [],
+      token: input.token ?? null,
+    }),
+  agentMcpRemove: (serverId: string) => call<void>("agent_mcp_remove", { serverId }),
+  agentMcpSetEnabled: (serverId: string, enabled: boolean) =>
+    call<McpServerView>("agent_mcp_set_enabled", { serverId, enabled }),
+  agentMcpTools: (serverId: string) => call<AgentToolSpec[]>("agent_mcp_tools", { serverId }),
+  agentMcpRefresh: () => call<McpServerView[]>("agent_mcp_refresh"),
+
+  // ── Artifacts · memory · skills · audit (v2) ─────────────────────────
+  agentArtifactPut: (sessionId: string, label: string, text: string) =>
+    call<{ handle: string; bytes: number }>("agent_artifact_put", { sessionId, label, text }),
+  agentMemoriesList: (limit = 50) => call<AgentMemory[]>("agent_memories_list", { limit }),
+  agentMemoryAdd: (text: string, tags: string[] = []) =>
+    call<AgentMemory>("agent_memory_add", { text, tags }),
+  agentMemoryDelete: (id: string) => call<void>("agent_memory_delete", { id }),
+  agentSkillsList: () => call<AgentSkill[]>("agent_skills_list"),
+  agentSkillRead: (name: string) => call<string>("agent_skill_read", { name }),
+  agentSkillSave: (name: string, body: string) => call<AgentSkill>("agent_skill_save", { name, body }),
+  agentSkillDelete: (name: string) => call<void>("agent_skill_delete", { name }),
+  agentAuditEntries: (date?: string | null, limit = 200) =>
+    call<AgentAuditEntries>("agent_audit_entries", { date: date ?? null, limit }),
+  agentNativeDialogs: (enabled: boolean | null) =>
+    call<boolean>("agent_native_dialogs", { enabled }),
 };
 
 /** The contract both runtimes implement for the agent. */

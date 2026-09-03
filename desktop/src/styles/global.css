@@ -4545,8 +4545,8 @@ kbd {
  */
 .agent-tool {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 7px;
   padding: 7px 10px;
   margin: 9px 0;
   font-size: 11px;
@@ -4555,7 +4555,13 @@ kbd {
   border-radius: var(--r-md);
 }
 
-.agent-tool::before {
+.agent-tool-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.agent-tool-line::before {
   width: 5px;
   height: 5px;
   flex: none;
@@ -4571,16 +4577,22 @@ kbd {
   color: var(--ink-secondary);
 }
 
-.agent-tool > span {
+.agent-tool-line > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.agent-tool-image {
+  max-width: 100%;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--rule);
+}
+
 /* The dot carries state — a full-card tint on every tool run would make a
    transcript of six calls look like six alerts. */
-.agent-tool-running::before {
+.agent-tool-running .agent-tool-line::before {
   background: var(--n6);
   animation: tool-pulse 1.1s var(--ease) infinite;
 }
@@ -4591,23 +4603,23 @@ kbd {
   }
 }
 
-.agent-tool-ok::before {
+.agent-tool-ok .agent-tool-line::before {
   background: var(--n8);
 }
 
-.agent-tool-error::before,
-.agent-tool-refused::before {
+.agent-tool-error .agent-tool-line::before,
+.agent-tool-refused .agent-tool-line::before {
   background: var(--signal);
 }
 
 /* Denied is the user's own decision, not a fault: it gets no alarm colour, and
    the strike-through is the non-colour half of the cue. */
-.agent-tool-denied {
+.agent-tool-denied .agent-tool-line {
   text-decoration: line-through;
   text-decoration-color: var(--n6);
 }
 
-.agent-tool-denied::before {
+.agent-tool-denied .agent-tool-line::before {
   background: var(--n6);
 }
 
@@ -4730,10 +4742,24 @@ kbd {
   color: var(--ink-secondary);
 }
 
+.agent-approval-native {
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-radius: var(--r-sm);
+}
+
 .agent-approval-actions {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+.agent-approval-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /*
@@ -6734,4 +6760,215 @@ ol.md-list {
 }
 .notice-system {
   border-left: 3px solid var(--n6);
+}
+
+/* ── Agent v2: audit button, MCP / memory / skills settings ──────────── */
+
+.agent-audit-open {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background var(--ease);
+}
+.agent-taint + .agent-audit-open {
+  margin-left: 6px;
+}
+.agent-audit-open:hover {
+  background: var(--n3);
+}
+
+.modal.agent-audit {
+  width: min(680px, 92vw);
+  max-height: 82vh;
+}
+.agent-audit-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 12px;
+}
+.agent-audit-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-secondary);
+}
+.agent-audit-ok {
+  color: var(--ink-muted);
+}
+.agent-audit-bad {
+  color: var(--signal);
+  font-weight: 600;
+}
+.agent-audit-body {
+  overflow-y: auto;
+}
+.agent-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+  list-style: none;
+}
+.agent-audit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: var(--n2);
+  border-radius: var(--r-sm);
+}
+.agent-audit-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+}
+.agent-audit-line code {
+  font-family: var(--font-mono);
+  color: var(--ink-secondary);
+}
+.agent-audit-verdict {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  background: var(--n3);
+  color: var(--ink-muted);
+}
+.agent-audit-denied,
+.agent-audit-refused {
+  background: var(--signal-wash);
+  color: var(--signal);
+}
+.agent-audit-at {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.agent-audit-detail {
+  font-size: 11px;
+  color: var(--ink-muted);
+  word-break: break-word;
+}
+
+/* Settings: shared small pieces for the agent sections. */
+.settings-empty {
+  font-size: 12px;
+  color: var(--ink-muted);
+  padding: 8px 0;
+}
+.settings-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+.settings-switch input {
+  width: auto;
+}
+
+.settings-mcp,
+.settings-memory,
+.settings-skills,
+.settings-native-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-mcp-list,
+.settings-memory-list,
+.settings-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+}
+.settings-mcp-row,
+.settings-skill-list > li,
+.settings-memory-list > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--n2);
+  border-radius: var(--r-md);
+}
+.settings-mcp-main,
+.settings-memory-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.settings-mcp-meta {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.settings-mcp-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.settings-mcp-buttons {
+  display: flex;
+  gap: 10px;
+}
+.settings-mcp-add,
+.settings-skill-edit,
+.settings-memory-add {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--n1);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+}
+.settings-memory-add {
+  flex-direction: row;
+  align-items: center;
+}
+.settings-memory-add input {
+  flex: 1;
+}
+.settings-memory-tags {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.settings-skill-open {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.settings-skill-open strong {
+  color: var(--ink-secondary);
+}
+.settings-skill-open span {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.settings-skill-edit textarea {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  resize: vertical;
 }

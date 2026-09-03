@@ -41,7 +41,13 @@ export function AgentApprovalCard() {
 
   if (!request) return null;
 
+  // A class-3 call answered in a native OS dialog: the webview cannot resolve
+  // it, so the card is informational and both buttons are inert. Only the OS
+  // dialog's own buttons close the request.
+  const native = request.native === true;
+
   const answer = async (approve: boolean) => {
+    if (native) return;
     const remember = Boolean(rememberRef.current?.checked) && request.remembering_offered;
     try {
       await agentHost.agentResolveApproval(
@@ -104,19 +110,35 @@ export function AgentApprovalCard() {
         </details>
       ) : null}
 
-      {request.remembering_offered ? (
+      {request.remembering_offered && !native ? (
         <label className="agent-approval-remember">
           <input type="checkbox" ref={rememberRef} />
           이 세션 동안 같은 작업은 다시 묻지 않기
         </label>
       ) : null}
 
+      {native ? (
+        <p className="agent-approval-native">
+          운영체제 대화상자에서 결정합니다. 화면에 뜬 창에서 허용 또는 거부를 눌러주세요.
+        </p>
+      ) : null}
+
       <div className="agent-approval-actions">
         {/* Deny first in the DOM, so Tab reaches it before Allow. */}
-        <button type="button" className="agent-deny" onClick={() => void answer(false)}>
+        <button
+          type="button"
+          className="agent-deny"
+          onClick={() => void answer(false)}
+          disabled={native}
+        >
           거부
         </button>
-        <button type="button" className="agent-allow" onClick={() => void answer(true)}>
+        <button
+          type="button"
+          className="agent-allow"
+          onClick={() => void answer(true)}
+          disabled={native}
+        >
           허용
         </button>
       </div>

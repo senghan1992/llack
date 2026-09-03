@@ -36,11 +36,30 @@ class Socket:
 
 
 @asynccontextmanager
+async def gateway_client():  # noqa: ANN201
+    """A sync TestClient whose app gets a connection pool of its own.
+
+    The client runs the app on a worker-thread event loop. asyncpg connections
+    belong to the loop that opened them, so the pool is emptied on the way in
+    (the HTTP fixtures filled it from the test loop) and on the way out (the
+    portal loop filled it). SQLite never cared; Postgres does.
+    """
+    from app.core.db import dispose_engine
+
+    await dispose_engine()
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        await dispose_engine()
+
+
+@asynccontextmanager
 async def connect(actor: Actor, workspace_id: str):  # noqa: ANN201
     """Open an authenticated gateway connection and consume `hello`."""
     # Starlette's WebSocket test client is sync, so it runs in a worker thread
     # alongside the async HTTP client.
-    with TestClient(app) as client:
+    async with gateway_client() as client:
         token = actor.tokens["access_token"]
         with client.websocket_connect(
             f"/api/v1/ws?token={token}&workspace_id={workspace_id}"
@@ -54,16 +73,16 @@ async def connect(actor: Actor, workspace_id: str):  # noqa: ANN201
 
 
 async def test_handshake_rejects_a_bad_token(workspace: dict) -> None:
-    with (
-        TestClient(app) as client,
-        pytest.raises(Exception),  # noqa: B017, PT011
-        client.websocket_connect("/api/v1/ws?token=not-a-real-token") as ws,
-    ):
-        ws.receive_text()
+    async with gateway_client() as client:
+        with (
+            pytest.raises(Exception),  # noqa: B017, PT011
+            client.websocket_connect("/api/v1/ws?token=not-a-real-token") as ws,
+        ):
+            ws.receive_text()
 
 
 async def test_hello_reports_the_users_workspaces(alice: Actor, workspace: dict) -> None:
-    with TestClient(app) as client:
+    async with gateway_client() as client:
         token = alice.tokens["access_token"]
         with client.websocket_connect(
             f"/api/v1/ws?token={token}&workspace_id={workspace['id']}"
@@ -103,7 +122,7 @@ async def test_unknown_command_returns_an_error_frame(alice: Actor, workspace: d
 async def test_malformed_frame_returns_an_error_and_keeps_the_socket_open(
     alice: Actor, workspace: dict
 ) -> None:
-    with TestClient(app) as client:
+    async with gateway_client() as client:
         token = alice.tokens["access_token"]
         with client.websocket_connect(
             f"/api/v1/ws?token={token}&workspace_id={workspace['id']}"

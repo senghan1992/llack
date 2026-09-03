@@ -27,6 +27,7 @@
 //! leak. There is no code path here that leaves a request pending.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -89,6 +90,12 @@ pub struct ApprovalRequest {
     pub rationale: Option<String>,
     /// Whether answering "remember this" is even offered.
     pub remembering_offered: bool,
+    /// True when this request is to be answered by an OS-drawn dialog the
+    /// webview cannot fabricate or script-click, rather than the in-app card.
+    /// Set for [`Risk::High`] while native dialogs are enabled; the shell reads
+    /// it to decide whether to open that dialog, and the in-app card reads it to
+    /// show a disabled "decide in the OS dialog" state instead of live buttons.
+    pub native: bool,
 }
 
 /// Told when a request opens or closes. The Tauri layer implements this by
@@ -127,6 +134,11 @@ pub struct ApprovalBroker {
     remember_requested: Mutex<HashSet<String>>,
     notifier: Arc<dyn ApprovalNotifier>,
     timeout: Duration,
+    /// Whether class-3 (high-risk) requests are answered by an OS dialog. On by
+    /// default; a machine with no display (a headless test or CI) turns it off
+    /// so the request falls back to the in-app card rather than blocking on a
+    /// dialog nobody can see.
+    native_dialogs: AtomicBool,
 }
 
 impl ApprovalBroker {
@@ -141,7 +153,19 @@ impl ApprovalBroker {
             remember_requested: Mutex::new(HashSet::new()),
             notifier,
             timeout,
+            native_dialogs: AtomicBool::new(true),
         }
+    }
+
+    /// Turn the native OS dialog for class-3 requests on or off. Persisted by
+    /// the engine; read on every high-risk `ask`.
+    pub fn set_native_dialogs(&self, enabled: bool) {
+        self.native_dialogs.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Whether class-3 requests currently use the OS dialog.
+    pub fn native_dialogs(&self) -> bool {
+        self.native_dialogs.load(Ordering::Relaxed)
     }
 
     /// Ask, and wait for an answer.
@@ -174,6 +198,10 @@ impl ApprovalBroker {
             facts,
             rationale,
             remembering_offered: matches!(grain, Grain::Session { .. }),
+            // Computed here, in one place, so the shell never has to re-derive
+            // "is this the class that must not use the in-app card" from the
+            // risk — a check that would drift the day a risk class is added.
+            native: matches!(risk, Risk::High) && self.native_dialogs.load(Ordering::Relaxed),
         };
 
         let (tx, rx) = oneshot::channel();
@@ -641,6 +669,53 @@ mod tests {
             broker.granted_count(),
             0,
             "a Once grain must never be persisted, whatever the UI sends"
+        );
+    }
+
+    // ── The native-dialog flag ──────────────────────────────────────────
+
+    #[tokio::test(start_paused = true)]
+    async fn a_high_risk_request_is_marked_native_and_a_moderate_one_is_not() {
+        let recorder = Arc::new(Recorder::default());
+        let broker = broker(recorder.clone());
+
+        broker
+            .ask("01S", "host.exec", Risk::High, &Grain::Once, facts(), None)
+            .await;
+        broker
+            .ask(
+                "01S",
+                "host.read_file",
+                Risk::Moderate,
+                &Grain::Once,
+                facts(),
+                None,
+            )
+            .await;
+
+        let opened = recorder.opened.lock();
+        assert!(opened[0].native, "a high-risk request must be native");
+        assert!(
+            !opened[1].native,
+            "a moderate request stays on the in-app card"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn turning_native_dialogs_off_downgrades_even_a_high_risk_request() {
+        let recorder = Arc::new(Recorder::default());
+        let broker = broker(recorder.clone());
+        assert!(broker.native_dialogs());
+        broker.set_native_dialogs(false);
+        assert!(!broker.native_dialogs());
+
+        broker
+            .ask("01S", "host.exec", Risk::High, &Grain::Once, facts(), None)
+            .await;
+
+        assert!(
+            !recorder.opened.lock()[0].native,
+            "with native dialogs off, even a high-risk request uses the card"
         );
     }
 

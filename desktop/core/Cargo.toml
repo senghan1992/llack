@@ -25,6 +25,9 @@ rand.workspace = true
 uuid.workspace = true
 sha2.workspace = true
 async-trait.workspace = true
+# A sandboxed scripting engine for `artifact.eval`: no file, network or process
+# access of its own, with hard operation/size caps set at construction.
+rhai = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

@@ -26,7 +26,10 @@
 
 mod artifact;
 mod chat;
+mod eval;
 mod host;
+mod memory;
+mod skill;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -35,9 +38,34 @@ use serde::Serialize;
 
 use crate::agent::approval::{ApprovalBroker, Outcome};
 use crate::agent::audit::{AuditEntry, AuditLog, DecisionSource, Verdict};
+use crate::agent::mcp::{self, McpToolDef};
 use crate::agent::policy::{self, Decision, SessionContext, ToolCall};
 use crate::agent::store::AgentStore;
 use crate::error::{Error, Result};
+
+/// Runs a call against a connected MCP server. Implemented by the engine,
+/// which owns the clients; `None` in a context means no server is reachable
+/// (tests, or a call parsed before a refresh).
+#[async_trait::async_trait]
+pub trait McpInvoker: Send + Sync {
+    async fn call(
+        &self,
+        server_id: &str,
+        tool: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value>;
+}
+
+/// The catalog's record of one MCP tool: enough to route a call and to fill an
+/// approval card without trusting the model's prose.
+#[derive(Debug, Clone)]
+pub struct McpToolRef {
+    pub server_id: String,
+    pub server_name: String,
+    pub endpoint: String,
+    /// The tool's name on the server (not the `mcp.slug.tool` alias).
+    pub tool: String,
+}
 
 /// Where a tool came from. One variant today; `Mcp` is what makes v2 additive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -55,14 +83,20 @@ pub struct HostCapabilities {
     pub computer_control: bool,
     /// Has a signed-in Llack session to read and post with.
     pub workspace: bool,
+    /// Can capture the screen and synthesise mouse/keyboard input. Gated behind
+    /// the `screen-control` cargo feature in the shell and off by default, so
+    /// these tools are absent from the catalog on a normal build.
+    pub screen_control: bool,
 }
 
 impl HostCapabilities {
-    /// The desktop shell.
+    /// The desktop shell. `screen_control` is passed in because it depends on a
+    /// build feature the shell knows and core does not.
     pub fn desktop() -> Self {
         Self {
             computer_control: true,
             workspace: true,
+            screen_control: false,
         }
     }
 
@@ -71,6 +105,7 @@ impl HostCapabilities {
         Self {
             computer_control: false,
             workspace: true,
+            screen_control: false,
         }
     }
 }
@@ -139,9 +174,17 @@ pub struct ToolContext<'a> {
     pub session_id: &'a str,
     pub store: &'a AgentStore,
     pub host: &'a dyn ToolHost,
+    /// Runs MCP tool calls, when a server is connected.
+    pub mcp: Option<&'a dyn McpInvoker>,
     /// The workspace the panel is looking at, when there is one.
     pub workspace_id: Option<&'a str>,
     pub channel_id: Option<&'a str>,
+    /// The signed-in user, for memory scoping. `None` in a context with no
+    /// session (tests, a headless run), in which case memory tools decline.
+    pub user_id: Option<&'a str>,
+    /// Where the skill files live. `None` means "no skills here" rather than an
+    /// error, so a headless context lists an empty set.
+    pub skills_dir: Option<std::path::PathBuf>,
 }
 
 /// The parts of a tool that only the real shell can do.
@@ -167,6 +210,45 @@ pub trait ToolHost: Send + Sync {
     async fn chat_search(&self, workspace_id: &str, query: &str) -> Result<Vec<ChatLine>>;
     /// Post as the signed-in human.
     async fn chat_post(&self, channel_id: &str, body: &str) -> Result<String>;
+
+    /// Capture the screen. Only reached when the `screen-control` feature is on;
+    /// the default implementation refuses, so a host that does not build the
+    /// feature need not implement it. Image encoding lives in the shell — core
+    /// receives the bytes already base64-encoded.
+    async fn screenshot(&self, _display: Option<u32>) -> Result<Screenshot> {
+        Err(crate::error::Error::Other(
+            "이 빌드에는 화면 제어 기능이 없습니다.".into(),
+        ))
+    }
+    /// Move the pointer and click. Refuses by default, as with `screenshot`.
+    async fn click(&self, _x: i32, _y: i32, _button: &str) -> Result<()> {
+        Err(crate::error::Error::Other(
+            "이 빌드에는 화면 제어 기능이 없습니다.".into(),
+        ))
+    }
+    /// Type text through synthesised key events. Refuses by default.
+    async fn type_text(&self, _text: &str) -> Result<()> {
+        Err(crate::error::Error::Other(
+            "이 빌드에는 화면 제어 기능이 없습니다.".into(),
+        ))
+    }
+}
+
+/// A screen capture, already encoded by the shell.
+///
+/// The full PNG (`png_b64`) is stored as an artifact so the model can ask for
+/// it later without it living in the context; the downscaled JPEG
+/// (`image_b64`, ~1280px wide) is small enough to hand the model inline so it
+/// can actually see the screen. Encoding both stays in the shell — core has no
+/// image crate and no reason to grow one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Screenshot {
+    /// Base64 of the full-resolution PNG.
+    pub png_b64: String,
+    /// Base64 of a downscaled JPEG, for inline display to the model.
+    pub image_b64: String,
+    /// The mime of `image_b64`, e.g. `image/jpeg`.
+    pub mime: String,
 }
 
 /// One message, flattened for the model.
@@ -188,9 +270,42 @@ pub struct ExecOutput {
     pub timed_out: bool,
 }
 
+/// The `agent.delegate` spec: registered so the model can call it, but run by
+/// the host loop (TS), not by `dispatch` — the executor refuses it.
+fn delegate_spec() -> ToolSpec {
+    ToolSpec {
+        name: "agent.delegate".into(),
+        description: "하위 작업을 별도의 에이전트 턴에 맡깁니다. 결과 요약을 \
+                      아티팩트 핸들로 돌려받아, 큰 중간 작업이 이 대화의 맥락을 \
+                      채우지 않게 합니다. (호스트 루프가 실행합니다.)"
+            .into(),
+        input_schema: schema(
+            serde_json::json!({
+                "task": { "type": "string", "description": "하위 에이전트가 할 일" },
+                "tools": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "하위 에이전트에게 허용할 도구 이름 (생략 시 읽기 전용)",
+                },
+                "max_steps": { "type": "integer", "description": "하위 턴의 최대 단계 수" },
+            }),
+            &["task"],
+        ),
+        source: ToolSource::Builtin,
+    }
+}
+
 /// Registered handlers, keyed by tool name.
+///
+/// `Clone` so the engine can snapshot it for one `execute` call without holding
+/// a lock across the `await` inside an MCP dispatch.
+#[derive(Clone)]
 pub struct ToolCatalog {
     specs: BTreeMap<String, ToolSpec>,
+    /// MCP tools by their `mcp.slug.tool` alias. Kept beside `specs` so a call
+    /// can be routed to the right server and the approval card filled from the
+    /// server record rather than from the model.
+    mcp_tools: BTreeMap<String, McpToolRef>,
 }
 
 impl ToolCatalog {
@@ -202,11 +317,18 @@ impl ToolCatalog {
         for spec in chat::specs()
             .into_iter()
             .chain(artifact::specs())
+            .chain(eval::specs())
             .chain(host::specs())
+            .chain(memory::specs())
+            .chain(skill::specs())
+            .chain(std::iter::once(delegate_spec()))
         {
             specs.insert(spec.name.clone(), spec);
         }
-        Self { specs }
+        Self {
+            specs,
+            mcp_tools: BTreeMap::new(),
+        }
     }
 
     pub fn register(&mut self, spec: ToolSpec) {
@@ -215,6 +337,81 @@ impl ToolCatalog {
 
     pub fn get(&self, name: &str) -> Option<&ToolSpec> {
         self.specs.get(name)
+    }
+
+    pub fn mcp_ref(&self, name: &str) -> Option<&McpToolRef> {
+        self.mcp_tools.get(name)
+    }
+
+    /// Drop every tool from one server (before re-registering on refresh, or
+    /// when it is removed). Names are stable per server, so a re-register with
+    /// the same slug replaces cleanly.
+    pub fn clear_mcp(&mut self, server_id: &str) {
+        let names: Vec<String> = self
+            .mcp_tools
+            .iter()
+            .filter(|(_, r)| r.server_id == server_id)
+            .map(|(n, _)| n.clone())
+            .collect();
+        for name in names {
+            self.specs.remove(&name);
+            self.mcp_tools.remove(&name);
+        }
+    }
+
+    /// Register a connected server's tools under `mcp.{slug}.{tool}`.
+    ///
+    /// `slug` is pre-computed by the engine with collisions already resolved,
+    /// so two servers named the same do not fight over a prefix.
+    pub fn register_mcp(
+        &mut self,
+        server_id: &str,
+        server_name: &str,
+        endpoint: &str,
+        slug: &str,
+        tools: &[McpToolDef],
+    ) {
+        self.clear_mcp(server_id);
+        for tool in tools {
+            let name = mcp::tool_name(slug, &tool.name);
+            self.specs.insert(
+                name.clone(),
+                ToolSpec {
+                    name: name.clone(),
+                    description: tool.description.clone(),
+                    input_schema: tool.input_schema.clone(),
+                    source: ToolSource::Mcp {
+                        server_id: server_id.to_string(),
+                    },
+                },
+            );
+            self.mcp_tools.insert(
+                name,
+                McpToolRef {
+                    server_id: server_id.to_string(),
+                    server_name: server_name.to_string(),
+                    endpoint: endpoint.to_string(),
+                    tool: tool.name.clone(),
+                },
+            );
+        }
+    }
+
+    /// How many tools a server contributed. For the settings view.
+    pub fn mcp_tool_count(&self, server_id: &str) -> usize {
+        self.mcp_tools
+            .values()
+            .filter(|r| r.server_id == server_id)
+            .count()
+    }
+
+    /// Every MCP tool spec for one server, for the settings view.
+    pub fn mcp_specs(&self, server_id: &str) -> Vec<ToolSpec> {
+        self.specs
+            .values()
+            .filter(|s| matches!(&s.source, ToolSource::Mcp { server_id: sid } if sid == server_id))
+            .cloned()
+            .collect()
     }
 
     /// The specs to send this turn, filtered by what the host can do.
@@ -229,6 +426,12 @@ impl ToolCatalog {
             .values()
             .filter(|spec| {
                 if spec.name.starts_with("host.") && !caps.computer_control {
+                    return false;
+                }
+                // The screen-control tools are `host.` tools too, so they need
+                // computer control — but they also need their own feature, and
+                // are hidden without it even on a full desktop build.
+                if is_screen_tool(&spec.name) && !caps.screen_control {
                     return false;
                 }
                 if spec.name.starts_with("chat.") && !caps.workspace {
@@ -335,7 +538,11 @@ pub async fn execute(
     let result = dispatch(&call, args, ctx).await;
     let elapsed = started.elapsed().as_millis() as u64;
 
-    let taints = matches!(decision, Decision::Auto { taints: true });
+    // An MCP result is third-party text entering the context, exactly like a
+    // channel read — so it taints, even though it arrived through an approval
+    // rather than an auto-tainting read.
+    let taints =
+        matches!(decision, Decision::Auto { taints: true }) || matches!(call, ToolCall::Mcp { .. });
 
     match result {
         Ok(output) => {
@@ -446,6 +653,18 @@ fn parse_call(name: &str, args: &serde_json::Value, catalog: &ToolCatalog) -> To
             _ => unknown(),
         },
 
+        "artifact.eval" => match (
+            args.get("handle").and_then(|v| v.as_str()),
+            args.get("script").and_then(|v| v.as_str()),
+        ) {
+            (Some(handle), Some(_)) => ToolCall::ArtifactEval {
+                handle: handle.to_string(),
+            },
+            _ => unknown(),
+        },
+
+        "agent.delegate" => ToolCall::AgentDelegate,
+
         "host.exec" => {
             let argv: Option<Vec<String>> = args.get("argv").and_then(|v| v.as_array()).map(|a| {
                 a.iter()
@@ -489,7 +708,90 @@ fn parse_call(name: &str, args: &serde_json::Value, catalog: &ToolCatalog) -> To
             _ => unknown(),
         },
 
+        "memory.save" => match args.get("text").and_then(|v| v.as_str()) {
+            Some(text) => ToolCall::MemorySave {
+                text: text.to_string(),
+            },
+            None => unknown(),
+        },
+
+        "memory.search" => match args.get("query").and_then(|v| v.as_str()) {
+            Some(query) => ToolCall::MemorySearch {
+                query: query.to_string(),
+            },
+            None => unknown(),
+        },
+
+        "memory.forget" => match args.get("id").and_then(|v| v.as_str()) {
+            Some(id) => ToolCall::MemoryForget { id: id.to_string() },
+            None => unknown(),
+        },
+
+        "skill.list" => ToolCall::SkillList,
+
+        "skill.read" => match args.get("name").and_then(|v| v.as_str()) {
+            Some(name) => ToolCall::SkillRead {
+                name: name.to_string(),
+            },
+            None => unknown(),
+        },
+
+        "host.screenshot" => ToolCall::HostScreenshot {
+            display: args
+                .get("display")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32),
+        },
+
+        "host.click" => match (
+            args.get("x").and_then(|v| v.as_i64()),
+            args.get("y").and_then(|v| v.as_i64()),
+        ) {
+            (Some(x), Some(y)) => ToolCall::HostClick {
+                x: x as i32,
+                y: y as i32,
+                button: args
+                    .get("button")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("left")
+                    .to_string(),
+            },
+            _ => unknown(),
+        },
+
+        "host.type_text" => match args.get("text").and_then(|v| v.as_str()) {
+            Some(text) => ToolCall::HostType {
+                text: text.to_string(),
+            },
+            None => unknown(),
+        },
+
+        // A connected MCP tool. The server metadata comes from the catalog's
+        // own record, never from the arguments, so an approval card cannot be
+        // steered by what the model passes.
+        name if name.starts_with("mcp.") => match catalog.mcp_ref(name) {
+            Some(mcp_ref) => ToolCall::Mcp {
+                server_id: mcp_ref.server_id.clone(),
+                server_name: mcp_ref.server_name.clone(),
+                endpoint: mcp_ref.endpoint.clone(),
+                tool: mcp_ref.tool.clone(),
+                args_preview: compact_json(args, 400),
+            },
+            None => unknown(),
+        },
+
         _ => unknown(),
+    }
+}
+
+/// A short one-line rendering of arguments for an approval card.
+fn compact_json(value: &serde_json::Value, cap: usize) -> String {
+    let text = value.to_string();
+    if text.chars().count() <= cap {
+        text
+    } else {
+        let head: String = text.chars().take(cap).collect();
+        format!("{head}…")
     }
 }
 
@@ -518,14 +820,81 @@ async fn dispatch(
             chat::post_message(ctx, channel_id, body).await
         }
         ToolCall::ArtifactQuery { handle, op } => artifact::query(ctx, handle, op, args),
+        ToolCall::ArtifactEval { handle } => {
+            let script = args.get("script").and_then(|v| v.as_str()).unwrap_or("");
+            eval::eval(ctx, handle, script)
+        }
         ToolCall::HostExec { argv, cwd } => host::exec(ctx, argv, cwd).await,
         ToolCall::HostReadFile { path } => host::read_file(ctx, path).await,
         ToolCall::HostListDir { path } => host::list_dir(ctx, path).await,
         ToolCall::HostWriteFile { path, content } => host::write_file(ctx, path, content).await,
-        // Refused by the policy before it can reach here.
-        ToolCall::Mcp { .. } | ToolCall::Unknown { .. } => {
-            Err(Error::Other("이 도구는 실행할 수 없습니다.".into()))
+        ToolCall::HostScreenshot { display } => host::screenshot(ctx, *display).await,
+        ToolCall::HostClick { x, y, button } => host::click(ctx, *x, *y, button).await,
+        ToolCall::HostType { text } => host::type_text(ctx, text).await,
+        ToolCall::MemorySave { text } => {
+            let tags = args
+                .get("tags")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|item| item.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            memory::save(ctx, text, &tags)
         }
+        ToolCall::MemorySearch { query } => {
+            let limit = args
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10)
+                .clamp(1, 50) as u32;
+            memory::search(ctx, query, limit)
+        }
+        ToolCall::MemoryForget { id } => memory::forget(ctx, id),
+        ToolCall::SkillList => skill::list(ctx),
+        ToolCall::SkillRead { name } => skill::read(ctx, name),
+        ToolCall::Mcp {
+            server_id, tool, ..
+        } => {
+            let arguments = args
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| args.clone());
+            match ctx.mcp {
+                Some(invoker) => {
+                    let result = invoker.call(server_id, tool, &arguments).await?;
+                    let (text, is_error) = mcp::result_text(&result);
+                    // Large tool results become a handle, like a channel read;
+                    // small ones come back inline.
+                    let (handle, bytes) =
+                        ctx.store.store_text(ctx.session_id, "mcp_result", &text)?;
+                    let content = if bytes as usize <= crate::agent::store::INLINE_BYTE_LIMIT {
+                        serde_json::json!({ "result": text })
+                    } else {
+                        serde_json::json!({
+                            "bytes": bytes,
+                            "note": "결과가 커서 아티팩트로 저장했습니다. artifact.query 로 확인하세요.",
+                        })
+                    };
+                    Ok(ToolOutput {
+                        content,
+                        artifact: Some(handle),
+                        is_error,
+                    })
+                }
+                None => Ok(ToolOutput::error(
+                    "이 MCP 서버에 연결되어 있지 않습니다. 설정에서 다시 연결해주세요.",
+                )),
+            }
+        }
+        // The host loop runs delegation; if it reaches here the loop did not
+        // intercept it, which is a bug, so it is refused rather than ignored.
+        ToolCall::AgentDelegate => Ok(ToolOutput::error(
+            "agent.delegate 는 호스트 루프가 처리해야 합니다.",
+        )),
+        // Refused by the policy before it can reach here.
+        ToolCall::Unknown { .. } => Err(Error::Other("이 도구는 실행할 수 없습니다.".into())),
     }
 }
 
@@ -552,6 +921,8 @@ fn redact_args(call: &ToolCall) -> serde_json::Value {
         ToolCall::ArtifactQuery { handle, op } => {
             serde_json::json!({ "handle": handle, "op": op })
         }
+        ToolCall::ArtifactEval { handle } => serde_json::json!({ "handle": handle }),
+        ToolCall::AgentDelegate => serde_json::json!({}),
         ToolCall::HostExec { argv, cwd } => serde_json::json!({
             "argv": argv,
             "cwd": cwd.display().to_string(),
@@ -563,9 +934,31 @@ fn redact_args(call: &ToolCall) -> serde_json::Value {
             "path": path.display().to_string(),
             "bytes": content.len(),
         }),
-        ToolCall::Mcp { server, tool } => serde_json::json!({ "server": server, "tool": tool }),
+        // The note's text can carry secrets or attacker-planted instructions,
+        // so the log keeps its size, not its words — as with a written file.
+        ToolCall::MemorySave { text } => serde_json::json!({ "bytes": text.len() }),
+        // A search term is the model's own words, not a payload, and it explains
+        // why memory was read — kept, like a chat search.
+        ToolCall::MemorySearch { query } => serde_json::json!({ "query": query }),
+        ToolCall::MemoryForget { id } => serde_json::json!({ "id": id }),
+        ToolCall::SkillList => serde_json::json!({}),
+        ToolCall::SkillRead { name } => serde_json::json!({ "name": name }),
+        ToolCall::HostScreenshot { display } => serde_json::json!({ "display": display }),
+        ToolCall::HostClick { x, y, button } => {
+            serde_json::json!({ "x": x, "y": y, "button": button })
+        }
+        // Synthesised keystrokes can be a password; only the size is recorded.
+        ToolCall::HostType { text } => serde_json::json!({ "bytes": text.len() }),
+        ToolCall::Mcp {
+            server_id, tool, ..
+        } => serde_json::json!({ "server_id": server_id, "tool": tool }),
         ToolCall::Unknown { name } => serde_json::json!({ "name": name }),
     }
+}
+
+/// The three tools gated behind the `screen-control` feature.
+fn is_screen_tool(name: &str) -> bool {
+    matches!(name, "host.screenshot" | "host.click" | "host.type_text")
 }
 
 /// A schema shaped for `strict: true`: closed object, complete `required`.
@@ -601,6 +994,8 @@ pub(crate) mod testing {
         pub history: Mutex<Vec<ChatLine>>,
         pub exec_stdout: Mutex<String>,
         pub fail_next: Mutex<bool>,
+        pub clicks: Mutex<Vec<(i32, i32, String)>>,
+        pub typed: Mutex<Vec<String>>,
     }
 
     impl FakeHost {
@@ -666,6 +1061,24 @@ pub(crate) mod testing {
                 .push((channel_id.to_string(), body.to_string()));
             Ok("01POSTED".into())
         }
+
+        async fn screenshot(&self, _display: Option<u32>) -> Result<Screenshot> {
+            Ok(Screenshot {
+                png_b64: "iVBORw0KGgo=".into(),
+                image_b64: "/9j/4AAQSkZJRg==".into(),
+                mime: "image/jpeg".into(),
+            })
+        }
+
+        async fn click(&self, x: i32, y: i32, button: &str) -> Result<()> {
+            self.clicks.lock().push((x, y, button.to_string()));
+            Ok(())
+        }
+
+        async fn type_text(&self, text: &str) -> Result<()> {
+            self.typed.lock().push(text.to_string());
+            Ok(())
+        }
     }
 
     pub fn line(id: &str, author: &str, body: &str) -> ChatLine {
@@ -723,6 +1136,7 @@ mod tests {
     struct Harness {
         store: AgentStore,
         audit_dir: PathBuf,
+        skills_dir: PathBuf,
         audit: AuditLog,
         catalog: ToolCatalog,
         session_id: String,
@@ -752,9 +1166,17 @@ mod tests {
             None,
         )
         .unwrap();
+        let skills_dir = std::env::temp_dir().join(format!(
+            "llack-tool-skills-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         Harness {
             store,
             audit_dir,
+            skills_dir,
             audit,
             catalog: ToolCatalog::builtin(),
             session_id: session.id,
@@ -768,8 +1190,11 @@ mod tests {
                 session_id: &self.session_id,
                 store: &self.store,
                 host: self.host.as_ref(),
+                mcp: None,
                 workspace_id: Some("01WS"),
                 channel_id: Some("01CH"),
+                user_id: Some("01ALICE"),
+                skills_dir: Some(self.skills_dir.clone()),
             }
         }
 
@@ -802,6 +1227,7 @@ mod tests {
     impl Drop for Harness {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.audit_dir).ok();
+            std::fs::remove_dir_all(&self.skills_dir).ok();
         }
     }
 
@@ -1451,6 +1877,205 @@ mod tests {
             broker.granted_count(),
             0,
             "remembering an interpreter would remember every program it can run"
+        );
+    }
+
+    // ── Memory ──────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn saving_memory_in_a_clean_session_is_automatic_and_search_finds_it() {
+        let h = harness(Arc::new(FakeHost::default()));
+        let broker = ApprovalBroker::new(Arc::new(SilentNotifier));
+
+        let saved = h
+            .run(
+                &broker,
+                &session(),
+                "memory.save",
+                serde_json::json!({ "text": "앨리스는 다크 모드를 선호합니다", "tags": ["선호"] }),
+            )
+            .await;
+        assert_eq!(saved.verdict, Verdict::Auto, "a clean save does not ask");
+        assert!(!saved.output.is_error);
+
+        let found = h
+            .run(
+                &broker,
+                &session(),
+                "memory.search",
+                serde_json::json!({ "query": "다크" }),
+            )
+            .await;
+        assert_eq!(found.output.content["count"], 1);
+        assert!(!found.taints, "reading one's own memory must not taint");
+    }
+
+    #[tokio::test]
+    async fn saving_memory_from_a_tainted_session_asks_first() {
+        let h = harness(Arc::new(FakeHost::default()));
+        let answer = AutoAnswer::new(true);
+        let broker = Arc::new(ApprovalBroker::new(answer.clone()));
+        *answer.broker.lock() = Some(broker.clone());
+
+        let dirty = SessionContext {
+            tainted: true,
+            ..session()
+        };
+        let saved = h
+            .run(
+                &broker,
+                &dirty,
+                "memory.save",
+                serde_json::json!({ "text": "채널에서 읽은 무언가" }),
+            )
+            .await;
+        assert_eq!(saved.verdict, Verdict::Approved);
+        assert_eq!(answer.seen.lock().len(), 1, "a tainted save must ask");
+        assert_eq!(answer.seen.lock()[0].risk, crate::agent::policy::Risk::High);
+    }
+
+    #[tokio::test]
+    async fn the_audit_log_keeps_a_memory_size_not_its_words() {
+        let h = harness(Arc::new(FakeHost::default()));
+        let broker = ApprovalBroker::new(Arc::new(SilentNotifier));
+        h.run(
+            &broker,
+            &session(),
+            "memory.save",
+            serde_json::json!({ "text": "내부 비밀 프로젝트 코드명" }),
+        )
+        .await;
+        let raw = std::fs::read_to_string(
+            std::fs::read_dir(&h.audit_dir)
+                .unwrap()
+                .next()
+                .unwrap()
+                .unwrap()
+                .path(),
+        )
+        .unwrap();
+        assert!(
+            !raw.contains("내부 비밀"),
+            "the note itself must not be logged"
+        );
+        assert!(raw.contains("bytes"));
+    }
+
+    // ── Skills ──────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn listing_and_reading_skills_is_automatic() {
+        let h = harness(Arc::new(FakeHost::default()));
+        crate::agent::skills::save(&h.skills_dir, "release", "# 릴리스\n분기 배포 절차\n본문")
+            .unwrap();
+        let broker = ApprovalBroker::new(Arc::new(SilentNotifier));
+
+        let listed = h
+            .run(&broker, &session(), "skill.list", serde_json::json!({}))
+            .await;
+        assert_eq!(listed.verdict, Verdict::Auto);
+        let skills = listed.output.content["skills"].as_array().unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0]["title"], "릴리스");
+
+        let read = h
+            .run(
+                &broker,
+                &session(),
+                "skill.read",
+                serde_json::json!({ "name": "release" }),
+            )
+            .await;
+        assert!(read.output.content["body"]
+            .as_str()
+            .unwrap()
+            .contains("분기 배포 절차"));
+    }
+
+    // ── Screen control: gated by feature and class 3 ────────────────────
+
+    #[test]
+    fn screen_tools_appear_only_when_the_feature_is_on() {
+        let caps_off = HostCapabilities::desktop();
+        let off: Vec<String> = ToolCatalog::builtin()
+            .expose(caps_off)
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert!(
+            !off.iter().any(|n| is_screen_tool(n)),
+            "screen tools must be hidden without the feature: {off:?}"
+        );
+
+        let caps_on = HostCapabilities {
+            screen_control: true,
+            ..HostCapabilities::desktop()
+        };
+        let on: Vec<String> = ToolCatalog::builtin()
+            .expose(caps_on)
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert!(on.iter().any(|n| n == "host.screenshot"));
+        assert!(on.iter().any(|n| n == "host.click"));
+        assert!(on.iter().any(|n| n == "host.type_text"));
+    }
+
+    #[tokio::test]
+    async fn an_approved_screenshot_returns_an_inline_image_and_stores_the_png() {
+        let host = Arc::new(FakeHost::default());
+        let h = harness(host);
+        let answer = AutoAnswer::new(true);
+        let broker = Arc::new(ApprovalBroker::new(answer.clone()));
+        *answer.broker.lock() = Some(broker.clone());
+
+        let outcome = h
+            .run(
+                &broker,
+                &session(),
+                "host.screenshot",
+                serde_json::json!({}),
+            )
+            .await;
+        assert!(!outcome.output.is_error);
+        assert_eq!(answer.seen.lock().len(), 1, "a screenshot must ask");
+        assert!(outcome.output.content["image_b64"].is_string());
+        let handle = outcome.output.artifact.expect("the PNG must be stored");
+        assert!(h.store.artifact(&handle).unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn clicking_and_typing_are_class_three_and_reach_the_host_once_allowed() {
+        let host = Arc::new(FakeHost::default());
+        let h = harness(host.clone());
+        let answer = AutoAnswer::new(true);
+        let broker = Arc::new(ApprovalBroker::new(answer.clone()));
+        *answer.broker.lock() = Some(broker.clone());
+
+        h.run(
+            &broker,
+            &session(),
+            "host.click",
+            serde_json::json!({ "x": 10, "y": 20, "button": "left" }),
+        )
+        .await;
+        h.run(
+            &broker,
+            &session(),
+            "host.type_text",
+            serde_json::json!({ "text": "hi" }),
+        )
+        .await;
+
+        assert_eq!(host.clicks.lock()[0], (10, 20, "left".to_string()));
+        assert_eq!(host.typed.lock()[0], "hi");
+        assert!(
+            answer
+                .seen
+                .lock()
+                .iter()
+                .all(|r| r.risk == crate::agent::policy::Risk::High),
+            "input synthesis is always class 3"
         );
     }
 }

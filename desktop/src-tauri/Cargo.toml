@@ -40,6 +40,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 url.workspace = true
 
+# Screen capture and input synthesis, compiled in only under the
+# `screen-control` feature. Optional so a normal build carries neither the code
+# nor these crates, and the three host tools are absent from the catalog.
+xcap = { version = "0.0.14", optional = true }
+enigo = { version = "0.2", optional = true }
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# Off by default: turning it on lets the agent see the screen and drive the
+# mouse and keyboard. High-blast-radius, so it is a deliberate build choice.
+screen-control = ["dep:xcap", "dep:enigo", "dep:image"]

@@ -73,6 +73,56 @@ pub(super) fn specs() -> Vec<ToolSpec> {
             ),
             source: ToolSource::Builtin,
         },
+        ToolSpec {
+            name: "host.screenshot".into(),
+            description: "현재 화면을 캡처합니다. 다른 앱 창까지 모두 담기므로 승인을 \
+                          받습니다. 원본 PNG 는 아티팩트로 저장하고, 축소한 이미지를 \
+                          모델에게 함께 돌려줍니다."
+                .into(),
+            input_schema: schema(
+                serde_json::json!({
+                    "display": {
+                        "type": "integer",
+                        "description": "캡처할 디스플레이 번호 (생략 시 기본 화면)",
+                        "minimum": 0,
+                    },
+                }),
+                &[],
+            ),
+            source: ToolSource::Builtin,
+        },
+        ToolSpec {
+            name: "host.click".into(),
+            description: "화면의 한 지점을 클릭합니다. 지금 포커스된 창에 그대로 \
+                          입력되므로 매번 승인을 받습니다."
+                .into(),
+            input_schema: schema(
+                serde_json::json!({
+                    "x": { "type": "integer", "description": "화면 X 좌표" },
+                    "y": { "type": "integer", "description": "화면 Y 좌표" },
+                    "button": {
+                        "type": "string",
+                        "description": "left · right · middle (기본 left)",
+                        "enum": ["left", "right", "middle"],
+                    },
+                }),
+                &["x", "y"],
+            ),
+            source: ToolSource::Builtin,
+        },
+        ToolSpec {
+            name: "host.type_text".into(),
+            description: "키보드 입력을 흉내 내 글자를 칩니다. 포커스된 어떤 입력란에도 \
+                          들어갈 수 있으므로 매번 승인을 받습니다."
+                .into(),
+            input_schema: schema(
+                serde_json::json!({
+                    "text": { "type": "string", "description": "입력할 텍스트" },
+                }),
+                &["text"],
+            ),
+            source: ToolSource::Builtin,
+        },
     ]
 }
 
@@ -143,5 +193,44 @@ pub(super) async fn list_dir(ctx: &ToolContext<'_>, path: &Path) -> Result<ToolO
     Ok(ToolOutput::ok(serde_json::json!({
         "path": path.display().to_string(),
         "entries": names,
+    })))
+}
+
+pub(super) async fn screenshot(ctx: &ToolContext<'_>, display: Option<u32>) -> Result<ToolOutput> {
+    let shot = ctx.host.screenshot(display).await?;
+    // The full PNG is large, so it lands in the artifact store like a build log;
+    // the model gets the downscaled image inline so it can actually look.
+    let (_artifact, preview) = ctx.store.put_artifact(
+        ctx.session_id,
+        "screenshot",
+        &shot.png_b64,
+        serde_json::json!({ "display": display, "encoding": "base64", "mime": "image/png" }),
+    )?;
+    Ok(ToolOutput::with_artifact(
+        serde_json::json!({
+            "image_b64": shot.image_b64,
+            "mime": shot.mime,
+            "note": "원본 PNG 는 아티팩트로 저장했습니다.",
+        }),
+        preview.handle,
+    ))
+}
+
+pub(super) async fn click(
+    ctx: &ToolContext<'_>,
+    x: i32,
+    y: i32,
+    button: &str,
+) -> Result<ToolOutput> {
+    ctx.host.click(x, y, button).await?;
+    Ok(ToolOutput::ok(serde_json::json!({
+        "clicked": { "x": x, "y": y, "button": button },
+    })))
+}
+
+pub(super) async fn type_text(ctx: &ToolContext<'_>, text: &str) -> Result<ToolOutput> {
+    ctx.host.type_text(text).await?;
+    Ok(ToolOutput::ok(serde_json::json!({
+        "typed_chars": text.chars().count(),
     })))
 }

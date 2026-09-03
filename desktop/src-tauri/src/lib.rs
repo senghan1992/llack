@@ -63,7 +63,13 @@ pub fn run() {
                 home_dir(),
                 tokens,
                 Arc::new(agent_commands::PanelNotifier::new(app.handle().clone())),
-                llack_core::agent::HostCapabilities::desktop(),
+                llack_core::agent::HostCapabilities {
+                    // Screen capture and input synthesis are compiled in only
+                    // when the `screen-control` feature is on; without it the
+                    // three tools are absent from the catalog entirely.
+                    screen_control: cfg!(feature = "screen-control"),
+                    ..llack_core::agent::HostCapabilities::desktop()
+                },
             ) {
                 Ok(engine) => state.install_agent(Arc::new(engine)),
                 Err(error) => {
@@ -243,6 +249,22 @@ pub fn run() {
             agent_commands::agent_cancel,
             agent_commands::agent_pick_root,
             agent_commands::agent_verify_audit,
+            agent_commands::agent_mcp_list,
+            agent_commands::agent_mcp_add,
+            agent_commands::agent_mcp_remove,
+            agent_commands::agent_mcp_set_enabled,
+            agent_commands::agent_mcp_tools,
+            agent_commands::agent_mcp_refresh,
+            agent_commands::agent_artifact_put,
+            agent_commands::agent_memories_list,
+            agent_commands::agent_memory_add,
+            agent_commands::agent_memory_delete,
+            agent_commands::agent_skills_list,
+            agent_commands::agent_skill_read,
+            agent_commands::agent_skill_save,
+            agent_commands::agent_skill_delete,
+            agent_commands::agent_native_dialogs,
+            agent_commands::agent_audit_entries,
         ])
         .run(tauri::generate_context!())
         .expect("could not start Llack");

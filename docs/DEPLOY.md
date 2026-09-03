@@ -115,6 +115,13 @@ llack.example.com {
   (`POST /files/{id}/media-token`)이 있어 녹화 파일을 앱 안에서 바로 재생·탐색합니다.
 - **부하 테스트**: `backend/scripts/loadtest.py --api https://주소 --users 20 --messages 50`
   — 스테이징에서 p50/p95/오류율을 봅니다. 노트북 SQLite 숫자는 의미가 없습니다.
+- **메시지 파티션 (Postgres)**: `messages` 는 월별로 나뉘어 저장됩니다(`messages_y2026m09` …,
+  ULID 앞자리가 시간이라 기본키가 곧 파티션 키). `partition_maintenance` 작업자가 매일 두 달치
+  파티션을 미리 만들고, 서버 부팅 때도 한 번 확인합니다. 오래된 달을 통째로 지우려면
+  `DROP TABLE messages_y2024m01;` 한 줄 — 보관 정책의 즉시 실행 대안입니다(첨부 파일은 보관
+  정책 작업자가 정리합니다). 현황은 `GET /api/v1/admin/partitions`(서비스 관리자). `messages_default`
+  에 행이 있으면 작업자가 한 달 이상 멈췄다는 뜻이고, 다음 실행이 알맞은 파티션으로 옮겨 줍니다.
+  SQLite 개발 DB 에는 파티션이 없습니다.
 - **백업**: `postgres-data`, `minio-data` 볼륨 두 개가 상태의 전부입니다.
   `pg_dump` + 버킷 동기화를 cron 에 걸어두세요.
 - **로그**: `docker compose logs api` — 요청당 한 줄(JSON), 요청 id 포함.

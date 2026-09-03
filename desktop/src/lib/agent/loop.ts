@@ -32,6 +32,87 @@ import { agentHost } from "@/lib/ipc";
 import { useAgent } from "@/store/agent";
 
 import type { ProviderAdapter } from "./anthropic";
+import { runDelegate } from "./delegate";
+
+/**
+ * Run one tool call and mirror it into the store, returning the JSON string
+ * the model gets back. Shared by both provider loops (the Anthropic SDK
+ * runner wraps it in `runnable`, the OpenAI loop calls it directly) and by
+ * `agent.delegate`, so a sub-agent's tools show up as cards too.
+ *
+ * `agent.delegate` is intercepted here rather than sent to Rust: the gate has
+ * no model connection, so the nested turn has to run in this loop. Every tool
+ * the sub-agent then calls still goes through `agent_tool_call` — this only
+ * decides *who runs the turn*, not what is allowed.
+ */
+export async function executeTool(
+  spec: AgentToolSpec,
+  sessionId: string,
+  turnId: string,
+  args: unknown,
+  runId: string,
+  allTools?: AgentToolSpec[],
+): Promise<string> {
+  const store = useAgent.getState();
+  store.startToolRun(turnId, {
+    id: runId,
+    name: spec.name,
+    args: (args ?? {}) as Record<string, unknown>,
+    state: "running",
+    artifact: null,
+    summary: null,
+  });
+
+  if (spec.name === "agent.delegate") {
+    const outcome = await runDelegate(sessionId, allTools ?? [], args);
+    store.finishToolRun(turnId, runId, {
+      state: outcome.isError ? "error" : "ok",
+      artifact: outcome.artifact,
+      summary: outcome.isError
+        ? String((outcome.content as { error?: string }).error ?? "실패")
+        : `하위 작업 완료${outcome.artifact ? " · 저장됨" : ""}`,
+    });
+    return JSON.stringify(outcome.content);
+  }
+
+  let result: AgentToolResult;
+  try {
+    result = await agentHost.agentToolCall(sessionId, spec.name, args);
+  } catch (error) {
+    const envelope = asCommandError(error);
+    store.finishToolRun(turnId, runId, {
+      state: stateFor(envelope.code),
+      summary: envelope.message,
+    });
+    return JSON.stringify({ error: envelope.message });
+  }
+
+  if (result.taints) store.markTainted();
+  store.finishToolRun(turnId, runId, {
+    state: stateFromVerdict(result.verdict, result.is_error),
+    artifact: result.artifact,
+    summary: summarise(result),
+    ...(extractImage(result.content) ? { image: extractImage(result.content) } : {}),
+  });
+
+  if (spec.name === "chat.post_message" && !result.is_error) {
+    const channelId = (args as { channel_id?: string } | null)?.channel_id;
+    if (channelId) store.notePostedMessage(channelId);
+  }
+  return JSON.stringify(result.content);
+}
+
+/** A screenshot tool returns `{ image_b64, mime }`; surface it in the card. */
+function extractImage(content: unknown): string | null {
+  if (content && typeof content === "object") {
+    const record = content as Record<string, unknown>;
+    if (typeof record.image_b64 === "string") {
+      const mime = typeof record.mime === "string" ? record.mime : "image/jpeg";
+      return `data:${mime};base64,${record.image_b64}`;
+    }
+  }
+  return null;
+}
 
 /**
  * Wrap one Rust tool as a runnable the SDK can call.
@@ -46,6 +127,7 @@ function runnable(
   spec: AgentToolSpec,
   sessionId: string,
   turnId: string,
+  allTools: AgentToolSpec[],
 ): BetaRunnableTool {
   return {
     name: spec.name,
@@ -53,54 +135,10 @@ function runnable(
     input_schema: spec.input_schema as BetaTool["input_schema"],
     parse: (input: unknown) => input,
     run: async (args: unknown, context) => {
-      const store = useAgent.getState();
       const runId =
         (context?.toolUse as { id?: string } | undefined)?.id ??
         `${turnId}-${spec.name}-${Date.now()}`;
-
-      store.startToolRun(turnId, {
-        id: runId,
-        name: spec.name,
-        args: (args ?? {}) as Record<string, unknown>,
-        state: "running",
-        artifact: null,
-        summary: null,
-      });
-
-      let result: AgentToolResult;
-      try {
-        result = await agentHost.agentToolCall(sessionId, spec.name, args);
-      } catch (error) {
-        // A rejected command means the call did not reach the gate at all —
-        // no session, no agent, a malformed argument. It becomes a tool
-        // *result* so the model is told and the turn survives.
-        const envelope = asCommandError(error);
-        store.finishToolRun(turnId, runId, {
-          state: stateFor(envelope.code),
-          summary: envelope.message,
-        });
-        return JSON.stringify({ error: envelope.message });
-      }
-
-      if (result.taints) store.markTainted();
-
-      store.finishToolRun(turnId, runId, {
-        // The verdict, not `is_error`. A call the user declined is not a
-        // failure, and painting it as one reads as the agent being broken
-        // rather than as it doing what it was told.
-        state: stateFromVerdict(result.verdict, result.is_error),
-        artifact: result.artifact,
-        summary: summarise(result),
-      });
-
-      // A successful `chat.post_message` is the one thing an agent turn can do
-      // that the transcript beside it must notice.
-      if (spec.name === "chat.post_message" && !result.is_error) {
-        const channelId = (args as { channel_id?: string } | null)?.channel_id;
-        if (channelId) store.notePostedMessage(channelId);
-      }
-
-      return JSON.stringify(result.content);
+      return executeTool(spec, sessionId, turnId, args, runId, allTools);
     },
   };
 }
@@ -159,6 +197,8 @@ export interface RunTurnOptions {
   messages: Anthropic.Beta.Messages.BetaMessageParam[];
   tools: AgentToolSpec[];
   signal: AbortSignal;
+  /** The assembled system prompt (skills + memories); defaults inside the adapter. */
+  system?: string;
 }
 
 /**
@@ -179,7 +219,8 @@ export async function runTurn(
   const runner = adapter.client.beta.messages.toolRunner(
     adapter.turnParams(
       messages,
-      tools.map((spec) => runnable(spec, sessionId, turnId)),
+      tools.map((spec) => runnable(spec, sessionId, turnId, tools)),
+      options.system,
     ),
     { signal },
   );
