@@ -1,0 +1,84 @@
+name: 릴리스 (Windows)
+
+# Windows 데스크톱 설치본(.msi · .exe)만 굽는 워크플로입니다.
+#
+# 왜 Windows 만인가: GitHub Actions 무료 한도는 러너 OS 별로 다르게 깎입니다
+# (프라이빗 저장소 기준 Linux ×1 · Windows ×2 · macOS ×10). macOS 를 빼면
+# Free 계정 한도(월 2,000분) 안에서 넉넉히 돕니다 — 한 번 빌드에 ~20분(×2)이라
+# 월 50회 릴리스까지 무료입니다. macOS/Linux 설치본이 필요해지면 matrix 에
+# 러너를 추가하면 되지만, 그 순간부터 무료 분이 빠르게 닳는 점을 압니다.
+#
+# 트리거 두 가지:
+#   · 수동(Actions 탭의 "Run workflow") — 설치본을 아티팩트로 받아 그냥 눌러보고 싶을 때.
+#   · 태그 푸시 `v*` (예: `git tag v0.1.0 && git push --tags`) — 같은 설치본을
+#     GitHub Release(초안)에 첨부합니다.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+# 태그 푸시일 때 릴리스를 만들려면 쓰기 권한이 필요합니다. 수동 실행에서는
+# 릴리스 단계를 건너뛰므로 이 권한이 쓰이지 않습니다.
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows 설치본 빌드
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # 컴파일이 느린 부분(llack-core + tauri 크레이트)을 캐시해 재실행을
+      # 몇 분 단위로 줄입니다 — 무료 분을 아끼는 가장 큰 레버입니다.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - name: 프론트 의존성 설치
+        working-directory: desktop
+        run: npm ci
+
+      # beforeBuildCommand(`npm run build` = tsc + vite)가 프론트 번들을 만들고,
+      # 그 뒤 tauri 가 셸을 컴파일해 Windows 인스톨러 두 종을 굽습니다.
+      #   · msi  — 기업 배포(그룹 정책·자동 설치)에 적합
+      #   · nsis — 개인 사용자용 setup.exe
+      - name: Tauri 빌드 (MSI + NSIS)
+        working-directory: desktop
+        run: npm run tauri build -- --bundles nsis,msi
+
+      # 어떤 트리거로 돌든 다운로드 가능한 아티팩트를 남깁니다. 수동 실행에서는
+      # 이것이 결과물을 받는 유일한 경로입니다(만료 30일).
+      - name: 설치본 업로드 (아티팩트)
+        uses: actions/upload-artifact@v4
+        with:
+          name: llack-windows
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+
+      # 태그 푸시일 때만 릴리스(초안)에 같은 파일을 첨부합니다. 초안이라
+      # 사람이 내용을 확인하고 손수 게시(Publish)해야 공개됩니다.
+      - name: 릴리스에 첨부 (태그 푸시일 때만)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Llack ${{ github.ref_name }}
+          files: |
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
