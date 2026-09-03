@@ -1359,14 +1359,10 @@ fn update_badge(app: &AppHandle, state: &Arc<AppState>, workspace_id: &str) {
     let _ = app.emit("llack://badge", serde_json::json!({ "count": total }));
 
     if let Some(window) = app.get_webview_window("main") {
-        let label = if total > 0 {
-            Some(total.to_string())
-        } else {
-            None
-        };
+        let count = if total > 0 { Some(total as i64) } else { None };
         // Not every platform supports a badge; ignore failures rather than
         // surfacing an error the user cannot act on.
-        let _ = window.set_badge_label(label);
+        let _ = window.set_badge_count(count);
     }
 }
 

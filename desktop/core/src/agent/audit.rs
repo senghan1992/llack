@@ -365,7 +365,7 @@ impl AuditLog {
 }
 
 /// What a verification pass concluded.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct VerifyReport {
     pub records: u64,
     /// The sequence number of the first record whose `prev` did not match, if

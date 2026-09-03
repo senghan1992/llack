@@ -937,8 +937,6 @@ impl ApiClient {
         .await
     }
 
-    /// Register and pin an external web app from a bare URL. The server
-    /// derives the manifest; the caller supplies only what a person typed.
     // ── 운영·사용성·앱 플랫폼 (untyped: the UI owns these shapes) ──────────
 
     pub async fn list_audit(

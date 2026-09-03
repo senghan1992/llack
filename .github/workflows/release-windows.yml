@@ -14,6 +14,11 @@ name: 릴리스 (Windows)
 #     GitHub Release(초안)에 첨부합니다.
 on:
   workflow_dispatch:
+    inputs:
+      server_url:
+        description: "설치본이 기본으로 접속할 백엔드 주소 (예: https://llack.내회사.com). 비우면 로그인 화면에서 사용자가 직접 입력합니다."
+        required: false
+        default: ""
   push:
     tags: ["v*"]
 
@@ -31,9 +36,11 @@ jobs:
     name: Windows 설치본 빌드
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      # v5 runs on the Node 24 action runtime; v4 targets the now-deprecated
+      # Node 20 and prints a deprecation warning on every run.
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -57,6 +64,14 @@ jobs:
       #   · nsis — 개인 사용자용 setup.exe
       - name: Tauri 빌드 (MSI + NSIS)
         working-directory: desktop
+        # 설치본이 기본으로 접속할 백엔드 주소를 컴파일 시점에 굽습니다
+        # (src-tauri/src/lib.rs 의 `LLACK_DEFAULT_SERVER_URL`). 우선순위:
+        # 수동 실행 입력 → 저장소 변수 `LLACK_DEFAULT_SERVER_URL`. 둘 다 비면
+        # 앱은 로그인 화면에서 사용자가 주소를 직접 넣도록 둡니다(빈 값은
+        # lib.rs 에서 무시하고 localhost 로 폴백). 사용자는 로그인 화면에서
+        # 언제든 이 기본값을 덮어쓸 수 있습니다.
+        env:
+          LLACK_DEFAULT_SERVER_URL: ${{ github.event.inputs.server_url || vars.LLACK_DEFAULT_SERVER_URL }}
         run: npm run tauri build -- --bundles nsis,msi
 
       # 어떤 트리거로 돌든 다운로드 가능한 아티팩트를 남깁니다. 수동 실행에서는

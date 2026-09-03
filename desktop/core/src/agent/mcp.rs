@@ -273,8 +273,10 @@ enum Inner {
     Stdio {
         /// The child and both pipes behind one lock: a JSON-RPC request and
         /// its response are one exchange, and interleaving two would hand
-        /// one caller the other's answer.
-        io: Mutex<StdioIo>,
+        /// one caller the other's answer. Boxed so this variant does not make
+        /// every `Inner` (usually the small `Http` one) as large as a child
+        /// process handle plus two pipe buffers.
+        io: Box<Mutex<StdioIo>>,
     },
 }
 
@@ -337,11 +339,11 @@ impl McpClient {
                     .take()
                     .ok_or_else(|| Error::Other("stdout 을 열 수 없습니다.".into()))?;
                 Inner::Stdio {
-                    io: Mutex::new(StdioIo {
+                    io: Box::new(Mutex::new(StdioIo {
                         child,
                         stdin,
                         stdout: BufReader::new(stdout),
-                    }),
+                    })),
                 }
             }
         };

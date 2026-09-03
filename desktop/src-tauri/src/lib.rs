@@ -21,8 +21,11 @@ use crate::state::AppState;
 /// The default server, overridable at runtime by the user and at build time by
 /// an integrator shipping a pre-configured binary to their company.
 const DEFAULT_SERVER_URL: &str = match option_env!("LLACK_DEFAULT_SERVER_URL") {
-    Some(url) => url,
-    None => "http://localhost:8000",
+    // An empty value is treated as absent: CI passes the variable through
+    // unconditionally, so `LLACK_DEFAULT_SERVER_URL=` must not bake in a blank
+    // default that the sign-in screen would then show as the server.
+    Some(url) if !url.is_empty() => url,
+    _ => "http://localhost:8000",
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
