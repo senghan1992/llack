@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { demoUser, isDemoBuild } from "@/lib/demo";
+import { api } from "@/lib/ipc";
 import { pendingInviteToken } from "@/lib/invite";
 import { useApp } from "@/store/app";
 
@@ -11,7 +12,10 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
   const signUp = useApp((state) => state.signUp);
   const reportError = useApp((state) => state.reportError);
 
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
+  // The forgot flow has two steps: ask for a code, then redeem it.
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState("");
   const [server, setServer] = useState(serverUrl || defaultServerUrl);
   /*
    * The demo build prefills and accepts anything.
@@ -27,9 +31,12 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
   const [busy, setBusy] = useState(false);
 
   const canSubmit =
-    email.trim().length > 0 &&
-    password.length > 0 &&
-    (mode === "signin" || displayName.trim().length > 0);
+    mode === "forgot"
+      ? email.trim().length > 0 &&
+        (!codeSent || (code.trim().length >= 4 && password.length >= 10))
+      : email.trim().length > 0 &&
+        password.length > 0 &&
+        (mode === "signin" || displayName.trim().length > 0);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -38,6 +45,32 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
       // Re-point at the server first: the user may have edited the address.
       if (server.trim() !== serverUrl) {
         await bootstrap(server.trim());
+      }
+      if (mode === "forgot") {
+        if (!codeSent) {
+          await api.forgotPassword(email.trim());
+          setCodeSent(true);
+          useApp.setState({
+            banner: {
+              kind: "info",
+              message:
+                "가입된 이메일이라면 재설정 코드를 보냈습니다. 받은 편지함을 확인해주세요.",
+            },
+          });
+        } else {
+          await api.resetPassword(email.trim(), code.trim(), password);
+          setMode("signin");
+          setCodeSent(false);
+          setCode("");
+          setPassword("");
+          useApp.setState({
+            banner: {
+              kind: "info",
+              message: "비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요.",
+            },
+          });
+        }
+        return;
       }
       if (mode === "signin") {
         await signIn(email.trim(), password);
@@ -59,6 +92,7 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
         invite_used: "이 초대 링크는 이미 사용되었습니다.",
         invite_expired: "초대 링크가 만료되었거나 회수되었습니다.",
         invite_invalid: "초대 링크가 올바르지 않습니다.",
+        reset_code_invalid: "코드가 올바르지 않거나 만료되었습니다. 코드를 다시 요청해주세요.",
       };
       const message = translations[parsed.code];
       if (message) {
@@ -129,20 +163,41 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
           />
         </label>
 
-        <label>
-          비밀번호
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-            required
-            minLength={mode === "signup" ? 10 : 1}
-          />
-          {mode === "signup" ? (
-            <small>10자 이상으로 설정해주세요.</small>
-          ) : null}
-        </label>
+        {mode === "forgot" && codeSent ? (
+          <label>
+            재설정 코드 (이메일로 받은 6자리)
+            <input
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              inputMode="numeric"
+              placeholder="123456"
+              autoComplete="one-time-code"
+              maxLength={12}
+              required
+            />
+          </label>
+        ) : null}
+
+        {mode !== "forgot" || codeSent ? (
+          <label>
+            {mode === "forgot" || mode === "signup" ? (
+              mode === "forgot" ? "새 비밀번호" : "비밀번호"
+            ) : (
+              "비밀번호"
+            )}
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              required
+              minLength={mode === "signin" ? 1 : 10}
+            />
+            {mode !== "signin" ? (
+              <small>10자 이상으로 설정해주세요.</small>
+            ) : null}
+          </label>
+        ) : null}
 
         {/*
           Disabled until the form can actually be submitted.
@@ -158,16 +213,50 @@ export function SignIn({ defaultServerUrl }: { defaultServerUrl: string }) {
           className="signin-submit"
           disabled={busy || !canSubmit}
         >
-          {busy ? "잠시만요…" : mode === "signin" ? "로그인" : "계정 만들기"}
+          {busy
+            ? "잠시만요…"
+            : mode === "signin"
+              ? "로그인"
+              : mode === "signup"
+                ? "계정 만들기"
+                : codeSent
+                  ? "비밀번호 재설정"
+                  : "재설정 코드 보내기"}
         </button>
 
         <button
           type="button"
           className="signin-switch"
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+          onClick={() => {
+            setCodeSent(false);
+            setCode("");
+            setMode(mode === "signin" ? "signup" : "signin");
+          }}
         >
           {mode === "signin" ? "계정이 없으신가요? 만들기" : "이미 계정이 있습니다"}
         </button>
+
+        {mode === "signin" && !demo ? (
+          <button
+            type="button"
+            className="signin-switch"
+            onClick={() => {
+              setMode("forgot");
+              setCodeSent(false);
+              setCode("");
+              setPassword("");
+            }}
+          >
+            비밀번호를 잊으셨나요?
+          </button>
+        ) : null}
+
+        {mode === "forgot" ? (
+          <p className="signin-demo">
+            가입한 이메일로 6자리 코드를 보내드립니다. 코드는 15분 동안
+            유효합니다.{codeSent ? " 메일이 오지 않으면 관리자에게 임시 비밀번호 발급을 요청할 수도 있습니다." : ""}
+          </p>
+        ) : null}
       </form>
     </div>
   );

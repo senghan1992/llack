@@ -48,6 +48,17 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-2"
     max_upload_bytes: int = 104_857_600  # 100 MiB
 
+    # ── Mail ────────────────────────────────────────────────────────────
+    # Empty host = console backend: the mail body is logged instead of sent.
+    # Fine for dev; in production set the SMTP relay so reset codes actually
+    # reach people.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    mail_from: str = "llack@localhost"
+
     # ── Sign-up policy ──────────────────────────────────────────────────
     # True locks /auth/register behind a valid invite token — the production
     # posture for custom email/password auth until SSO lands. False (the dev
@@ -62,6 +73,7 @@ class Settings(BaseSettings):
     rate_limit_register_per_hour: int = 30       # per IP
     rate_limit_messages_per_10s: int = 30        # per user
     rate_limit_search_per_minute: int = 60       # per user
+    rate_limit_forgot_per_hour: int = 5          # per email+IP (reset mails/redeems)
 
     # ── Realtime ────────────────────────────────────────────────────────
     ws_heartbeat_seconds: int = 25

@@ -14,9 +14,11 @@ from app.core.security import decode_access_token
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     SessionOut,
     TokenPair,
 )
@@ -96,6 +98,45 @@ async def login(
     )
     await db.commit()
     return AuthResponse(user=UserOut.model_validate(user), tokens=tokens)
+
+
+@router.post("/forgot-password", response_model=OkResponse)
+async def forgot_password(
+    payload: ForgotPasswordRequest, db: DbSession, ip: ClientIp
+) -> OkResponse:
+    """Mail a reset code to the address — and say the same thing either way.
+
+    The response never reveals whether an account exists; that answer is
+    worth more to an attacker enumerating emails than to the person who just
+    mistyped theirs.
+    """
+    limiter.check(
+        "forgot",
+        f"{payload.email.lower()}|{ip or '-'}",
+        capacity=settings.rate_limit_forgot_per_hour,
+        per_seconds=3_600,
+    )
+    await auth_service.issue_password_reset(db, email=payload.email)
+    await db.commit()
+    return OkResponse()
+
+
+@router.post("/reset-password", response_model=OkResponse)
+async def reset_password(
+    payload: ResetPasswordRequest, db: DbSession, ip: ClientIp
+) -> OkResponse:
+    """Redeem a mailed code for a new password. Every session is revoked."""
+    limiter.check(
+        "forgot",
+        f"{payload.email.lower()}|{ip or '-'}",
+        capacity=settings.rate_limit_forgot_per_hour,
+        per_seconds=3_600,
+    )
+    await auth_service.redeem_password_reset(
+        db, email=payload.email, code=payload.code, new_password=payload.new_password
+    )
+    await db.commit()
+    return OkResponse()
 
 
 @router.post("/refresh", response_model=TokenPair)

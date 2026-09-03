@@ -285,6 +285,35 @@ impl ApiClient {
         self.send(Method::PUT, "/me/status", Some(&patch)).await
     }
 
+    /// Ask the server to mail a reset code. Public; the response is the same
+    /// whether or not the account exists.
+    pub async fn forgot_password(&self, email: &str) -> Result<()> {
+        let payload = serde_json::json!({ "email": email });
+        self.send_public::<_, serde_json::Value>(
+            Method::POST,
+            "/auth/forgot-password",
+            Some(&payload),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Redeem a mailed code for a new password. Public.
+    pub async fn reset_password(&self, email: &str, code: &str, new_password: &str) -> Result<()> {
+        let payload = serde_json::json!({
+            "email": email,
+            "code": code,
+            "new_password": new_password,
+        });
+        self.send_public::<_, serde_json::Value>(
+            Method::POST,
+            "/auth/reset-password",
+            Some(&payload),
+        )
+        .await
+        .map(|_| ())
+    }
+
     pub async fn change_password(&self, current: &str, new_password: &str) -> Result<()> {
         let payload = serde_json::json!({
             "current_password": current,

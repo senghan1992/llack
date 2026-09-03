@@ -94,6 +94,12 @@ const tauriApi = {
   changePassword: (currentPassword: string, newPassword: string) =>
     call<void>("change_password", { currentPassword, newPassword }),
 
+  /** Mail a reset code. Public; the same answer whether the account exists. */
+  forgotPassword: (email: string) => call<void>("forgot_password", { email }),
+
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    call<void>("reset_password", { email, code, newPassword }),
+
   /** Issue workspace invitations (admin). URLs are shown once. */
   createInvites: (workspaceId: Id, emails: string[], role = "member") =>
     call<InviteOut[]>("create_invites", { workspaceId, emails, role }),

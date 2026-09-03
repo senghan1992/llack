@@ -66,3 +66,13 @@ class SessionOut(Schema):
 class ChangePasswordRequest(Payload):
     current_password: str = Field(min_length=1, max_length=256)
     new_password: str = Field(min_length=10, max_length=256)
+
+
+class ForgotPasswordRequest(Payload):
+    email: EmailStr
+
+
+class ResetPasswordRequest(Payload):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=12)
+    new_password: str = Field(min_length=10, max_length=256)

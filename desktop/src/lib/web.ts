@@ -733,6 +733,17 @@ export const webApi = {
       new_password: newPassword,
     }),
 
+  forgotPassword: (email: string) =>
+    request<void>("POST", "/auth/forgot-password", { email }, { auth: false }),
+
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    request<void>(
+      "POST",
+      "/auth/reset-password",
+      { email, code, new_password: newPassword },
+      { auth: false },
+    ),
+
   createInvites: (workspaceId: Id, emails: string[], role = "member") =>
     request<InviteOut[]>("POST", `/workspaces/${workspaceId}/invites`, {
       emails,

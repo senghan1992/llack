@@ -5,7 +5,7 @@ from app.models.base import Base
 from app.models.channel import Channel, ChannelMember
 from app.models.file import FileObject
 from app.models.message import Message, MessageAttachment, Reaction
-from app.models.user import Session, User
+from app.models.user import PasswordResetCode, Session, User
 from app.models.workspace import Workspace, WorkspaceInvite, WorkspaceMember
 
 __all__ = [
@@ -21,6 +21,7 @@ __all__ = [
     "MessageAttachment",
     "Reaction",
     "Session",
+    "PasswordResetCode",
     "User",
     "Workspace",
     "WorkspaceInvite",

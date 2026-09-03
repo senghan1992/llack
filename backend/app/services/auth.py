@@ -234,3 +234,112 @@ async def admin_set_password(db: AsyncSession, user: User, new_password: str) ->
     """
     user.password_hash = hash_password(new_password)
     await db.flush()
+
+
+# ── Self-service password reset ──────────────────────────────────────────────
+
+RESET_CODE_TTL_MINUTES = 15
+RESET_CODE_MAX_ATTEMPTS = 5
+
+
+def _generate_reset_code() -> str:
+    """Six digits: typed from a phone screen into another device, so short
+    beats strong — brute force is bounded by attempts and TTL instead."""
+    import secrets
+
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+async def issue_password_reset(db: AsyncSession, *, email: str) -> None:
+    """Mail a reset code if the address has an account; stay silent either way.
+
+    The caller's response must not reveal whether the account exists, so this
+    returns nothing and raises nothing for an unknown address.
+    """
+    from app.core.mailer import send_email
+    from app.core.security import hash_token
+    from app.models.user import PasswordResetCode
+
+    normalised = email.strip().lower()
+    user = await db.scalar(select(User).where(User.email == normalised).limit(1))
+    if user is None or not user.is_active or user.is_bot:
+        return
+
+    # A new code voids the old ones: one live code per account keeps the
+    # attempt budget meaningful.
+    await db.execute(
+        update(PasswordResetCode)
+        .where(
+            PasswordResetCode.user_id == user.id,
+            PasswordResetCode.used_at.is_(None),
+        )
+        .values(used_at=datetime.now(UTC))
+    )
+
+    code = _generate_reset_code()
+    db.add(
+        PasswordResetCode(
+            id=new_ulid(),
+            user_id=user.id,
+            code_hash=hash_token(code),
+            expires_at=datetime.now(UTC) + timedelta(minutes=RESET_CODE_TTL_MINUTES),
+        )
+    )
+    await db.flush()
+
+    await send_email(
+        to=user.email,
+        subject="[Llack] 비밀번호 재설정 코드",
+        body=(
+            f"{user.display_name} 님, 안녕하세요.\n\n"
+            f"비밀번호 재설정 코드는 다음과 같습니다:\n\n"
+            f"    {code}\n\n"
+            f"이 코드는 {RESET_CODE_TTL_MINUTES}분 동안만 유효하며, 한 번만 쓸 수 있습니다.\n"
+            f"본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다 — 코드를 모르는 사람은\n"
+            f"비밀번호를 바꿀 수 없습니다.\n"
+        ),
+    )
+
+
+async def redeem_password_reset(
+    db: AsyncSession, *, email: str, code: str, new_password: str
+) -> None:
+    """Exchange a mailed code for a new password. Revokes every session."""
+    from app.core.security import hash_token
+    from app.models.user import PasswordResetCode
+
+    generic = Unauthorized(
+        "The code is incorrect or has expired.", code="reset_code_invalid"
+    )
+
+    normalised = email.strip().lower()
+    user = await db.scalar(select(User).where(User.email == normalised).limit(1))
+    if user is None:
+        raise generic
+
+    row = await db.scalar(
+        select(PasswordResetCode)
+        .where(
+            PasswordResetCode.user_id == user.id,
+            PasswordResetCode.used_at.is_(None),
+        )
+        .order_by(PasswordResetCode.created_at.desc())
+        .limit(1)
+    )
+    if row is None or row.expires_at < datetime.now(UTC):
+        raise generic
+    if row.attempts >= RESET_CODE_MAX_ATTEMPTS:
+        raise generic
+
+    if row.code_hash != hash_token(code.strip()):
+        # The failed attempt must survive this request's failure — the error
+        # response rolls the transaction back, and an uncommitted counter
+        # would give a guesser unlimited tries. Commit before raising.
+        row.attempts += 1
+        await db.commit()
+        raise generic
+
+    row.used_at = datetime.now(UTC)
+    user.password_hash = hash_password(new_password)
+    await revoke_all_sessions(db, user_id=user.id)
+    await db.flush()

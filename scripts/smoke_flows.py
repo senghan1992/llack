@@ -179,6 +179,20 @@ async def main():
         ok("빈 상태: 워크스페이스 만들기 → #general 착지")
         await ctx_f.close()
 
+        # ── 5d. 비밀번호 분실: 코드 발송 요청까지 (코드 자체는 pytest 가
+        # 심층 커버 — 여기서는 화면 흐름이 살아 있는지만 본다) ────────────
+        ctx_pw = await browser.new_context(viewport={"width": 1440, "height": 900})
+        pw = await ctx_pw.new_page()
+        pw.set_default_timeout(30000)
+        await pw.goto(UI)
+        await pw.click('button:has-text("비밀번호를 잊으셨나요?")')
+        await pw.fill('input[type="email"]', "alice@example.com")
+        await pw.click('button:has-text("재설정 코드 보내기")')
+        await pw.wait_for_selector(':text("재설정 코드를 보냈습니다")')
+        await pw.wait_for_selector('input[placeholder="123456"]', state="visible")
+        ok("비밀번호 분실: 코드 요청 → 코드 입력 단계 진입")
+        await ctx_pw.close()
+
         # ── 6. 429 아웃박스: 40연발이 자동 드레인으로 전량 도착 ──────────
         async with httpx.AsyncClient(base_url=API, timeout=30) as c:
             login = (await c.post("/auth/login", json={"email": "bob@example.com", "password": PW})).json()

@@ -137,6 +137,24 @@ pub async fn update_my_status(
 }
 
 #[tauri::command]
+pub async fn forgot_password(state: State<'_, Arc<AppState>>, email: String) -> Result<()> {
+    state.api()?.forgot_password(&email).await
+}
+
+#[tauri::command]
+pub async fn reset_password(
+    state: State<'_, Arc<AppState>>,
+    email: String,
+    code: String,
+    new_password: String,
+) -> Result<()> {
+    state
+        .api()?
+        .reset_password(&email, &code, &new_password)
+        .await
+}
+
+#[tauri::command]
 pub async fn change_password(
     state: State<'_, Arc<AppState>>,
     current_password: String,

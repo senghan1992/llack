@@ -117,6 +117,8 @@ pub fn run() {
             commands::current_user,
             commands::update_me,
             commands::update_my_status,
+            commands::forgot_password,
+            commands::reset_password,
             commands::change_password,
             commands::create_invites,
             commands::accept_invite,

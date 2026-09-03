@@ -81,3 +81,26 @@ class Session(Base, ULIDPrimaryKey, Timestamps):
         from app.models.base import utcnow
 
         return self.revoked_at is None and self.expires_at > utcnow()
+
+
+class PasswordResetCode(Base, ULIDPrimaryKey, Timestamps):
+    """A short-lived code mailed to the account's address.
+
+    Stored hashed (like refresh tokens and invites): the mail is the only
+    place the code exists in the clear. `attempts` bounds brute force per
+    code, `used_at` makes it single-use, and issuing a new code invalidates
+    the previous ones for the same user.
+    """
+
+    __tablename__ = "password_reset_codes"
+    __table_args__ = (
+        Index("ix_password_reset_codes_user_id", "user_id"),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        ULID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    attempts: Mapped[int] = mapped_column(nullable=False, default=0)

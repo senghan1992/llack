@@ -330,3 +330,126 @@ def test_production_refuses_dev_secrets() -> None:
         database_url="postgresql+asyncpg://x/x",
     )
     validate_production_settings(good)
+
+
+# ── Self-service password reset (mailed code) ────────────────────────────────
+
+
+async def test_forgot_password_mails_a_code_that_resets_and_kills_sessions(
+    client: httpx.AsyncClient, alice: Actor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[dict] = []
+
+    async def capture(to: str, subject: str, body: str) -> None:
+        sent.append({"to": to, "body": body})
+
+    monkeypatch.setattr("app.core.mailer.send_email", capture)
+    old_token = alice.tokens["access_token"]
+
+    asked = await client.post(
+        "/auth/forgot-password", json={"email": "alice@example.com"}
+    )
+    assert asked.status_code == 200
+    assert sent and sent[0]["to"] == "alice@example.com"
+    import re
+
+    code = re.search(r"\b(\d{6})\b", sent[0]["body"]).group(1)
+
+    reset = await client.post(
+        "/auth/reset-password",
+        json={
+            "email": "alice@example.com",
+            "code": code,
+            "new_password": "brand-new-password-1",
+        },
+    )
+    assert reset.status_code == 200, reset.text
+
+    # Old password and old sessions are dead; the new password works.
+    assert (
+        await client.post(
+            "/auth/login", json={"email": "alice@example.com", "password": PASSWORD}
+        )
+    ).status_code == 401
+    assert (
+        await client.get("/me", headers={"Authorization": f"Bearer {old_token}"})
+    ).status_code == 401
+    assert (
+        await client.post(
+            "/auth/login",
+            json={"email": "alice@example.com", "password": "brand-new-password-1"},
+        )
+    ).status_code == 200
+
+    # The code is single-use.
+    again = await client.post(
+        "/auth/reset-password",
+        json={
+            "email": "alice@example.com",
+            "code": code,
+            "new_password": "another-password-1",
+        },
+    )
+    assert again.status_code == 401
+
+
+async def test_forgot_password_does_not_reveal_whether_an_account_exists(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[str] = []
+
+    async def capture(to: str, subject: str, body: str) -> None:
+        sent.append(to)
+
+    monkeypatch.setattr("app.core.mailer.send_email", capture)
+    response = await client.post(
+        "/auth/forgot-password", json={"email": "nobody-here@example.com"}
+    )
+    assert response.status_code == 200
+    assert sent == [], "없는 계정에는 메일이 가지 않되, 응답은 같아야 합니다"
+
+
+async def test_reset_codes_are_attempt_limited_and_superseded(
+    client: httpx.AsyncClient, alice: Actor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import re
+
+    sent: list[str] = []
+
+    async def capture(to: str, subject: str, body: str) -> None:
+        sent.append(body)
+
+    monkeypatch.setattr("app.core.mailer.send_email", capture)
+    monkeypatch.setattr(
+        "app.core.config.settings.rate_limit_forgot_per_hour", 50
+    )
+
+    await client.post("/auth/forgot-password", json={"email": "alice@example.com"})
+    first = re.search(r"\b(\d{6})\b", sent[0]).group(1)
+
+    # A newer code voids the old one.
+    await client.post("/auth/forgot-password", json={"email": "alice@example.com"})
+    second = re.search(r"\b(\d{6})\b", sent[1]).group(1)
+    stale = await client.post(
+        "/auth/reset-password",
+        json={"email": "alice@example.com", "code": first, "new_password": "x" * 12},
+    )
+    if first != second:  # 두 코드가 우연히 같으면 이 단언은 성립하지 않음
+        assert stale.status_code == 401
+
+    # Five wrong guesses burn the code even if the sixth is right.
+    for _ in range(5):
+        wrong = await client.post(
+            "/auth/reset-password",
+            json={
+                "email": "alice@example.com",
+                "code": "000000" if second != "000000" else "111111",
+                "new_password": "x" * 12,
+            },
+        )
+        assert wrong.status_code == 401
+    burned = await client.post(
+        "/auth/reset-password",
+        json={"email": "alice@example.com", "code": second, "new_password": "x" * 12},
+    )
+    assert burned.status_code == 401
