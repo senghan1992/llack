@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 
+import { ActivityView } from "@/components/ActivityView";
 import { AppDock } from "@/components/AppDock";
 import { AgentPanel } from "@/components/AgentPanel";
 import { AppPanel } from "@/components/AppPanel";
@@ -15,6 +16,8 @@ import { Notices } from "@/components/Notices";
 import { ChannelHeader } from "@/components/ChannelHeader";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Composer } from "@/components/Composer";
+import { FileBrowser } from "@/components/FileBrowser";
+import { Lightbox } from "@/components/Lightbox";
 import { MessageList } from "@/components/MessageList";
 import { NoWorkspace } from "@/components/NoWorkspace";
 import { Settings } from "@/components/Settings";
@@ -149,6 +152,7 @@ function WorkspaceShell() {
       </main>
       <CommandPalette />
       <Settings />
+      <Lightbox />
       <Notices />
     </div>
   );
@@ -163,6 +167,7 @@ function WorkspaceShell() {
  */
 function MainPane() {
   const webAppId = useApp((state) => state.openWebAppInstallationId);
+  const mainView = useApp((state) => state.mainView);
   const installation = useApp((state) =>
     state.installations.find((entry) => entry.id === state.openWebAppInstallationId),
   );
@@ -171,6 +176,20 @@ function MainPane() {
     return (
       <div className="main-transcript">
         <WebAppView installation={installation} />
+      </div>
+    );
+  }
+  if (mainView === "files") {
+    return (
+      <div className="main-transcript">
+        <FileBrowser />
+      </div>
+    );
+  }
+  if (mainView === "activity") {
+    return (
+      <div className="main-transcript">
+        <ActivityView />
       </div>
     );
   }
@@ -225,6 +244,12 @@ function useRealtimeBridge(setDefaultServer: (url: string) => void) {
             break;
           case "sidebar_changed":
             void store().refreshSidebar();
+            break;
+          case "apps_changed":
+            void store().loadInstallations();
+            break;
+          case "directory_changed":
+            void store().refreshDirectory();
             break;
           case "typing":
             store().applyTyping(effect.channel_id, effect.user_id);

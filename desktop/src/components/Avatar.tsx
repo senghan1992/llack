@@ -1,5 +1,6 @@
 import { colorForId, initials } from "@/lib/format";
 import type { Presence } from "@/lib/types";
+import { useApp } from "@/store/app";
 
 interface AvatarProps {
   id: string;
@@ -11,10 +12,15 @@ interface AvatarProps {
 }
 
 export function Avatar({ id, name, avatarUrl, size = 36, presence, isBot }: AvatarProps) {
+  // Uploaded avatars are stored as server-relative paths (`/api/v1/users/…`)
+  // so the same row works behind any hostname; the tab resolves them against
+  // its origin and the desktop shell against the configured server.
+  const serverUrl = useApp((state) => state.serverUrl);
+  const src = avatarUrl && avatarUrl.startsWith("/") ? `${serverUrl}${avatarUrl}` : avatarUrl;
   return (
     <span className="avatar" style={{ width: size, height: size }}>
-      {avatarUrl ? (
-        <img src={avatarUrl} alt="" width={size} height={size} />
+      {src ? (
+        <img src={src} alt="" width={size} height={size} />
       ) : (
         <span
           className={isBot ? "avatar-fallback is-bot" : "avatar-fallback"}

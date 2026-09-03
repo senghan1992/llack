@@ -224,3 +224,43 @@ async def test_private_channel_filenames_are_not_workspace_knowledge(
     )
     visible = (await bob.get(f"/workspaces/{workspace['id']}/files?q=회의록")).json()
     assert [f["filename"] for f in visible] == ["공개-회의록.csv"]
+
+
+async def test_the_file_browser_says_where_each_file_was_shared(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    from tests.test_channels import _join_workspace
+
+    await _join_workspace(alice, bob, workspace)
+    channels = (await alice.get(f"/workspaces/{workspace['id']}/channels")).json()
+    general = next(c for c in channels if c["name"] == "general")
+
+    shared = await _upload(alice, workspace, name="회의록.csv")
+    posted = await alice.post(
+        f"/channels/{general['id']}/messages",
+        json={"body": "회의록", "file_ids": [shared["id"]]},
+    )
+    assert posted.status_code == 201
+    orphan = await _upload(alice, workspace, name="아직-안-보낸.csv")
+
+    # Bob sees the shared file with its location; the orphan is not his to see.
+    rows = (await bob.get(f"/workspaces/{workspace['id']}/files")).json()
+    assert [r["filename"] for r in rows] == ["회의록.csv"]
+    assert rows[0]["shared_in"] == {
+        "channel_id": general["id"],
+        "channel_name": "general",
+        "channel_kind": "public",
+        "message_id": posted.json()["id"],
+    }
+
+    # Alice sees both; her orphan has no location yet.
+    mine = (await alice.get(f"/workspaces/{workspace['id']}/files?mine=true")).json()
+    by_name = {r["filename"]: r for r in mine}
+    assert set(by_name) == {"회의록.csv", "아직-안-보낸.csv"}
+    assert by_name["아직-안-보낸.csv"]["shared_in"] is None
+    assert orphan["id"] == by_name["아직-안-보낸.csv"]["id"]
+
+    # kind filters split images from everything else.
+    assert (await alice.get(f"/workspaces/{workspace['id']}/files?kind=image")).json() == []
+    docs = (await alice.get(f"/workspaces/{workspace['id']}/files?kind=document")).json()
+    assert len(docs) == 2

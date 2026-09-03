@@ -26,6 +26,10 @@ pub enum SyncEffect {
     },
     /// The sidebar needs re-rendering (new channel, membership change).
     SidebarChanged,
+    /// The dock needs re-rendering (an app was installed, removed or renamed).
+    AppsChanged,
+    /// Someone's name or avatar changed: the directory should reload.
+    DirectoryChanged { user_id: Option<String> },
     /// Show an OS notification.
     Notify {
         title: String,
@@ -161,7 +165,11 @@ impl SyncEngine {
                 }
             }
 
-            "app.installed" | "app.uninstalled" => Ok(SyncEffect::SidebarChanged),
+            "app.installed" | "app.uninstalled" | "app.updated" => Ok(SyncEffect::AppsChanged),
+
+            "user.updated" => Ok(SyncEffect::DirectoryChanged {
+                user_id: string_field(&frame.data, "user_id"),
+            }),
 
             _ => Ok(SyncEffect::Ignored),
         }

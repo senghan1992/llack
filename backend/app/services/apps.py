@@ -23,7 +23,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import AppKind, AppScope, AppStatus, WorkspaceRole
-from app.core.errors import Conflict, Forbidden, NotFound
+from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.core.ids import new_token, new_ulid
 from app.core.logging import get_logger
 from app.core.security import create_access_token, decode_access_token, hash_token
@@ -241,11 +241,14 @@ async def install_app(
     granted_scopes: list[AppScope] | None = None,
     config: dict[str, Any] | None = None,
     pin_to_dock: bool = True,
+    minimum_role: WorkspaceRole = WorkspaceRole.ADMIN,
 ) -> AppInstallation:
     # Installing an app grants it access to workspace data, so it is an
-    # admin-level action.
+    # admin-level action — except for link apps, which are granted nothing
+    # (no scopes, no bridge) and may be added by any member; the caller
+    # lowers `minimum_role` for those.
     await require_membership(
-        db, workspace_id=workspace_id, user_id=actor.id, minimum_role=WorkspaceRole.ADMIN
+        db, workspace_id=workspace_id, user_id=actor.id, minimum_role=minimum_role
     )
 
     if app_row.status == AppStatus.DISABLED.value:
@@ -339,13 +342,32 @@ async def _ensure_bot_user(db: AsyncSession, *, app_row: App, workspace_id: str)
     return bot
 
 
-async def uninstall_app(db: AsyncSession, *, installation: AppInstallation, actor: User) -> None:
-    await require_membership(
-        db,
-        workspace_id=installation.workspace_id,
-        user_id=actor.id,
-        minimum_role=WorkspaceRole.ADMIN,
+async def require_installation_control(
+    db: AsyncSession, *, installation: AppInstallation, actor: User
+) -> None:
+    """Who may change or remove an installation.
+
+    Admins always. For a link app — which holds no permissions — the person
+    who added it may also rename or remove it, so a designer can manage the
+    Figma tile they put in the dock without filing a request.
+    """
+    membership = await require_membership(
+        db, workspace_id=installation.workspace_id, user_id=actor.id
     )
+    if membership.role_enum.at_least(WorkspaceRole.ADMIN):
+        return
+    is_link = installation.app.kind == AppKind.LINK.value
+    if is_link and installation.installed_by == actor.id:
+        return
+    raise Forbidden(
+        "Only a workspace admin (or, for a link app, the person who added it) can do this.",
+        code="insufficient_role",
+        details={"required_role": WorkspaceRole.ADMIN.value, "your_role": membership.role},
+    )
+
+
+async def uninstall_app(db: AsyncSession, *, installation: AppInstallation, actor: User) -> None:
+    await require_installation_control(db, installation=installation, actor=actor)
     # Cascades to tokens and storage; the bot user is kept so its past messages
     # still render with a name and avatar.
     await db.delete(installation)
@@ -363,13 +385,21 @@ async def update_installation(
     is_enabled: bool | None = None,
     is_pinned: bool | None = None,
     sort_order: int | None = None,
+    name: str | None = None,
+    icon_url: str | None = None,
 ) -> AppInstallation:
-    await require_membership(
-        db,
-        workspace_id=installation.workspace_id,
-        user_id=actor.id,
-        minimum_role=WorkspaceRole.ADMIN,
-    )
+    await require_installation_control(db, installation=installation, actor=actor)
+    if name is not None or icon_url is not None:
+        if installation.app.kind != AppKind.LINK.value:
+            raise ValidationFailed(
+                "Only a link app can be renamed here; other apps take their name from"
+                " the manifest.",
+                code="not_a_link_app",
+            )
+        if name is not None:
+            installation.app.name = name.strip()
+        if icon_url is not None:
+            installation.app.icon_url = icon_url or None
     if config is not None:
         installation.config = config
     if granted_scopes is not None:

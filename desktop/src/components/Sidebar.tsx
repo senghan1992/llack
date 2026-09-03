@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 
-import { ChannelMark, IconGear, IconPlus, IconSearch } from "./Icon";
+import { ChannelMark, IconActivity, IconFolder, IconGear, IconPlus, IconSearch } from "./Icon";
 import type { Channel } from "@/lib/types";
 import { useApp } from "@/store/app";
 
@@ -29,6 +29,9 @@ export function Sidebar() {
   );
 
   const setSettings = useApp((state) => state.setSettings);
+  const mainView = useApp((state) => state.mainView);
+  const webAppOpen = useApp((state) => state.openWebAppInstallationId !== null);
+  const setMainView = useApp((state) => state.setMainView);
 
   const [creating, setCreating] = useState(false);
   const [browsing, setBrowsing] = useState(false);
@@ -76,7 +79,9 @@ export function Sidebar() {
         type="button"
         className={[
           "sidebar-item",
-          channel.id === activeChannelId ? "is-active" : "",
+          channel.id === activeChannelId && mainView === "channel" && !webAppOpen
+            ? "is-active"
+            : "",
           unread > 0 && !muted ? "is-unread" : "",
           muted ? "is-muted" : "",
         ]
@@ -132,6 +137,34 @@ export function Sidebar() {
       </header>
 
       <div className="sidebar-scroll">
+        {/* Two views that are not channels: what was shared, and what
+            happened to me. They live above the channel list, where Slack
+            keeps its own nav, so a newcomer finds them without being told. */}
+        <section className="sidebar-section sidebar-nav" aria-label="보기">
+          <button
+            type="button"
+            className={`sidebar-item ${mainView === "activity" && !webAppOpen ? "is-active" : ""}`}
+            onClick={() => setMainView("activity")}
+            title="내가 참여한 스레드와 나를 부른 메시지"
+          >
+            <span className="sidebar-nav-icon">
+              <IconActivity size={14} />
+            </span>
+            <span className="sidebar-label">활동</span>
+          </button>
+          <button
+            type="button"
+            className={`sidebar-item ${mainView === "files" && !webAppOpen ? "is-active" : ""}`}
+            onClick={() => setMainView("files")}
+            title="이 워크스페이스의 파일 모아보기"
+          >
+            <span className="sidebar-nav-icon">
+              <IconFolder size={14} />
+            </span>
+            <span className="sidebar-label">파일</span>
+          </button>
+        </section>
+
         {groups.starred.length > 0 ? (
           <section className="sidebar-section">
             <h2>

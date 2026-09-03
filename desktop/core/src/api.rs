@@ -285,6 +285,126 @@ impl ApiClient {
         self.send(Method::PUT, "/me/status", Some(&patch)).await
     }
 
+    /// Replace my avatar: raw image bytes, PUT as-is. The server answers
+    /// with the updated profile whose `avatar_url` is a server-relative path.
+    pub async fn upload_avatar(&self, mime_type: &str, bytes: Vec<u8>) -> Result<User> {
+        if self.session.access_token_is_stale(REFRESH_SKEW_SECONDS) {
+            self.refresh_access_token().await?;
+        }
+        let mut request = self
+            .http
+            .put(self.url("/me/avatar"))
+            .header("content-type", mime_type)
+            .body(bytes);
+        if let Some(token) = self.session.access_token() {
+            request = request.bearer_auth(token);
+        }
+        decode(request.send().await?).await
+    }
+
+    pub async fn remove_avatar(&self) -> Result<User> {
+        self.send::<(), _>(Method::DELETE, "/me/avatar", None).await
+    }
+
+    /// The workspace file browser. Untyped: the UI owns the shape.
+    pub async fn list_workspace_files(
+        &self,
+        workspace_id: &str,
+        q: Option<&str>,
+        kind: Option<&str>,
+        mine: bool,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<serde_json::Value> {
+        let mut path = format!("/workspaces/{workspace_id}/files?limit={limit}");
+        if let Some(q) = q {
+            path.push_str(&format!("&q={}", urlencode(q)));
+        }
+        if let Some(kind) = kind {
+            path.push_str(&format!("&kind={}", urlencode(kind)));
+        }
+        if mine {
+            path.push_str("&mine=true");
+        }
+        if let Some(cursor) = cursor {
+            path.push_str(&format!("&cursor={}", urlencode(cursor)));
+        }
+        self.send::<(), _>(Method::GET, &path, None).await
+    }
+
+    pub async fn activity_threads(
+        &self,
+        workspace_id: &str,
+        before: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut path = format!("/workspaces/{workspace_id}/activity/threads?limit=30");
+        if let Some(before) = before {
+            path.push_str(&format!("&before={}", urlencode(before)));
+        }
+        self.send::<(), _>(Method::GET, &path, None).await
+    }
+
+    pub async fn activity_mentions(
+        &self,
+        workspace_id: &str,
+        before: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut path = format!("/workspaces/{workspace_id}/activity/mentions?limit=30");
+        if let Some(before) = before {
+            path.push_str(&format!("&before={}", urlencode(before)));
+        }
+        self.send::<(), _>(Method::GET, &path, None).await
+    }
+
+    pub async fn list_sessions(&self) -> Result<serde_json::Value> {
+        self.send::<(), _>(Method::GET, "/auth/sessions", None)
+            .await
+    }
+
+    pub async fn revoke_session(&self, session_id: &str) -> Result<()> {
+        self.send::<(), serde_json::Value>(
+            Method::DELETE,
+            &format!("/auth/sessions/{session_id}"),
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    pub async fn list_workspace_members(&self, workspace_id: &str) -> Result<serde_json::Value> {
+        self.send::<(), _>(
+            Method::GET,
+            &format!("/workspaces/{workspace_id}/members"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn update_workspace_member_role(
+        &self,
+        workspace_id: &str,
+        member_id: &str,
+        role: &str,
+    ) -> Result<serde_json::Value> {
+        let payload = serde_json::json!({ "role": role });
+        self.send(
+            Method::PATCH,
+            &format!("/workspaces/{workspace_id}/members/{member_id}"),
+            Some(&payload),
+        )
+        .await
+    }
+
+    pub async fn remove_workspace_member(&self, workspace_id: &str, member_id: &str) -> Result<()> {
+        self.send::<(), serde_json::Value>(
+            Method::DELETE,
+            &format!("/workspaces/{workspace_id}/members/{member_id}"),
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
     // ── Server admin (owner-only) ──────────────────────────────────────
 
     /// Current SMTP relay, password redacted to `password_set`.
@@ -819,6 +939,31 @@ impl ApiClient {
 
     /// Register and pin an external web app from a bare URL. The server
     /// derives the manifest; the caller supplies only what a person typed.
+    /// Rename a link app, pin/unpin, reorder, or change its config.
+    pub async fn update_installation(
+        &self,
+        installation_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<AppInstallation> {
+        self.send(
+            Method::PATCH,
+            &format!("/app-installations/{installation_id}"),
+            Some(&patch),
+        )
+        .await
+    }
+
+    /// Ask the server whether a URL lets itself be framed.
+    pub async fn probe_link_app(&self, workspace_id: &str, url: &str) -> Result<serde_json::Value> {
+        let payload = serde_json::json!({ "url": url });
+        self.send(
+            Method::POST,
+            &format!("/workspaces/{workspace_id}/apps/link/probe"),
+            Some(&payload),
+        )
+        .await
+    }
+
     pub async fn add_link_app(
         &self,
         workspace_id: &str,

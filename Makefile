@@ -124,6 +124,7 @@ smoke-ui: ## 실행 중인 백엔드(make dev)와 웹 모드(make ui)에 대해 
 	python3 scripts/smoke_ui.py
 	python3 scripts/smoke_flows.py
 	python3 scripts/smoke_team.py
+	python3 scripts/smoke_polish.py
 
 .PHONY: lint
 lint: ## 린트 및 타입 검사

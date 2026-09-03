@@ -86,12 +86,18 @@ class AppInstallationOut(Schema):
     is_enabled: bool = True
     is_pinned: bool = False
     sort_order: int = 0
+    # Who added it — the client shows rename/remove only to them and admins.
+    installed_by: str | None = None
     installed_version: str | None = None
     last_used_at: datetime | None = None
     created_at: datetime
 
 
 class UpdateInstallationRequest(Payload):
+    # Link apps only: the tile's label and icon. The App row behind a link app
+    # is private to the workspace, so renaming it renames nothing else.
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    icon_url: str | None = Field(default=None, max_length=2000)
     config: dict[str, Any] | None = None
     granted_scopes: list[AppScope] | None = Field(default=None, max_length=32)
     is_enabled: bool | None = None

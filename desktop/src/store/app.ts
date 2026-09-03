@@ -20,6 +20,7 @@ import type {
   Channel,
   CommandError,
   ConnectionStatus,
+  FileRef,
   Id,
   Message,
   PendingMessage,
@@ -31,6 +32,9 @@ import type {
 } from "@/lib/types";
 
 export type Screen = "loading" | "signin" | "workspace";
+
+/** The main pane's occupant when no web app has borrowed it. */
+export type MainView = "channel" | "files" | "activity";
 
 /**
  * A toast waiting in the bottom-right stack.
@@ -108,6 +112,10 @@ interface AppStateShape {
   openPanelInstallationId: Id | null;
   /** A link app filling the main pane instead of the transcript. */
   openWebAppInstallationId: Id | null;
+  /** What the main pane shows when no web app has borrowed it. */
+  mainView: MainView;
+  /** The image viewer: a set of images and which one is up. */
+  lightbox: { files: FileRef[]; index: number } | null;
 
   // ── UI ────────────────────────────────────────────────────────────────
   paletteOpen: boolean;
@@ -162,6 +170,12 @@ interface AppActions {
   loadInstallations: () => Promise<void>;
   openAppPanel: (installationId: Id | null) => void;
   openWebApp: (installationId: Id | null) => void;
+  setMainView: (view: MainView) => void;
+  openLightbox: (files: FileRef[], index: number) => void;
+  stepLightbox: (delta: number) => void;
+  closeLightbox: () => void;
+  /** Reload the people directory (a name or avatar changed). */
+  refreshDirectory: () => Promise<void>;
 
   setPalette: (open: boolean) => void;
   setSettings: (open: boolean) => void;
@@ -223,6 +237,8 @@ export const useApp = create<AppStore>((set, get) => ({
   installations: [],
   openPanelInstallationId: null,
   openWebAppInstallationId: null,
+  mainView: "channel",
+  lightbox: null,
 
   paletteOpen: false,
   settingsOpen: false,
@@ -308,6 +324,8 @@ export const useApp = create<AppStore>((set, get) => ({
         settingsOpen: false,
         paletteOpen: false,
         highlightMessageId: null,
+        mainView: "channel",
+        lightbox: null,
       });
     }
   },
@@ -352,6 +370,7 @@ export const useApp = create<AppStore>((set, get) => ({
       openThreadId: null,
       openPanelInstallationId: null,
       openWebAppInstallationId: null,
+      mainView: "channel",
     });
 
     // Cached first so the sidebar paints immediately, then authoritative.
@@ -404,8 +423,10 @@ export const useApp = create<AppStore>((set, get) => ({
     set({
       activeChannelId: channelId,
       openThreadId: null,
-      // Coming back to a conversation dismisses an embedded web app.
+      // Coming back to a conversation dismisses an embedded web app and any
+      // full-pane view (files, activity).
       openWebAppInstallationId: null,
+      mainView: "channel",
     });
 
     // Remembered per workspace, so relaunching lands where you left off
@@ -792,6 +813,40 @@ export const useApp = create<AppStore>((set, get) => ({
   // The main pane shows the transcript or a web app, never both: opening one
   // clears the other, and `openChannel` clears this (see there).
   openWebApp: (installationId) => set({ openWebAppInstallationId: installationId }),
+
+  // Files and activity take the whole pane, like a web app does — a file
+  // browser squeezed beside a transcript would be two half-products.
+  setMainView: (mainView) =>
+    set({ mainView, openWebAppInstallationId: null, openThreadId: null }),
+
+  openLightbox: (files, index) =>
+    set({ lightbox: { files, index: Math.max(0, Math.min(index, files.length - 1)) } }),
+
+  stepLightbox: (delta) =>
+    set((state) => {
+      if (!state.lightbox) return {};
+      const count = state.lightbox.files.length;
+      const index = (state.lightbox.index + delta + count) % count;
+      return { lightbox: { ...state.lightbox, index } };
+    }),
+
+  closeLightbox: () => set({ lightbox: null }),
+
+  refreshDirectory: async () => {
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) return;
+    try {
+      const people = await api.listWorkspaceUsers(workspaceId);
+      const meId = get().me?.id;
+      const refreshedMe = meId ? people.find((person) => person.id === meId) : undefined;
+      set((state) => ({
+        people: new Map(people.map((person) => [person.id, person])),
+        me: refreshedMe && state.me ? { ...state.me, ...refreshedMe } : state.me,
+      }));
+    } catch (error) {
+      asCommandError(error);
+    }
+  },
 
   // ── UI ────────────────────────────────────────────────────────────────
 

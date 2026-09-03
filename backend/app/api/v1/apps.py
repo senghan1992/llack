@@ -20,8 +20,9 @@ from app.api.deps import (
     DbSession,
     WorkspaceCtx,
 )
-from app.core.enums import AppKind, AppScope, AppStatus, MessageKind
+from app.core.enums import AppKind, AppScope, AppStatus, MessageKind, WorkspaceRole
 from app.core.errors import Forbidden, NotFound
+from app.core.ratelimit import limiter
 from app.models.app import App
 from app.realtime.events import emit_to_channel, emit_to_users, emit_to_workspace
 from app.schemas.app import (
@@ -40,6 +41,7 @@ from app.schemas.common import OkResponse, Payload
 from app.schemas.realtime import ServerEvent
 from app.schemas.user import UserBrief
 from app.services import apps as app_service
+from app.services import linkprobe
 from app.services import messages as message_service
 
 router = APIRouter(tags=["apps"])
@@ -180,7 +182,7 @@ class AddLinkAppRequest(Payload):
     status_code=status.HTTP_201_CREATED,
 )
 async def add_link_app(
-    payload: AddLinkAppRequest, ctx: AdminWorkspaceCtx, db: DbSession
+    payload: AddLinkAppRequest, ctx: WorkspaceCtx, db: DbSession
 ) -> AppInstallationOut:
     """Register and pin an external web app in one step.
 
@@ -190,7 +192,14 @@ async def add_link_app(
     and friends never reach the dock; `has_panel` stays false for LINK apps,
     so the bridge-token path structurally cannot mint one for an external
     site.
+
+    Any member may add one — a link app is granted nothing, so there is no
+    permission to gate. Guests are the exception: they are visitors, and a
+    dock tile is workspace furniture. The person who added it can rename or
+    remove it later; admins can always.
     """
+    if ctx.role is WorkspaceRole.GUEST:
+        raise Forbidden("Guests cannot add apps to the dock.", code="guest_cannot_add_apps")
     # The same URL twice is the same tool twice: two identical tiles in the
     # dock, indistinguishable when collapsed. Return the existing installation
     # instead of minting a twin.
@@ -221,9 +230,13 @@ async def add_link_app(
         kind=AppKind.LINK,
         panel_url=payload.url,
     )
+    # `register_app` gates private apps on admin because a manifest can ask
+    # for scopes; a link manifest cannot, so it is registered without the
+    # owner check and installed at member level.
     app_row = await app_service.register_app(
-        db, manifest=manifest, author=ctx.user, owner_workspace_id=ctx.workspace.id
+        db, manifest=manifest, author=ctx.user, owner_workspace_id=None
     )
+    app_row.owner_workspace_id = ctx.workspace.id
     installation = await app_service.install_app(
         db,
         workspace_id=ctx.workspace.id,
@@ -232,6 +245,7 @@ async def add_link_app(
         granted_scopes=[],
         config={},
         pin_to_dock=True,
+        minimum_role=WorkspaceRole.MEMBER,
     )
     await db.commit()
     await db.refresh(installation, ["app"])
@@ -264,10 +278,44 @@ async def update_installation(
         is_enabled=payload.is_enabled,
         is_pinned=payload.is_pinned,
         sort_order=payload.sort_order,
+        name=payload.name,
+        icon_url=payload.icon_url,
     )
     await db.commit()
     await db.refresh(installation, ["app"])
-    return AppInstallationOut.model_validate(installation)
+    out = AppInstallationOut.model_validate(installation)
+    # Everyone's dock shows this tile; a rename or re-pin must reach them
+    # without a reload.
+    await emit_to_workspace(
+        installation.workspace_id,
+        ServerEvent.APP_UPDATED,
+        {"installation": out.model_dump(mode="json")},
+    )
+    return out
+
+
+class LinkProbeRequest(Payload):
+    url: AnyHttpUrl
+
+
+class LinkProbeOut(Payload):
+    embeddable: bool | None
+    reason: str | None = None
+    final_url: str | None = None
+    title: str | None = None
+
+
+@router.post("/workspaces/{workspace_id}/apps/link/probe", response_model=LinkProbeOut)
+async def probe_link_app(payload: LinkProbeRequest, ctx: WorkspaceCtx) -> LinkProbeOut:
+    """Ask the server whether a site will let itself be framed.
+
+    Called by the add-link dialog before the tile exists, so a site that sends
+    `X-Frame-Options: DENY` is announced up front instead of discovered as a
+    blank pane. Public hosts only — see `services/linkprobe.py` for why.
+    """
+    limiter.check("probe", ctx.user.id, capacity=30, per_seconds=60)
+    result = await linkprobe.probe(str(payload.url))
+    return LinkProbeOut(**result)
 
 
 @router.delete("/app-installations/{installation_id}", response_model=OkResponse)

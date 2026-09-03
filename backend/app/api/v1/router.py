@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    activity,
     admin,
     apps,
     auth,
@@ -29,6 +30,7 @@ api_router.include_router(channels.router)
 api_router.include_router(messages.router)
 api_router.include_router(files.router)
 api_router.include_router(search.router)
+api_router.include_router(activity.router)
 api_router.include_router(apps.router)
 api_router.include_router(apps.bridge)
 api_router.include_router(realtime.router)

@@ -307,3 +307,31 @@ export function IconTemplate(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconFolder(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 4.6h4l1.3 1.4h5.5v6.6H2.6V4.6Z" />
+      <path d="M2.6 7.4h10.8" />
+    </Svg>
+  );
+}
+
+export function IconActivity(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.4 8.5h2.6l1.6-4.2 2.6 7.4 1.6-3.2h2.8" />
+    </Svg>
+  );
+}
+
+export function IconSmile(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="5.4" />
+      <path d="M5.6 9.3c.6 1 1.4 1.5 2.4 1.5s1.8-.5 2.4-1.5" />
+      <circle cx="6.2" cy="6.7" r="0.6" />
+      <circle cx="9.8" cy="6.7" r="0.6" />
+    </Svg>
+  );
+}

@@ -129,6 +129,149 @@ pub async fn update_me(state: State<'_, Arc<AppState>>, patch: serde_json::Value
 }
 
 #[tauri::command]
+pub async fn upload_avatar(state: State<'_, Arc<AppState>>, path: String) -> Result<User> {
+    let file_path = std::fs::canonicalize(&path)
+        .map_err(|e| Error::Other(format!("could not read {path}: {e}")))?;
+    if let Some((rule, reason)) = llack_core::agent::policy::refuse_path(
+        &file_path,
+        llack_core::agent::policy::Access::Read,
+        &state.path_context(),
+    ) {
+        tracing::warn!(rule, path = %file_path.display(), "avatar upload refused by path policy");
+        return Err(Error::Other(reason.into()));
+    }
+    let mime = match file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        _ => "image/png",
+    };
+    let bytes = std::fs::read(&file_path)
+        .map_err(|e| Error::Other(format!("could not read {}: {e}", file_path.display())))?;
+    state.api()?.upload_avatar(mime, bytes).await
+}
+
+#[tauri::command]
+pub async fn remove_avatar(state: State<'_, Arc<AppState>>) -> Result<User> {
+    state.api()?.remove_avatar().await
+}
+
+#[tauri::command]
+pub async fn list_workspace_files(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    q: Option<String>,
+    kind: Option<String>,
+    mine: bool,
+    cursor: Option<String>,
+    limit: u32,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .list_workspace_files(
+            &workspace_id,
+            q.as_deref(),
+            kind.as_deref(),
+            mine,
+            cursor.as_deref(),
+            limit,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn activity_threads(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    before: Option<String>,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .activity_threads(&workspace_id, before.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn activity_mentions(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    before: Option<String>,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .activity_mentions(&workspace_id, before.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn list_sessions(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value> {
+    state.api()?.list_sessions().await
+}
+
+#[tauri::command]
+pub async fn revoke_session(state: State<'_, Arc<AppState>>, session_id: String) -> Result<()> {
+    state.api()?.revoke_session(&session_id).await
+}
+
+#[tauri::command]
+pub async fn list_workspace_members(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.list_workspace_members(&workspace_id).await
+}
+
+#[tauri::command]
+pub async fn update_workspace_member_role(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    member_id: String,
+    role: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .update_workspace_member_role(&workspace_id, &member_id, &role)
+        .await
+}
+
+#[tauri::command]
+pub async fn remove_workspace_member(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    member_id: String,
+) -> Result<()> {
+    state
+        .api()?
+        .remove_workspace_member(&workspace_id, &member_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn update_installation(
+    state: State<'_, Arc<AppState>>,
+    installation_id: String,
+    patch: serde_json::Value,
+) -> Result<llack_core::AppInstallation> {
+    state
+        .api()?
+        .update_installation(&installation_id, patch)
+        .await
+}
+
+#[tauri::command]
+pub async fn probe_link_app(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    url: String,
+) -> Result<serde_json::Value> {
+    state.api()?.probe_link_app(&workspace_id, &url).await
+}
+
+#[tauri::command]
 pub async fn update_my_status(
     state: State<'_, Arc<AppState>>,
     patch: serde_json::Value,

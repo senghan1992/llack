@@ -48,8 +48,16 @@ import type {
   SmtpSettings,
   SmtpSettingsInput,
   SyncEffect,
+  ActivityPage,
+  LinkProbe,
+  MentionActivity,
+  SessionInfo,
+  ThreadActivity,
   User,
   Workspace,
+  WorkspaceFile,
+  WorkspaceMember,
+  WorkspaceRole,
 } from "./types";
 
 const API_PREFIX = "/api/v1";
@@ -280,6 +288,50 @@ async function request<T>(
   if (response.status === 204) return undefined as T;
   const text = await response.text();
   return text ? (JSON.parse(text) as T) : (undefined as T);
+}
+
+/**
+ * PUT a body and report bytes as they leave. Resolves with the response text;
+ * rejects with the same CommandError shape `request` produces.
+ */
+function putWithProgress(
+  url: string,
+  headers: Record<string, string>,
+  body: Blob,
+  onProgress?: (sent: number, total: number) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
+    xhr.upload.onprogress = (event) => {
+      if (onProgress) onProgress(event.loaded, event.lengthComputable ? event.total : body.size);
+    };
+    xhr.onerror = () => reject(commandError("network_error", "서버에 연결할 수 없습니다."));
+    xhr.onabort = () => reject(commandError("aborted", "업로드가 취소되었습니다."));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(body.size, body.size);
+        resolve(xhr.responseText);
+        return;
+      }
+      let code = `http_${xhr.status}`;
+      let message = `요청이 실패했습니다 (HTTP ${xhr.status}).`;
+      let details: Record<string, unknown> | null = null;
+      try {
+        const parsed = JSON.parse(xhr.responseText) as {
+          error?: { code?: string; message?: string; details?: Record<string, unknown> };
+        };
+        if (parsed.error?.code) code = parsed.error.code;
+        if (parsed.error?.message) message = parsed.error.message;
+        if (parsed.error?.details) details = parsed.error.details;
+      } catch {
+        // Non-JSON body; the status-derived defaults stand.
+      }
+      reject(commandError(code, message, { status: xhr.status, details }));
+    };
+    xhr.send(body);
+  });
 }
 
 function query(params: Record<string, string | number | null | undefined>): string {
@@ -585,9 +637,18 @@ function toSyncEffect(frame: ServerFrame): SyncEffect {
     case "channel.member_joined":
     case "channel.member_left":
     case "channel.read":
+      return { kind: "sidebar_changed" };
+
+    // The dock is not the sidebar: an installed or renamed app used to fall
+    // into a channel-list refresh that never touched the dock, so a teammate's
+    // new tool appeared only after a reload.
     case "app.installed":
     case "app.uninstalled":
-      return { kind: "sidebar_changed" };
+    case "app.updated":
+      return { kind: "apps_changed" };
+
+    case "user.updated":
+      return { kind: "directory_changed", user_id: field("user_id") ?? null };
 
     case "notification":
       return {
@@ -1065,7 +1126,11 @@ export const webApi = {
    * The desktop shell takes a filesystem path; a tab has a `File` from the
    * picker. Both end at the same two-step upload.
    */
-  uploadFile: async (workspaceId: Id, source: string | File): Promise<FileRef> => {
+  uploadFile: async (
+    workspaceId: Id,
+    source: string | File,
+    onProgress?: (sent: number, total: number) => void,
+  ): Promise<FileRef> => {
     if (typeof source === "string") {
       throw commandError(
         "unsupported_in_browser",
@@ -1088,14 +1153,84 @@ export const webApi = {
     const headers: Record<string, string> = { ...(ticket.headers ?? {}) };
     if (!isAbsolute) headers.authorization = `Bearer ${await accessToken()}`;
 
-    const response = await fetch(url, { method: "PUT", headers, body: source });
-    if (!response.ok) await errorFromResponse(response);
+    // XHR rather than fetch: fetch has no upload progress, and a 60 MB file
+    // behind a spinner looks stalled. The ticket step above stays on fetch.
+    const body = await putWithProgress(url, headers, source, onProgress);
 
     if (isAbsolute) {
       return request<FileRef>("POST", `/files/${ticket.file_id}/complete`);
     }
-    return (await response.json()) as FileRef;
+    return JSON.parse(body) as FileRef;
   },
+
+  /** Replace my avatar with an image the browser already resized. */
+  uploadAvatar: async (source: File | string): Promise<User> => {
+    if (typeof source === "string") {
+      throw commandError("unsupported_in_browser", "브라우저에서는 파일 경로를 쓸 수 없습니다.");
+    }
+    const response = await fetch(`${apiRoot()}/me/avatar`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${await accessToken()}`,
+        "content-type": source.type || "image/png",
+      },
+      body: source,
+    });
+    if (!response.ok) await errorFromResponse(response);
+    return (await response.json()) as User;
+  },
+
+  removeAvatar: () => request<User>("DELETE", "/me/avatar"),
+
+  /** The workspace file browser: every file I may know exists, newest first. */
+  listWorkspaceFiles: (
+    workspaceId: Id,
+    options: {
+      q?: string;
+      kind?: "image" | "document" | null;
+      mine?: boolean;
+      cursor?: string | null;
+      limit?: number;
+    } = {},
+  ) =>
+    request<WorkspaceFile[]>(
+      "GET",
+      `/workspaces/${workspaceId}/files${query({
+        q: options.q ?? null,
+        kind: options.kind ?? null,
+        mine: options.mine ? "true" : null,
+        cursor: options.cursor ?? null,
+        limit: options.limit ?? 50,
+      })}`,
+    ),
+
+  activityThreads: (workspaceId: Id, before?: string | null) =>
+    request<ActivityPage<ThreadActivity>>(
+      "GET",
+      `/workspaces/${workspaceId}/activity/threads${query({ before: before ?? null, limit: 30 })}`,
+    ),
+
+  activityMentions: (workspaceId: Id, before?: string | null) =>
+    request<ActivityPage<MentionActivity>>(
+      "GET",
+      `/workspaces/${workspaceId}/activity/mentions${query({ before: before ?? null, limit: 30 })}`,
+    ),
+
+  listSessions: () => request<SessionInfo[]>("GET", "/auth/sessions"),
+
+  revokeSession: (sessionId: string) =>
+    request<void>("DELETE", `/auth/sessions/${sessionId}`),
+
+  listWorkspaceMembers: (workspaceId: Id) =>
+    request<WorkspaceMember[]>("GET", `/workspaces/${workspaceId}/members`),
+
+  updateWorkspaceMemberRole: (workspaceId: Id, memberId: string, role: WorkspaceRole) =>
+    request<WorkspaceMember>("PATCH", `/workspaces/${workspaceId}/members/${memberId}`, {
+      role,
+    }),
+
+  removeWorkspaceMember: (workspaceId: Id, memberId: string) =>
+    request<void>("DELETE", `/workspaces/${workspaceId}/members/${memberId}`),
 
   /** Hands the bytes to the browser's downloader and returns the filename. */
   downloadFile: async (fileId: Id, filename: string): Promise<string> => {
@@ -1154,6 +1289,22 @@ export const webApi = {
 
   uninstallApp: (installationId: Id) =>
     request<void>("DELETE", `/app-installations/${installationId}`),
+
+  /** Rename a link app, pin/unpin, or change its config (e.g. open_mode). */
+  updateInstallation: (
+    installationId: Id,
+    patch: {
+      name?: string;
+      icon_url?: string | null;
+      is_pinned?: boolean;
+      sort_order?: number;
+      config?: Record<string, unknown>;
+    },
+  ) => request<AppInstallation>("PATCH", `/app-installations/${installationId}`, patch),
+
+  /** Ask the server whether a URL lets itself be framed, before adding it. */
+  probeLinkApp: (workspaceId: Id, url: string) =>
+    request<LinkProbe>("POST", `/workspaces/${workspaceId}/apps/link/probe`, { url }),
 
   openAppPanel: (installationId: Id, channelId?: Id) =>
     request<PanelSession>(

@@ -38,8 +38,16 @@ import type {
   SmtpSettings,
   SmtpSettingsInput,
   SyncEffect,
+  ActivityPage,
+  LinkProbe,
+  MentionActivity,
+  SessionInfo,
+  ThreadActivity,
   User,
   Workspace,
+  WorkspaceFile,
+  WorkspaceMember,
+  WorkspaceRole,
 } from "./types";
 import type {
   AgentEvent,
@@ -264,12 +272,68 @@ const tauriApi = {
    * also accepts a `File`, which is what its picker produces; pick files
    * through `shell.pickAndUploadFiles` so callers need not care which.
    */
-  uploadFile: (workspaceId: Id, source: string | File) => {
+  uploadFile: (
+    workspaceId: Id,
+    source: string | File,
+    onProgress?: (sent: number, total: number) => void,
+  ) => {
     if (typeof source !== "string") {
       throw asCommandError("데스크톱 앱에서는 파일 경로로 업로드합니다.");
     }
-    return call<FileRef>("upload_file", { workspaceId, path: source });
+    // The shell uploads in one Rust call; progress is start → done.
+    return call<FileRef>("upload_file", { workspaceId, path: source }).then((file) => {
+      onProgress?.(file.size_bytes, file.size_bytes);
+      return file;
+    });
   },
+
+  /** Replace my avatar from a file on disk (the shell reads and PUTs it). */
+  uploadAvatar: (source: File | string) => {
+    if (typeof source !== "string") {
+      throw asCommandError("데스크톱 앱에서는 파일 경로로 업로드합니다.");
+    }
+    return call<User>("upload_avatar", { path: source });
+  },
+
+  removeAvatar: () => call<User>("remove_avatar"),
+
+  listWorkspaceFiles: (
+    workspaceId: Id,
+    options: {
+      q?: string;
+      kind?: "image" | "document" | null;
+      mine?: boolean;
+      cursor?: string | null;
+      limit?: number;
+    } = {},
+  ) =>
+    call<WorkspaceFile[]>("list_workspace_files", {
+      workspaceId,
+      q: options.q ?? null,
+      kind: options.kind ?? null,
+      mine: options.mine ?? false,
+      cursor: options.cursor ?? null,
+      limit: options.limit ?? 50,
+    }),
+
+  activityThreads: (workspaceId: Id, before?: string | null) =>
+    call<ActivityPage<ThreadActivity>>("activity_threads", { workspaceId, before: before ?? null }),
+
+  activityMentions: (workspaceId: Id, before?: string | null) =>
+    call<ActivityPage<MentionActivity>>("activity_mentions", { workspaceId, before: before ?? null }),
+
+  listSessions: () => call<SessionInfo[]>("list_sessions"),
+
+  revokeSession: (sessionId: string) => call<void>("revoke_session", { sessionId }),
+
+  listWorkspaceMembers: (workspaceId: Id) =>
+    call<WorkspaceMember[]>("list_workspace_members", { workspaceId }),
+
+  updateWorkspaceMemberRole: (workspaceId: Id, memberId: string, role: WorkspaceRole) =>
+    call<WorkspaceMember>("update_workspace_member_role", { workspaceId, memberId, role }),
+
+  removeWorkspaceMember: (workspaceId: Id, memberId: string) =>
+    call<void>("remove_workspace_member", { workspaceId, memberId }),
 
   downloadFile: (fileId: Id, filename: string) =>
     call<string>("download_file", { fileId, filename }),
@@ -302,6 +366,20 @@ const tauriApi = {
 
   uninstallApp: (installationId: Id) =>
     call<void>("uninstall_app", { installationId }),
+
+  updateInstallation: (
+    installationId: Id,
+    patch: {
+      name?: string;
+      icon_url?: string | null;
+      is_pinned?: boolean;
+      sort_order?: number;
+      config?: Record<string, unknown>;
+    },
+  ) => call<AppInstallation>("update_installation", { installationId, patch }),
+
+  probeLinkApp: (workspaceId: Id, url: string) =>
+    call<LinkProbe>("probe_link_app", { workspaceId, url }),
 
   /** Mint a scoped session for a panel webview. */
   openAppPanel: (installationId: Id, channelId?: Id) =>
@@ -499,19 +577,31 @@ export const shell = {
   pickAndUploadFiles: async (
     workspaceId: Id,
     onUploaded: (file: FileRef) => void,
+    onProgress?: (filename: string, sent: number, total: number) => void,
   ): Promise<void> => {
     if (isDesktopShell()) {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({ multiple: true });
       if (!selected) return;
       for (const path of Array.isArray(selected) ? selected : [selected]) {
-        onUploaded(await api.uploadFile(workspaceId, path));
+        const name = path.split(/[\\/]/).pop() ?? path;
+        onProgress?.(name, 0, 0);
+        onUploaded(
+          await api.uploadFile(workspaceId, path, (sent, total) =>
+            onProgress?.(name, sent, total),
+          ),
+        );
       }
       return;
     }
 
     for (const file of await pickFilesInBrowser(true)) {
-      onUploaded(await api.uploadFile(workspaceId, file));
+      onProgress?.(file.name, 0, file.size);
+      onUploaded(
+        await api.uploadFile(workspaceId, file, (sent, total) =>
+          onProgress?.(file.name, sent, total),
+        ),
+      );
     }
   },
 

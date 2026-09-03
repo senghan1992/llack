@@ -26,6 +26,23 @@ class FileOut(Schema):
     created_at: datetime
 
 
+class SharedIn(Schema):
+    """Where the viewer last saw this file: the newest live message carrying
+    it in a channel the viewer belongs to. Never a channel they are not in."""
+
+    channel_id: str
+    channel_name: str | None = None
+    channel_kind: str
+    message_id: str
+
+
+class WorkspaceFileOut(FileOut):
+    """A file-browser row: the file plus the conversation it lives in, so
+    "그 파일 어디 있지" ends with a jump rather than a download."""
+
+    shared_in: SharedIn | None = None
+
+
 class RegisterUploadRequest(Payload):
     """Step 1 of an upload: reserve a file row and get an upload target."""
 

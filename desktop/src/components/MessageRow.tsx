@@ -8,6 +8,7 @@ import { useApp } from "@/store/app";
 
 import { AttachmentImage, isPreviewableImage } from "./AttachmentImage";
 import { Avatar } from "./Avatar";
+import { EmojiPicker } from "./EmojiPicker";
 import {
   IconEdit,
   IconFile,
@@ -15,6 +16,7 @@ import {
   IconPin,
   IconReply,
   IconShare,
+  IconSmile,
   IconTrash,
 } from "./Icon";
 import { ShareMessage } from "./ShareMessage";
@@ -43,6 +45,7 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
   const [editing, setEditing] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [pickingEmoji, setPickingEmoji] = useState(false);
   const [draft, setDraft] = useState(message.body);
   const refreshChannel = useApp((state) => state.refreshChannel);
   const reportError = useApp((state) => state.reportError);
@@ -240,7 +243,12 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
                 {/* The image, when it loads, sits above the chip; the chip
                     stays as the download affordance and as the whole story
                     when the preview cannot load. */}
-                {isPreviewableImage(file) ? <AttachmentImage file={file} /> : null}
+                {isPreviewableImage(file) ? (
+                  <AttachmentImage
+                    file={file}
+                    gallery={message.attachments.filter(isPreviewableImage)}
+                  />
+                ) : null}
                 <button
                   type="button"
                   className="attachment"
@@ -283,7 +291,31 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
                 </button>
               </li>
             ))}
+            <li>
+              <button
+                type="button"
+                className="reaction reaction-add"
+                onClick={() => setPickingEmoji(true)}
+                title="다른 반응 추가"
+                aria-label="다른 반응 추가"
+              >
+                <IconSmile size={13} />
+              </button>
+            </li>
           </ul>
+        ) : null}
+
+        {pickingEmoji ? (
+          <div className="emoji-anchor">
+            <EmojiPicker
+              label="반응 추가"
+              onClose={() => setPickingEmoji(false)}
+              onPick={(emoji) => {
+                setPickingEmoji(false);
+                void toggleReaction(message.id, emoji);
+              }}
+            />
+          </div>
         ) : null}
 
         {!inThread && message.reply_count > 0 ? (
@@ -308,6 +340,15 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
             {emoji}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setPickingEmoji((open) => !open)}
+          title="다른 이모지로 반응"
+          aria-label="다른 이모지로 반응"
+          aria-expanded={pickingEmoji}
+        >
+          <IconSmile size={13} />
+        </button>
         {!inThread ? (
           <button
             type="button"

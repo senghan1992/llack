@@ -368,15 +368,173 @@ async def test_a_url_becomes_a_pinned_link_app_in_one_post(
     assert any(i["id"] == installation["id"] for i in listed)
 
 
-async def test_adding_a_link_app_requires_a_workspace_admin(
+async def test_members_add_link_apps_and_guests_do_not(
     alice: Actor, bob: Actor, workspace: dict
 ) -> None:
+    """A link app holds no permissions, so any member may add one; a guest is
+    a visitor and does not get to furnish the dock."""
     await _join_workspace(alice, bob, workspace)
-    denied = await bob.post(
+    added = await bob.post(
         f"/workspaces/{workspace['id']}/apps/link",
         json={"name": "위키", "url": "https://wiki.example.com"},
     )
+    assert added.status_code == 201, added.text
+    assert added.json()["app"]["kind"] == "link"
+
+    members = (await alice.get(f"/workspaces/{workspace['id']}/members")).json()
+    bob_member = next(m for m in members if m["user"]["id"] == bob.id)
+    demoted = await alice.patch(
+        f"/workspaces/{workspace['id']}/members/{bob_member['id']}", json={"role": "guest"}
+    )
+    assert demoted.status_code == 200
+    denied = await bob.post(
+        f"/workspaces/{workspace['id']}/apps/link",
+        json={"name": "피그마", "url": "https://figma.example.com"},
+    )
     assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "guest_cannot_add_apps"
+
+
+async def test_the_person_who_added_a_link_app_can_rename_and_remove_it(
+    alice: Actor, bob: Actor, workspace: dict, client: httpx.AsyncClient
+) -> None:
+    from tests.conftest import register
+
+    await _join_workspace(alice, bob, workspace)
+    carol = await register(client, "carol@example.com", "박캐롤")
+    await _join_workspace(alice, carol, workspace)
+
+    installation = (
+        await bob.post(
+            f"/workspaces/{workspace['id']}/apps/link",
+            json={"name": "피그마", "url": "https://figma.example.com/file/abc"},
+        )
+    ).json()
+    iid = installation["id"]
+
+    # Another member: hands off.
+    assert (
+        await carol.patch(f"/app-installations/{iid}", json={"name": "내 것"})
+    ).status_code == 403
+    assert (await carol.delete(f"/app-installations/{iid}")).status_code == 403
+
+    # The installer: rename + icon.
+    renamed = await bob.patch(
+        f"/app-installations/{iid}",
+        json={"name": "디자인 시스템", "icon_url": "https://figma.example.com/favicon.ico"},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["app"]["name"] == "디자인 시스템"
+    assert renamed.json()["app"]["icon_url"] == "https://figma.example.com/favicon.ico"
+    listed = (await alice.get(f"/workspaces/{workspace['id']}/apps")).json()
+    assert any(i["app"]["name"] == "디자인 시스템" for i in listed)
+
+    # The installer may remove it; an admin always may (checked on a second tile).
+    assert (await bob.delete(f"/app-installations/{iid}")).status_code == 200
+    second = (
+        await bob.post(
+            f"/workspaces/{workspace['id']}/apps/link",
+            json={"name": "대시보드", "url": "https://grafana.example.com"},
+        )
+    ).json()
+    assert (await alice.delete(f"/app-installations/{second['id']}")).status_code == 200
+
+
+async def test_renaming_is_for_link_apps_only(alice: Actor, workspace: dict) -> None:
+    app = await _publish(alice, workspace)
+    installed = (
+        await alice.post(
+            f"/workspaces/{workspace['id']}/apps/{app['id']}/install",
+            json={"granted_scopes": [], "config": {}, "pin_to_dock": True},
+        )
+    ).json()
+    denied = await alice.patch(f"/app-installations/{installed['id']}", json={"name": "다른 이름"})
+    assert denied.status_code == 422
+    assert denied.json()["error"]["code"] == "not_a_link_app"
+
+
+async def _mock_probe(monkeypatch, handler) -> None:  # noqa: ANN001
+    from app.services import linkprobe
+
+    monkeypatch.setattr(linkprobe, "_transport", httpx.MockTransport(handler))
+    monkeypatch.setattr(linkprobe, "_resolve_addresses", lambda host: ["93.184.216.34"])
+
+
+async def test_link_probe_reads_frame_headers_and_title(
+    alice: Actor, workspace: dict, monkeypatch
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        if host == "deny.example.com":
+            return httpx.Response(200, headers={"X-Frame-Options": "DENY"}, text="<title>x</title>")
+        if host == "csp.example.com":
+            return httpx.Response(
+                200,
+                headers={"Content-Security-Policy": "default-src 'self'; frame-ancestors 'self'"},
+                text="<html><title>CSP</title></html>",
+            )
+        if host == "open.example.com":
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+                text="<html><head><title>  우리 &amp; 대시보드 </title></head></html>",
+            )
+        return httpx.Response(200, text="")
+
+    await _mock_probe(monkeypatch, handler)
+    probe = f"/workspaces/{workspace['id']}/apps/link/probe"
+
+    deny = (await alice.post(probe, json={"url": "https://deny.example.com/"})).json()
+    assert deny == {
+        "embeddable": False,
+        "reason": "x_frame_options",
+        "final_url": "https://deny.example.com/",
+        "title": "x",
+    }
+    csp = (await alice.post(probe, json={"url": "https://csp.example.com/app"})).json()
+    assert csp["embeddable"] is False and csp["reason"] == "csp_frame_ancestors"
+    open_site = (await alice.post(probe, json={"url": "https://open.example.com/"})).json()
+    assert open_site["embeddable"] is True
+    assert open_site["reason"] is None
+    assert open_site["title"] == "우리 & 대시보드"
+
+
+async def test_link_probe_reports_unreachable_and_refuses_private_hosts(
+    alice: Actor, workspace: dict, monkeypatch
+) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        raise httpx.ConnectError("boom")
+
+    await _mock_probe(monkeypatch, handler)
+    probe = f"/workspaces/{workspace['id']}/apps/link/probe"
+
+    down = (await alice.post(probe, json={"url": "https://down.example.com/"})).json()
+    assert down == {"embeddable": None, "reason": "unreachable", "final_url": None, "title": None}
+
+    # Loopback, RFC1918, link-local and localhost never reach the transport.
+    for url in (
+        "http://127.0.0.1:8000/admin",
+        "http://10.0.0.5/",
+        "http://192.168.1.1/",
+        "http://169.254.169.254/latest/meta-data",
+        "http://localhost/",
+        "http://[::1]/",
+    ):
+        refused = await alice.post(probe, json={"url": url})
+        assert refused.status_code == 403, url
+        assert refused.json()["error"]["code"] == "url_not_allowed"
+    assert calls == ["https://down.example.com/"]
+
+    # A public hostname that resolves to a private address is refused too.
+    from app.services import linkprobe
+
+    monkeypatch.setattr(linkprobe, "_resolve_addresses", lambda host: ["10.1.2.3"])
+    sneaky = await alice.post(probe, json={"url": "https://intranet.example.com/"})
+    assert sneaky.status_code == 403
+    assert calls == ["https://down.example.com/"]
 
 
 async def test_a_link_app_refuses_non_http_urls(alice: Actor, workspace: dict) -> None:

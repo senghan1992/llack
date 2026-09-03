@@ -224,6 +224,8 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
   const [linkName, setLinkName] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [addingLink, setAddingLink] = useState(false);
+  /** Set when the probe says the site refuses framing; the person decides. */
+  const [blocked, setBlocked] = useState<{ url: string; title: string | null } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
   // Every other modal closes on Escape; this one was the odd one out.
@@ -247,27 +249,58 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const addLink = async () => {
+  /**
+   * Add the link app. First ask the server whether the site allows framing;
+   * a refusing site (GitHub, most SaaS logins) used to become a tile that
+   * opened a blank pane with no explanation. Now the person is told before
+   * adding, and can add it as an "open in browser" tile instead.
+   */
+  const addLink = async (openMode: "embed" | "external" = "embed", skipProbe = false) => {
     if (!workspaceId || addingLink) return;
     setAddingLink(true);
     try {
-      // The name falls back to the host, so pasting a URL alone is enough.
-      const name = linkName.trim() || new URL(linkUrl.trim()).host;
-      await api.addLinkApp(workspaceId, name, linkUrl.trim());
+      const url = linkUrl.trim();
+      let title: string | null = null;
+      if (!skipProbe && openMode === "embed") {
+        try {
+          const probe = await api.probeLinkApp(workspaceId, url);
+          title = probe.title ?? null;
+          if (probe.embeddable === false) {
+            setBlocked({ url, title });
+            return;
+          }
+        } catch {
+          // The probe is advice, not a gate. An intranet tool on a private
+          // address is exactly what a team embeds, and the server refuses to
+          // probe those (SSRF guard) — so it is added unverified, like before.
+        }
+      }
+      // The name falls back to the page title, then the host, so pasting a
+      // URL alone is enough.
+      const name = linkName.trim() || title?.slice(0, 120) || new URL(url).host;
+      const installation = await api.addLinkApp(workspaceId, name, url);
+      if (openMode === "external") {
+        await api.updateInstallation(installation.id, {
+          config: { ...installation.config, open_mode: "external" },
+        });
+      }
       await loadInstallations();
       setLinkName("");
       setLinkUrl("");
+      setBlocked(null);
       onClose();
     } catch (error) {
       // One cause per sentence: a member being told to "check the URL" would
       // fix the wrong thing.
       const parsed = reportError(error);
       const message =
-        parsed.status === 403
-          ? "웹 앱은 워크스페이스 관리자만 추가할 수 있습니다."
-          : parsed.status === 422
-            ? "주소를 확인해주세요. http(s) 주소만 추가할 수 있습니다."
-            : "웹 앱을 추가하지 못했습니다.";
+        parsed.code === "guest_cannot_add_apps"
+          ? "게스트는 웹 앱을 추가할 수 없습니다."
+          : parsed.status === 403
+            ? "웹 앱을 추가할 권한이 없습니다."
+            : parsed.status === 422
+              ? "주소를 확인해주세요. http(s) 주소만 추가할 수 있습니다."
+              : "웹 앱을 추가하지 못했습니다.";
       useApp.setState({ banner: { kind: "error", message } });
     } finally {
       setAddingLink(false);
@@ -335,7 +368,8 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
             <h3>웹 앱을 주소로 추가</h3>
             <p className="linkapp-hint">
               팀이 배포한 웹 도구의 주소를 넣으면 왼쪽 도크에 들어가고, 누르면
-              이 창 안에서 열립니다. 워크스페이스 관리자만 추가할 수 있습니다.
+              이 창 안에서 열립니다. 구성원 누구나 추가할 수 있고, 추가한 사람과
+              관리자가 이름을 바꾸거나 뺄 수 있습니다.
             </p>
             <div className="linkapp-fields">
               <input
@@ -365,10 +399,40 @@ function AppDirectory({ onClose }: { onClose: () => void }) {
                   onClick={() => void addLink()}
                   disabled={!linkUrl.trim() || addingLink}
                 >
-                  {addingLink ? "추가 중…" : "추가"}
+                  {addingLink ? "확인 중…" : "추가"}
                 </button>
               </div>
             </div>
+            {blocked ? (
+              <div className="linkapp-blocked" role="alert">
+                <strong>{blocked.title ?? new URL(blocked.url).host} 은(는) 창 안에 띄우는 것을 거부합니다.</strong>
+                <p>
+                  이 사이트는 다른 앱 안에서 열리지 않도록 설정돼 있어(X-Frame-Options), 임베드하면 빈 화면만
+                  보입니다. 대신 도크에서 누르면 새 탭으로 여는 타일로 추가할 수 있습니다.
+                </p>
+                <div className="linkapp-blocked-actions">
+                  <button
+                    type="button"
+                    className="settings-primary"
+                    onClick={() => void addLink("external", true)}
+                    disabled={addingLink}
+                  >
+                    새 탭으로 여는 앱으로 추가
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-secondary"
+                    onClick={() => void addLink("embed", true)}
+                    disabled={addingLink}
+                  >
+                    그래도 임베드
+                  </button>
+                  <button type="button" className="settings-secondary" onClick={() => setBlocked(null)}>
+                    취소
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
 
           {installations.length > 0 ? (

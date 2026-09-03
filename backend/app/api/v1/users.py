@@ -2,22 +2,73 @@
 
 from __future__ import annotations
 
+import contextlib
+import re
+import secrets
+from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, status
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import func, or_, select
 
 from app.api.deps import CurrentUser, DbSession, WorkspaceCtx
+from app.core.config import settings
 from app.core.enums import PresenceState
+from app.core.errors import AppError, NotFound, PayloadTooLarge
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.realtime.events import emit_to_workspace
 from app.realtime.presence import get_presence_store
 from app.schemas.realtime import ServerEvent
 from app.schemas.user import UpdateProfileRequest, UpdateStatusRequest, UserBrief, UserOut
+from app.services.storage import get_storage
 from app.services.workspaces import list_user_workspaces
 
 router = APIRouter(tags=["users"])
+
+# ── Avatars ─────────────────────────────────────────────────────────────────
+#
+# An avatar is served from a public, unauthenticated URL because it is loaded
+# by `<img src>`, which cannot carry a bearer token. The URL embeds a random
+# filename, so it is unguessable, and only the *current* avatar resolves — a
+# replaced picture stops being reachable at its old address.
+
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+AVATAR_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+AVATAR_MEDIA = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
+AVATAR_FILENAME_RE = re.compile(r"^[A-Za-z0-9_-]+\.(png|jpg|webp)$")
+
+
+def _avatar_key(user_id: str, filename: str) -> str:
+    return f"avatars/{user_id}/{filename}"
+
+
+def _own_avatar_filename(user: User) -> str | None:
+    """The stored filename behind `avatar_url`, or None if it points elsewhere
+    (an external URL set through the profile API)."""
+    if not user.avatar_url:
+        return None
+    match = re.search(rf"/users/{re.escape(user.id)}/avatar/([A-Za-z0-9_-]+\.(?:png|jpg|webp))$",
+                      user.avatar_url)
+    return match.group(1) if match else None
+
+
+async def _discard_own_avatar(user: User) -> None:
+    filename = _own_avatar_filename(user)
+    if filename is None:
+        return
+    with contextlib.suppress(Exception):
+        await get_storage().delete(_avatar_key(user.id, filename))
+
+
+async def _broadcast_user(db: DbSession, user: User) -> None:
+    for workspace, _role in await list_user_workspaces(db, user_id=user.id):
+        await emit_to_workspace(
+            workspace.id,
+            ServerEvent.USER_UPDATED,
+            {"user": UserBrief.model_validate(user).model_dump()},
+        )
 
 
 @router.get("/me", response_model=UserOut)
@@ -41,6 +92,74 @@ async def update_me(payload: UpdateProfileRequest, db: DbSession, user: CurrentU
             {"user": UserBrief.model_validate(user).model_dump()},
         )
     return UserOut.model_validate(user)
+
+
+@router.put("/me/avatar", response_model=UserOut)
+async def upload_avatar(request: Request, db: DbSession, user: CurrentUser) -> UserOut:
+    """Replace the profile picture with the request body (PNG/JPEG/WebP, ≤2 MiB).
+
+    Raw bytes rather than the two-step workspace upload: an avatar belongs to
+    the person, not to a workspace, and a 2 MiB cap makes a single request the
+    right shape. The client resizes before sending, so the cap is generous.
+    """
+    content_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    ext = AVATAR_TYPES.get(content_type)
+    if ext is None:
+        raise AppError(
+            "Avatars must be PNG, JPEG or WebP.",
+            code="unsupported_media_type",
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        )
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > AVATAR_MAX_BYTES:
+        raise PayloadTooLarge(details={"max_bytes": AVATAR_MAX_BYTES})
+    body = await request.body()
+    if len(body) > AVATAR_MAX_BYTES:
+        raise PayloadTooLarge(details={"max_bytes": AVATAR_MAX_BYTES})
+    if not body:
+        raise AppError("The image is empty.", code="empty_upload")
+
+    filename = f"{secrets.token_urlsafe(8)}.{ext}"
+
+    async def _once() -> AsyncIterator[bytes]:
+        yield body
+
+    await get_storage().write_stream(_avatar_key(user.id, filename), _once())
+    await _discard_own_avatar(user)
+    user.avatar_url = f"{settings.api_prefix}/users/{user.id}/avatar/{filename}"
+    await db.commit()
+    await _broadcast_user(db, user)
+    return UserOut.model_validate(user)
+
+
+@router.delete("/me/avatar", response_model=UserOut)
+async def delete_avatar(db: DbSession, user: CurrentUser) -> UserOut:
+    await _discard_own_avatar(user)
+    user.avatar_url = None
+    await db.commit()
+    await _broadcast_user(db, user)
+    return UserOut.model_validate(user)
+
+
+@router.get("/users/{user_id}/avatar/{filename}", include_in_schema=False)
+async def get_avatar(user_id: str, filename: str, db: DbSession):
+    """Public: the bytes behind a user's current avatar URL."""
+    if not AVATAR_FILENAME_RE.match(filename):
+        raise NotFound("Avatar not found.", code="avatar_not_found")
+    user = await db.get(User, user_id)
+    if user is None or _own_avatar_filename(user) != filename:
+        raise NotFound("Avatar not found.", code="avatar_not_found")
+
+    storage = get_storage()
+    key = _avatar_key(user_id, filename)
+    presigned = await storage.presigned_get_url(key)
+    if presigned:
+        return RedirectResponse(presigned, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    return StreamingResponse(
+        storage.read_stream(key),
+        media_type=AVATAR_MEDIA[filename.rsplit(".", 1)[1]],
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.put("/me/status", response_model=UserOut)

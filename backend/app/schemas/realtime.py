@@ -39,6 +39,7 @@ class ServerEvent(StrEnum):
 
     APP_INSTALLED = "app.installed"
     APP_UNINSTALLED = "app.uninstalled"
+    APP_UPDATED = "app.updated"          # renamed, re-pinned, re-ordered
     APP_EVENT = "app.event"          # a mini-app pushing to its own panel
 
 

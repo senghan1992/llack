@@ -111,6 +111,77 @@ export interface SmtpSettingsInput {
   mail_from: string;
 }
 
+/** A file as the workspace file browser lists it: where it was shared. */
+export interface WorkspaceFile extends FileRef {
+  created_at?: string | null;
+  is_ready?: boolean;
+  /** The newest live message the viewer can see that carries this file. */
+  shared_in?: {
+    channel_id: Id;
+    channel_name?: string | null;
+    channel_kind: string;
+    message_id: Id;
+  } | null;
+}
+
+/** A channel as activity/mention lists name it. */
+export interface ChannelRef {
+  id: Id;
+  name?: string | null;
+  kind: string;
+  peers: UserBrief[];
+}
+
+/** A thread I take part in, newest reply first. */
+export interface ThreadActivity {
+  root: Message;
+  channel: ChannelRef;
+  last_reply?: Message | null;
+  participants: UserBrief[];
+  unread_replies: number;
+}
+
+export interface MentionActivity {
+  message: Message;
+  channel: ChannelRef;
+}
+
+export interface ActivityPage<T> {
+  items: T[];
+  has_more: boolean;
+  /** Pass back as `before` for the next page. */
+  next_before?: string | null;
+}
+
+/** One signed-in device. `is_current` marks the one making the request. */
+export interface SessionInfo {
+  id: string;
+  device_name?: string | null;
+  platform?: string | null;
+  app_version?: string | null;
+  ip_address?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+  expires_at: string;
+  is_current: boolean;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  user: UserBrief;
+  role: WorkspaceRole;
+  joined_at?: string | null;
+  is_active: boolean;
+}
+
+/** What the server learned by fetching a link-app URL once. */
+export interface LinkProbe {
+  embeddable: boolean | null;
+  reason?: "x_frame_options" | "csp_frame_ancestors" | "unreachable" | null;
+  final_url?: string | null;
+  title?: string | null;
+}
+
 /** One row of the channel member list. */
 export interface ChannelMemberEntry {
   id: Id;
@@ -195,6 +266,8 @@ export interface AppInstallation {
   is_enabled: boolean;
   is_pinned: boolean;
   sort_order: number;
+  /** Who added it; they may rename/remove a link app without being admin. */
+  installed_by?: Id | null;
 }
 
 export interface PanelSession {
@@ -296,6 +369,10 @@ export type SyncEffect =
   | { kind: "channel_changed"; channel_id: Id }
   | { kind: "thread_changed"; channel_id: Id; parent_id: Id }
   | { kind: "sidebar_changed" }
+  /** An app was installed, removed or renamed: reload the dock. */
+  | { kind: "apps_changed" }
+  /** Someone's name or avatar changed: reload the directory. */
+  | { kind: "directory_changed"; user_id?: Id | null }
   | {
       kind: "notify";
       title: string;

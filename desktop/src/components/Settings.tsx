@@ -13,20 +13,28 @@
  * whatever the connected subscription can run is what the dropdown offers.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_MODELS,
   listProviderModels,
   type ProviderModel,
 } from "@/lib/agent/models";
+import { formatRelative } from "@/lib/format";
 import { webInviteUrl } from "@/lib/invite";
 import { agentHost, api, capabilities, isDesktopShell } from "@/lib/ipc";
-import type { InviteOut, SmtpSettings } from "@/lib/types";
+import type {
+  InviteOut,
+  SessionInfo,
+  SmtpSettings,
+  WorkspaceMember,
+  WorkspaceRole,
+} from "@/lib/types";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
-import { IconClose } from "./Icon";
+import { Avatar } from "./Avatar";
+import { IconClose, IconSearch } from "./Icon";
 
 export function Settings() {
   const open = useApp((state) => state.settingsOpen);
@@ -66,6 +74,11 @@ export function Settings() {
           <section className="settings-section">
             <h3>내 프로필</h3>
             <ProfileSection />
+          </section>
+
+          <section className="settings-section">
+            <h3>구성원</h3>
+            <MembersSection />
           </section>
 
           <section className="settings-section">
@@ -163,6 +176,7 @@ function ProfileSection() {
 
   return (
     <div className="settings-provider">
+      <AvatarRow />
       <label className="settings-field">
         <span>이름</span>
         <input
@@ -779,6 +793,8 @@ function AccountSection() {
 
       <NotificationPermissionRow />
 
+      <SessionsList />
+
       <div className="settings-danger-row">
         <div>
           <strong>다른 기기 모두 로그아웃</strong>
@@ -876,8 +892,24 @@ function GuideList() {
       how: "컴포저의 클립 버튼, 파일을 창에 끌어다 놓기, 또는 이미지를 복사해 ⌘V 로 붙여넣기.",
     },
     {
-      want: "이미지 크게 보기",
-      how: "첨부한 이미지는 대화에 미리보기로 보입니다. 클릭하면 크게 열립니다.",
+      want: "이미지 크게 보기·여러 장 비교",
+      how: "첨부 이미지를 클릭하면 크게 열립니다. ← → 로 같은 메시지의 다음 장, 이미지를 클릭하면 원본 크기.",
+    },
+    {
+      want: "그 파일 어디 있지?",
+      how: "사이드바 맨 위 '파일' — 내가 볼 수 있는 파일이 최신순으로 모이고, 이미지·문서·내 파일로 걸러 이름으로 찾습니다. '…에서 공유됨'을 누르면 그 메시지로 갑니다.",
+    },
+    {
+      want: "내 질문에 답이 왔는지 보기",
+      how: "사이드바 맨 위 '활동' — 내가 낀 스레드(새 답글 수)와 나를 부른 멘션이 한 화면에 모입니다.",
+    },
+    {
+      want: "이모지 반응·이모지 넣기",
+      how: "메시지에 마우스를 올리고 웃는 얼굴 버튼(피커), 또는 컴포저에서 :tada: 처럼 :이름 을 치면 제안이 뜹니다.",
+    },
+    {
+      want: "프로필 사진 올리기",
+      how: "위 '내 프로필'의 사진 올리기 — PNG·JPEG·WebP, 정사각형으로 잘려 저장됩니다.",
     },
     {
       want: "메시지를 다른 채널/DM 에 전하기",
@@ -902,6 +934,10 @@ function GuideList() {
     {
       want: "비밀번호 바꾸기 / 잊었을 때",
       how: "여기 계정 섹션에서 언제든 변경. 잊었다면 로그인 화면의 \"비밀번호를 잊으셨나요?\" — 이메일로 6자리 코드가 갑니다.",
+    },
+    {
+      want: "구성원 역할 바꾸기 · 떠난 사람 내보내기 · 다른 기기 끊기",
+      how: "위 '구성원' 섹션(관리자)과 '계정' 섹션의 로그인된 기기 목록.",
     },
     {
       want: "AI 에이전트에게 일 시키기",
@@ -1180,5 +1216,456 @@ function ConnectForm() {
         {busy ? "확인 중…" : "연결"}
       </button>
     </form>
+  );
+}
+
+/**
+ * My picture. The browser shrinks it to a 256px square before upload (a 12 MB
+ * phone photo becomes ~40 KB), so the server needs no image library and the
+ * upload is instant; the desktop shell sends the file as-is under the same
+ * 2 MB cap.
+ */
+function AvatarRow() {
+  const me = useApp((state) => state.me);
+  const showBanner = useApp((state) => state.showBanner);
+  const reportError = useApp((state) => state.reportError);
+  const refreshDirectory = useApp((state) => state.refreshDirectory);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const apply = async (source: File | string) => {
+    setBusy(true);
+    try {
+      const updated = await api.uploadAvatar(source);
+      useApp.setState({ me: updated });
+      void refreshDirectory();
+      showBanner("info", "프로필 사진을 바꿨습니다.");
+    } catch (error) {
+      reportError(error, "사진을 올리지 못했습니다. PNG·JPEG·WebP, 2MB 이하만 됩니다.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pick = async () => {
+    if (isDesktopShell()) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "이미지", extensions: ["png", "jpg", "jpeg", "webp"] }],
+      });
+      if (typeof selected === "string") await apply(selected);
+      return;
+    }
+    inputRef.current?.click();
+  };
+
+  const onFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showBanner("error", "이미지 파일만 올릴 수 있습니다.");
+      return;
+    }
+    try {
+      await apply(await squareThumbnail(file, 256));
+    } catch {
+      // A format the canvas cannot decode (HEIC): send as-is and let the
+      // server's type check answer.
+      await apply(file);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      const updated = await api.removeAvatar();
+      useApp.setState({ me: updated });
+      void refreshDirectory();
+      showBanner("info", "프로필 사진을 지웠습니다. 이름 첫 글자가 대신 보입니다.");
+    } catch (error) {
+      reportError(error, "사진을 지우지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!me) return null;
+  return (
+    <div className="settings-avatar-row">
+      <Avatar id={me.id} name={me.display_name} avatarUrl={me.avatar_url} size={56} />
+      <div className="settings-avatar-text">
+        <strong>프로필 사진</strong>
+        <p>대화와 구성원 목록에서 이름 옆에 보입니다. 정사각형으로 잘려 256px 로 저장됩니다.</p>
+      </div>
+      <div className="settings-avatar-actions">
+        <button type="button" className="settings-secondary" onClick={() => void pick()} disabled={busy}>
+          {busy ? "올리는 중…" : me.avatar_url ? "사진 바꾸기" : "사진 올리기"}
+        </button>
+        {me.avatar_url ? (
+          <button type="button" className="settings-secondary" onClick={() => void remove()} disabled={busy}>
+            제거
+          </button>
+        ) : null}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/*"
+          hidden
+          onChange={(event) => void onFile(event)}
+          aria-label="프로필 사진 파일"
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Centre-crop to a square and scale down; PNG for transparency, else JPEG. */
+async function squareThumbnail(file: File, size: number): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const side = Math.min(bitmap.width, bitmap.height);
+    const sx = (bitmap.width - side) / 2;
+    const sy = (bitmap.height - side) / 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("no canvas");
+    context.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size);
+    const type = file.type === "image/png" ? "image/png" : "image/jpeg";
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, type, 0.9),
+    );
+    if (!blob) throw new Error("encode failed");
+    return new File([blob], type === "image/png" ? "avatar.png" : "avatar.jpg", { type });
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** `구성원으로` / `관리자로`: pick (으)로 by the last syllable's final consonant. */
+function withRo(word: string): string {
+  const last = word.charCodeAt(word.length - 1);
+  if (last < 0xac00 || last > 0xd7a3) return `${word}로`;
+  const final = (last - 0xac00) % 28;
+  return final === 0 || final === 8 ? `${word}로` : `${word}으로`;
+}
+
+const ROLE_LABEL: Record<WorkspaceRole, string> = {
+  owner: "소유자",
+  admin: "관리자",
+  member: "구성원",
+  guest: "게스트",
+};
+
+/**
+ * Who is in this workspace and what they may do.
+ *
+ * The owner used to see a member count and nothing else — no way to learn who
+ * had joined, hand someone admin, or remove a leaver. Everyone may read the
+ * list; changing roles and removing people needs admin, and only an owner
+ * touches owners (the server enforces both).
+ */
+function MembersSection() {
+  const workspace = useApp((state) =>
+    state.workspaces.find((candidate) => candidate.id === state.activeWorkspaceId),
+  );
+  const me = useApp((state) => state.me);
+  const presence = useApp((state) => state.presence);
+  const showBanner = useApp((state) => state.showBanner);
+  const reportError = useApp((state) => state.reportError);
+  const refreshDirectory = useApp((state) => state.refreshDirectory);
+
+  const [members, setMembers] = useState<WorkspaceMember[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+
+  const myRole = workspace?.my_role ?? "member";
+  const canManage = myRole === "owner" || myRole === "admin";
+
+  const load = useCallback(async () => {
+    if (!workspace) return;
+    try {
+      const rows = await api.listWorkspaceMembers(workspace.id);
+      setMembers(rows.filter((row) => row.is_active !== false));
+    } catch (error) {
+      setMembers([]);
+      reportError(error, "구성원 목록을 불러오지 못했습니다.");
+    }
+  }, [workspace, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const order: Record<WorkspaceRole, number> = { owner: 0, admin: 1, member: 2, guest: 3 };
+    return (members ?? [])
+      .filter(
+        (row) =>
+          !needle ||
+          row.user.display_name.toLowerCase().includes(needle) ||
+          row.user.handle.toLowerCase().includes(needle),
+      )
+      .sort(
+        (a, b) =>
+          order[a.role] - order[b.role] || a.user.display_name.localeCompare(b.user.display_name, "ko"),
+      );
+  }, [members, query]);
+
+  const setRole = async (row: WorkspaceMember, role: WorkspaceRole) => {
+    if (!workspace || role === row.role) return;
+    setBusyId(row.id);
+    try {
+      const updated = await api.updateWorkspaceMemberRole(workspace.id, row.id, role);
+      setMembers((current) => (current ?? []).map((entry) => (entry.id === row.id ? updated : entry)));
+      showBanner("info", `${row.user.display_name} 님을 ${withRo(ROLE_LABEL[role])} 바꿨습니다.`);
+    } catch (error) {
+      const parsed = reportError(error);
+      const message =
+        parsed.code === "last_owner"
+          ? "소유자는 한 명 이상 남아야 합니다. 먼저 다른 사람을 소유자로 지정해주세요."
+          : parsed.code === "owner_role_required"
+            ? "소유자 역할은 소유자만 바꿀 수 있습니다."
+            : "역할을 바꾸지 못했습니다.";
+      showBanner("error", message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const remove = async (row: WorkspaceMember) => {
+    if (!workspace) return;
+    setBusyId(row.id);
+    try {
+      await api.removeWorkspaceMember(workspace.id, row.id);
+      setMembers((current) => (current ?? []).filter((entry) => entry.id !== row.id));
+      setConfirmRemove(null);
+      void refreshDirectory();
+      showBanner(
+        "info",
+        `${row.user.display_name} 님을 워크스페이스에서 내보냈습니다. 남긴 메시지는 그대로 있습니다.`,
+      );
+    } catch (error) {
+      const parsed = reportError(error);
+      showBanner(
+        "error",
+        parsed.code === "owner_role_required"
+          ? "소유자는 소유자만 내보낼 수 있습니다."
+          : "내보내지 못했습니다.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (!workspace) return null;
+
+  const assignable: WorkspaceRole[] =
+    myRole === "owner" ? ["owner", "admin", "member", "guest"] : ["admin", "member", "guest"];
+
+  return (
+    <div className="settings-provider">
+      <p className="settings-hint">
+        {members === null
+          ? "불러오는 중…"
+          : `${members.length}명. ${
+              canManage
+                ? "역할을 바꾸거나 떠난 사람을 내보낼 수 있습니다. 소유자 역할은 소유자만 다룹니다."
+                : "역할 변경과 내보내기는 관리자만 할 수 있습니다."
+            }`}
+      </p>
+      {(members?.length ?? 0) > 8 ? (
+        <div className="share-field">
+          <IconSearch size={14} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="이름이나 아이디로 찾기"
+            aria-label="구성원 찾기"
+          />
+        </div>
+      ) : null}
+      <ul className="member-list workspace-members">
+        {visible.map((row) => {
+          const isMe = row.user.id === me?.id;
+          const touchesOwner = row.role === "owner";
+          const editable = canManage && !isMe && (!touchesOwner || myRole === "owner");
+          return (
+            <li key={row.id}>
+              <Avatar
+                id={row.user.id}
+                name={row.user.display_name}
+                avatarUrl={row.user.avatar_url}
+                size={24}
+                presence={presence.get(row.user.id)}
+                isBot={row.user.is_bot}
+              />
+              <span className="member-name">
+                {row.user.display_name}
+                {isMe ? " (나)" : ""}
+              </span>
+              <span className="member-handle">@{row.user.handle}</span>
+              {editable ? (
+                <select
+                  className="member-role-select"
+                  value={row.role}
+                  onChange={(event) => void setRole(row, event.target.value as WorkspaceRole)}
+                  disabled={busyId === row.id}
+                  aria-label={`${row.user.display_name} 역할`}
+                >
+                  {assignable.map((role) => (
+                    <option key={role} value={role}>
+                      {ROLE_LABEL[role]}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className={`member-role ${row.role === "owner" ? "is-owner" : ""}`}>
+                  {ROLE_LABEL[row.role]}
+                </span>
+              )}
+              {editable ? (
+                confirmRemove === row.id ? (
+                  <>
+                    <button
+                      type="button"
+                      className="member-action is-destructive"
+                      onClick={() => void remove(row)}
+                      disabled={busyId === row.id}
+                    >
+                      정말 내보내기
+                    </button>
+                    <button
+                      type="button"
+                      className="member-action"
+                      onClick={() => setConfirmRemove(null)}
+                    >
+                      취소
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="member-action is-destructive"
+                    onClick={() => setConfirmRemove(row.id)}
+                    disabled={busyId === row.id}
+                    title="워크스페이스에서 내보내기 — 메시지는 남고, 다시 초대할 수 있습니다"
+                  >
+                    내보내기
+                  </button>
+                )
+              ) : null}
+            </li>
+          );
+        })}
+        {members !== null && visible.length === 0 ? (
+          <li className="modal-empty">찾는 구성원이 없습니다.</li>
+        ) : null}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Every device signed in as me, with a way to end any one of them.
+ *
+ * Sessions accumulated silently (22 on one test account) with nothing to see
+ * or do about it. This is the list a security reviewer asks for first.
+ */
+function SessionsList() {
+  const reportError = useApp((state) => state.reportError);
+  const showBanner = useApp((state) => state.showBanner);
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const rows = await api.listSessions();
+      rows.sort((a, b) => {
+        if (a.is_current !== b.is_current) return a.is_current ? -1 : 1;
+        return (b.last_used_at ?? b.created_at).localeCompare(a.last_used_at ?? a.created_at);
+      });
+      setSessions(rows);
+    } catch (error) {
+      setSessions([]);
+      reportError(error, "로그인 기기 목록을 불러오지 못했습니다.");
+    }
+  }, [reportError]);
+
+  useEffect(() => {
+    if (open) void load();
+  }, [open, load]);
+
+  const revoke = async (session: SessionInfo) => {
+    setBusyId(session.id);
+    try {
+      await api.revokeSession(session.id);
+      setSessions((current) => (current ?? []).filter((entry) => entry.id !== session.id));
+      showBanner("info", "해당 기기의 세션을 종료했습니다.");
+    } catch (error) {
+      reportError(error, "세션을 종료하지 못했습니다.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const describe = (session: SessionInfo): string => {
+    const parts = [session.device_name, session.platform].filter(Boolean) as string[];
+    return parts.length > 0 ? parts.join(" · ") : "웹 브라우저";
+  };
+
+  return (
+    <div className="settings-sessions">
+      <div className="settings-danger-row">
+        <div>
+          <strong>로그인된 기기</strong>
+          <p>이 계정으로 로그인한 모든 기기입니다. 모르는 기기가 있으면 바로 종료하세요.</p>
+        </div>
+        <button type="button" onClick={() => setOpen((on) => !on)} aria-expanded={open}>
+          {open ? "접기" : sessions ? `${sessions.length}대 보기` : "보기"}
+        </button>
+      </div>
+      {open ? (
+        <ul className="session-list" aria-label="로그인된 기기">
+          {sessions === null ? (
+            <li className="modal-empty">불러오는 중…</li>
+          ) : sessions.length === 0 ? (
+            <li className="modal-empty">다른 기기가 없습니다.</li>
+          ) : (
+            sessions.map((session) => (
+              <li key={session.id} className={session.is_current ? "is-current" : ""}>
+                <div className="session-info">
+                  <strong>
+                    {describe(session)}
+                    {session.is_current ? <span className="tag-current">이 기기</span> : null}
+                  </strong>
+                  <span>
+                    {session.ip_address ? `${session.ip_address} · ` : ""}
+                    마지막 사용 {formatRelative(session.last_used_at ?? session.created_at)}
+                    {session.app_version ? ` · v${session.app_version}` : ""}
+                  </span>
+                </div>
+                {!session.is_current ? (
+                  <button
+                    type="button"
+                    className="member-action is-destructive"
+                    onClick={() => void revoke(session)}
+                    disabled={busyId === session.id}
+                  >
+                    종료
+                  </button>
+                ) : null}
+              </li>
+            ))
+          )}
+        </ul>
+      ) : null}
+    </div>
   );
 }

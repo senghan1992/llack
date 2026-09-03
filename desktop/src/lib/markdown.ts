@@ -13,6 +13,8 @@
  * numbered lists, `- [ ]` task lists, pipe tables.
  */
 
+import { replaceShortcodes } from "@/lib/emoji";
+
 export interface RenderContext {
   /** Resolves a user id to a display name for `<@id>` mentions. */
   userName: (id: string) => string | undefined;
@@ -105,6 +107,10 @@ export function renderMessage(body: string, context: RenderContext): string {
   working = working.replace(/`([^`\n]+)`/g, (_match, code: string) =>
     stash(`<code class="code-inline">${code}</code>`),
   );
+
+  // 3b. `:tada:` → 🎉. Code spans are already stashed, so a shortcode inside
+  //     backticks stays literal — the same rule mentions follow.
+  working = replaceShortcodes(working);
 
   // 4. Mentions. `&lt;@id&gt;` because the source was escaped in step 1.
   working = working.replace(new RegExp(`&lt;@(${ULID})&gt;`, "g"), (_match, id: string) => {
@@ -304,7 +310,7 @@ export function previewText(
   context: RenderContext,
   limit = 90,
 ): string {
-  let text = body
+  let text = replaceShortcodes(body)
     .replace(/```[\s\S]*?```/g, "[코드]")
     .replace(/`([^`\n]+)`/g, "$1")
     .replace(

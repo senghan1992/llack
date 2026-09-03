@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { searchEmoji, replaceShortcodes, type EmojiEntry } from "@/lib/emoji";
 import { asCommandError } from "@/lib/errors";
 import { formatBytes } from "@/lib/format";
 import { api, isDesktopShell, shell } from "@/lib/ipc";
@@ -18,7 +19,16 @@ import type { Id } from "@/lib/types";
 import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
-import { IconClose, IconPaperclip, IconTemplate } from "./Icon";
+import { EmojiPicker } from "./EmojiPicker";
+import { IconClose, IconPaperclip, IconSmile, IconTemplate } from "./Icon";
+
+/** An upload in flight: the bar the file used to lack. */
+interface UploadProgress {
+  key: string;
+  filename: string;
+  sent: number;
+  total: number;
+}
 
 const TYPING_THROTTLE_MS = 2_500;
 
@@ -107,6 +117,10 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: Id; filename: string }>>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploads, setUploads] = useState<UploadProgress[]>([]);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [emojiQuery, setEmojiQuery] = useState<string | null>(null);
+  const [emojiIndex, setEmojiIndex] = useState(0);
   const [alsoSend, setAlsoSend] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -149,7 +163,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
     notifyTyping(channelId, parentId);
   }, [channelId, notifyTyping, parentId]);
 
-  /** Track a trailing `@word` at the caret to drive the mention picker. */
+  /** Track a trailing `@word` (mention) or `:word` (emoji) at the caret. */
   const updateMentionQuery = (value: string, caret: number) => {
     const upToCaret = value.slice(0, caret);
     // Anything up to whitespace, so `@김앨` keeps the picker open — the
@@ -158,7 +172,55 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
     const match = /(?:^|\s)@([^\s@]*)$/.exec(upToCaret);
     setMentionQuery(match ? (match[1] ?? "") : null);
     setMentionIndex(0);
+    // `:ta` → 🎉 suggestions. Two characters before anything shows, so a
+    // time like `10:3` does not open a picker.
+    const emoji = /(?:^|\s):([a-z0-9_+-]{2,})$/i.exec(upToCaret);
+    setEmojiQuery(emoji ? (emoji[1] ?? "") : null);
+    setEmojiIndex(0);
   };
+
+  const emojiCandidates = useMemo<EmojiEntry[]>(
+    () => (emojiQuery ? searchEmoji(emojiQuery, 6) : []),
+    [emojiQuery],
+  );
+
+  /** Replace the `:query` being typed with the chosen emoji. */
+  const applyEmojiShortcode = (char: string) => {
+    const element = textareaRef.current;
+    if (!element) return;
+    const caret = element.selectionStart;
+    const before = body.slice(0, caret).replace(/:([a-z0-9_+-]*)$/i, `${char} `);
+    const next = before + body.slice(caret);
+    setBody(next);
+    setEmojiQuery(null);
+    requestAnimationFrame(() => {
+      element.focus();
+      element.setSelectionRange(before.length, before.length);
+    });
+  };
+
+  /** Insert an emoji from the picker at the caret. */
+  const insertEmoji = (char: string) => {
+    const element = textareaRef.current;
+    const caret = element?.selectionStart ?? body.length;
+    const before = body.slice(0, caret) + char;
+    setBody(before + body.slice(caret));
+    setEmojiOpen(false);
+    requestAnimationFrame(() => {
+      element?.focus();
+      element?.setSelectionRange(before.length, before.length);
+    });
+  };
+
+  /** Progress bookkeeping shared by the picker, drops and pastes. */
+  const trackProgress = (key: string, filename: string) => (sent: number, total: number) => {
+    setUploads((current) => {
+      const rest = current.filter((entry) => entry.key !== key);
+      return [...rest, { key, filename, sent, total }];
+    });
+  };
+  const untrack = (key: string) =>
+    setUploads((current) => current.filter((entry) => entry.key !== key));
 
   const applyMention = (handle: string) => {
     const element = textareaRef.current;
@@ -175,13 +237,15 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
   };
 
   const submit = async () => {
-    const text = body.trim();
+    // `:tada:` typed in full (no picker) still becomes 🎉.
+    const text = replaceShortcodes(body.trim());
     if (!text && attachments.length === 0) return;
     setBody("");
     draftsRef.current.delete(draftKey);
     const fileIds = attachments.map((file) => file.id);
     setAttachments([]);
     setMentionQuery(null);
+    setEmojiQuery(null);
 
     await send(text, {
       ...(parentId ? { parentId } : {}),
@@ -197,12 +261,18 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
       setUploading(true);
       // The picker differs per host (native dialog vs. file input); the upload
       // that follows does not.
-      await shell.pickAndUploadFiles(workspaceId, (file) => {
-        setAttachments((current) => [...current, { id: file.id, filename: file.filename }]);
-      });
+      await shell.pickAndUploadFiles(
+        workspaceId,
+        (file) => {
+          untrack(`pick:${file.filename}`);
+          setAttachments((current) => [...current, { id: file.id, filename: file.filename }]);
+        },
+        (filename, sent, total) => trackProgress(`pick:${filename}`, filename)(sent, total),
+      );
     } catch (error) {
       reportError(error, uploadFailureMessage(error));
     } finally {
+      setUploads([]);
       setUploading(false);
     }
   };
@@ -225,8 +295,13 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
         void (async () => {
           setUploading(true);
           try {
-            for (const source of sources) {
-              const file = await api.uploadFile(workspaceId, source);
+            for (const [index, source] of sources.entries()) {
+              const name =
+                typeof source === "string" ? (source.split(/[\\/]/).pop() ?? source) : source.name;
+              const key = `drop:${index}:${name}`;
+              trackProgress(key, name)(0, typeof source === "string" ? 0 : source.size);
+              const file = await api.uploadFile(workspaceId, source, trackProgress(key, name));
+              untrack(key);
               setAttachments((current) => [
                 ...current,
                 { id: file.id, filename: file.filename },
@@ -235,6 +310,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
           } catch (error) {
             reportError(error, uploadFailureMessage(error));
           } finally {
+            setUploads([]);
             setUploading(false);
           }
         })();
@@ -285,7 +361,10 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
               : new File([file], `스크린샷-${stamp()}${index > 0 ? `-${index + 1}` : ""}.${extension}`, {
                   type: file.type,
                 });
-          const uploaded = await api.uploadFile(workspaceId, named);
+          const key = `paste:${index}:${named.name}`;
+          trackProgress(key, named.name)(0, named.size);
+          const uploaded = await api.uploadFile(workspaceId, named, trackProgress(key, named.name));
+          untrack(key);
           setAttachments((current) => [
             ...current,
             { id: uploaded.id, filename: uploaded.filename },
@@ -294,6 +373,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
       } catch (error) {
         reportError(error, uploadFailureMessage(error));
       } finally {
+        setUploads([]);
         setUploading(false);
       }
     })();
@@ -341,6 +421,54 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
               </button>
             </li>
           ))}
+        </ul>
+      ) : null}
+
+      {emojiQuery !== null && emojiCandidates.length > 0 ? (
+        <ul className="mention-picker emoji-suggest" role="listbox" aria-label="이모지 제안">
+          {emojiCandidates.map((entry, index) => (
+            <li key={entry.char}>
+              <button
+                type="button"
+                className={index === emojiIndex ? "is-active" : ""}
+                onMouseEnter={() => setEmojiIndex(index)}
+                onClick={() => applyEmojiShortcode(entry.char)}
+                role="option"
+                aria-selected={index === emojiIndex}
+              >
+                <span className="emoji-suggest-char">{entry.char}</span>
+                <strong>:{entry.code}:</strong>
+                <span>{entry.keywords.slice(0, 2).join(" · ")}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {emojiOpen ? (
+        <div className="emoji-anchor composer-emoji">
+          <EmojiPicker onClose={() => setEmojiOpen(false)} onPick={insertEmoji} />
+        </div>
+      ) : null}
+
+      {uploads.length > 0 ? (
+        <ul className="composer-uploads" aria-label="업로드 진행">
+          {uploads.map((entry) => {
+            const percent = entry.total > 0 ? Math.round((entry.sent / entry.total) * 100) : null;
+            return (
+              <li key={entry.key}>
+                <span className="composer-upload-name">{entry.filename}</span>
+                <progress
+                  value={percent ?? undefined}
+                  max={100}
+                  aria-label={`${entry.filename} 업로드 ${percent ?? 0}%`}
+                />
+                <span className="composer-upload-pct">
+                  {percent === null ? "업로드 중" : percent >= 100 ? "처리 중…" : `${percent}%`}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 
@@ -417,7 +545,34 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
             maybeNotifyTyping();
           }}
           onKeyDown={(event) => {
-            // Mention picker navigation takes precedence over sending.
+            // Emoji suggestions, then the mention picker, take precedence over sending.
+            if (emojiQuery !== null && emojiCandidates.length > 0) {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setEmojiIndex((index) => (index + 1) % emojiCandidates.length);
+                return;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setEmojiIndex(
+                  (index) => (index - 1 + emojiCandidates.length) % emojiCandidates.length,
+                );
+                return;
+              }
+              if (event.key === "Enter" || event.key === "Tab") {
+                const chosen = emojiCandidates[emojiIndex];
+                if (chosen) {
+                  event.preventDefault();
+                  applyEmojiShortcode(chosen.char);
+                  return;
+                }
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setEmojiQuery(null);
+                return;
+              }
+            }
             if (mentionQuery !== null && mentionCandidates.length > 0) {
               if (event.key === "ArrowDown") {
                 event.preventDefault();
@@ -471,6 +626,16 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
           </button>
           <button
             type="button"
+            onClick={() => setEmojiOpen((open) => !open)}
+            disabled={disabled}
+            title="이모지"
+            aria-label="이모지"
+            aria-expanded={emojiOpen}
+          >
+            <IconSmile size={15} />
+          </button>
+          <button
+            type="button"
             onClick={() => void attachFiles()}
             disabled={disabled || uploading}
             title="파일 첨부"
@@ -505,7 +670,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
       ) : (
         <p className="composer-hint">
           <kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 ·{" "}
-          <kbd>@이름</kbd> 멘션 · <kbd>⌘V</kbd> 이미지 붙여넣기 · <kbd>```</kbd> 코드
+          <kbd>@이름</kbd> 멘션 · <kbd>:</kbd> 이모지 · <kbd>⌘V</kbd> 이미지 붙여넣기 · <kbd>```</kbd> 코드
         </p>
       )}
     </div>
