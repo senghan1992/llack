@@ -84,9 +84,14 @@ async def register_app(
         panel_url=str(manifest.panel_url) if manifest.panel_url else None,
         sidebar_url=str(manifest.sidebar_url) if manifest.sidebar_url else None,
         event_webhook_url=str(manifest.event_webhook_url) if manifest.event_webhook_url else None,
+        command_url=str(manifest.command_url) if manifest.command_url else None,
+        interaction_url=str(manifest.interaction_url) if manifest.interaction_url else None,
+        home_url=str(manifest.home_url) if manifest.home_url else None,
+        # Minted once; the register response is the only time it is shown.
+        app_secret=new_app_secret(),
         default_width=manifest.default_width,
         requested_scopes=[s.value for s in manifest.scopes],
-        slash_commands=[c.model_dump() for c in manifest.slash_commands],
+        slash_commands=[c.model_dump(exclude_none=True) for c in manifest.slash_commands],
         event_subscriptions=manifest.events,
         manifest=manifest.model_dump(mode="json"),
     )
@@ -94,6 +99,18 @@ async def register_app(
     await db.flush()
     log.info("app.registered", app_id=app_row.id, slug=app_row.slug, author_id=author.id)
     return app_row
+
+
+def new_app_secret() -> str:
+    return f"llack_as_{new_token(32)}"
+
+
+async def rotate_secret(db: AsyncSession, *, app_row: App, actor: User) -> str:
+    """A new signing secret; the old one stops verifying immediately."""
+    await _require_app_maintainer(db, app_row=app_row, actor=actor)
+    app_row.app_secret = new_app_secret()
+    await db.flush()
+    return app_row.app_secret
 
 
 def _validate_manifest_surfaces(manifest: AppManifest) -> None:
@@ -150,9 +167,12 @@ async def update_app_manifest(
     app_row.event_webhook_url = (
         str(manifest.event_webhook_url) if manifest.event_webhook_url else None
     )
+    app_row.command_url = str(manifest.command_url) if manifest.command_url else None
+    app_row.interaction_url = str(manifest.interaction_url) if manifest.interaction_url else None
+    app_row.home_url = str(manifest.home_url) if manifest.home_url else None
     app_row.default_width = manifest.default_width
     app_row.requested_scopes = [s.value for s in manifest.scopes]
-    app_row.slash_commands = [c.model_dump() for c in manifest.slash_commands]
+    app_row.slash_commands = [c.model_dump(exclude_none=True) for c in manifest.slash_commands]
     app_row.event_subscriptions = manifest.events
     app_row.manifest = manifest.model_dump(mode="json")
     await db.flush()
@@ -176,10 +196,145 @@ async def _require_app_maintainer(db: AsyncSession, *, app_row: App, actor: User
 async def set_app_status(
     db: AsyncSession, *, app_row: App, status: AppStatus, actor: User
 ) -> App:
+    """Direct status changes: pausing (`disabled`) and un-pausing (`draft`).
+
+    Publication is not a status an author sets — it is the outcome of review
+    (`submit_for_review` / `decide_review`). Only a service admin may write
+    `published` directly, which is how first-party apps are seeded.
+    """
     await _require_app_maintainer(db, app_row=app_row, actor=actor)
+    review_states = (AppStatus.PUBLISHED, AppStatus.PENDING_REVIEW, AppStatus.REJECTED)
+    if status in review_states and not actor.is_service_admin:
+        raise Forbidden(
+            "Publication goes through review: submit the app instead.",
+            code="review_required",
+        )
     app_row.status = status.value
     await db.flush()
     return app_row
+
+
+async def require_app_maintainer(db: AsyncSession, *, app_row: App, actor: User) -> None:
+    await _require_app_maintainer(db, app_row=app_row, actor=actor)
+
+
+async def submit_for_review(db: AsyncSession, *, app_row: App, actor: User) -> App:
+    await _require_app_maintainer(db, app_row=app_row, actor=actor)
+    if app_row.status not in (AppStatus.DRAFT.value, AppStatus.REJECTED.value):
+        raise Conflict(
+            "Only a draft or rejected app can be submitted for review.",
+            code="not_submittable",
+            details={"status": app_row.status},
+        )
+    if app_row.kind == AppKind.LINK.value:
+        raise Conflict(
+            "A link app is workspace furniture and is not published.", code="not_submittable"
+        )
+    app_row.status = AppStatus.PENDING_REVIEW.value
+    app_row.review_note = None
+    await db.flush()
+    return app_row
+
+
+async def decide_review(
+    db: AsyncSession, *, app_row: App, actor: User, approve: bool, note: str | None
+) -> App:
+    if not actor.is_service_admin:
+        raise Forbidden("Only a service admin reviews apps.", code="service_admin_required")
+    if app_row.status != AppStatus.PENDING_REVIEW.value:
+        raise Conflict("This app is not waiting for review.", code="not_pending_review")
+    app_row.status = AppStatus.PUBLISHED.value if approve else AppStatus.REJECTED.value
+    app_row.review_note = (note or None) and note.strip()[:500]
+    await db.flush()
+    return app_row
+
+
+async def list_pending(db: AsyncSession) -> list[App]:
+    rows = await db.scalars(
+        select(App).where(App.status == AppStatus.PENDING_REVIEW.value).order_by(App.updated_at)
+    )
+    return list(rows.all())
+
+
+async def list_authored(db: AsyncSession, *, workspace_id: str, user_id: str) -> list[App]:
+    """The developer console's list: apps this workspace made."""
+    await require_membership(
+        db, workspace_id=workspace_id, user_id=user_id, minimum_role=WorkspaceRole.ADMIN
+    )
+    rows = await db.scalars(
+        select(App)
+        .where(App.owner_workspace_id == workspace_id, App.kind != AppKind.LINK.value)
+        .order_by(App.created_at.desc())
+    )
+    return list(rows.all())
+
+
+async def home_installation(
+    db: AsyncSession, *, app_row: App, actor: User
+) -> AppInstallation:
+    """The installation the console operates on: the app in its owner workspace.
+
+    App tokens belong to an installation (they act as its bot), so the console
+    ensures the app is installed at home first — unpinned, with its manifest
+    scopes — and issues tokens against that.
+    """
+    await _require_app_maintainer(db, app_row=app_row, actor=actor)
+    if not app_row.owner_workspace_id:
+        raise Conflict(
+            "A shared app has no home workspace; issue tokens per installation.",
+            code="no_home_workspace",
+        )
+    existing = await db.scalar(
+        select(AppInstallation)
+        .where(
+            AppInstallation.workspace_id == app_row.owner_workspace_id,
+            AppInstallation.app_id == app_row.id,
+        )
+        .limit(1)
+    )
+    if existing is not None:
+        return existing
+    installation = await install_app(
+        db,
+        workspace_id=app_row.owner_workspace_id,
+        app_row=app_row,
+        actor=actor,
+        pin_to_dock=False,
+    )
+    if installation.bot_user_id is None:
+        # A panel-only app still needs an identity to post as when a token is
+        # used server-to-server; give it one on demand.
+        installation.bot_user_id = (
+            await _ensure_bot_user(
+                db, app_row=app_row, workspace_id=app_row.owner_workspace_id
+            )
+        ).id
+        await db.flush()
+    return installation
+
+
+async def list_app_tokens(db: AsyncSession, *, app_row: App) -> list[AppToken]:
+    rows = await db.execute(
+        select(AppToken)
+        .join(AppInstallation, AppInstallation.id == AppToken.installation_id)
+        .where(AppInstallation.app_id == app_row.id, AppToken.revoked_at.is_(None))
+        .order_by(AppToken.created_at.desc())
+    )
+    return list(rows.scalars().all())
+
+
+async def revoke_app_token(db: AsyncSession, *, app_row: App, token_id: str) -> AppToken:
+    token = await db.scalar(
+        select(AppToken)
+        .join(AppInstallation, AppInstallation.id == AppToken.installation_id)
+        .where(AppToken.id == token_id, AppInstallation.app_id == app_row.id)
+        .limit(1)
+    )
+    if token is None or token.revoked_at is not None:
+        raise NotFound("Token not found.", code="app_token_not_found")
+    token.revoked_at = datetime.now(UTC)
+    await db.flush()
+    return token
 
 
 # ── Directory ───────────────────────────────────────────────────────────────
@@ -190,14 +345,20 @@ async def list_available_apps(
 ) -> list[App]:
     """Apps installable in this workspace: shared apps plus its own private ones."""
     await require_membership(db, workspace_id=workspace_id, user_id=user_id)
-    statuses = [AppStatus.PUBLISHED.value]
-    if include_drafts:
-        statuses.append(AppStatus.DRAFT.value)
+    # Published apps from anywhere, plus everything this workspace authored —
+    # a team installs and tries its own app long before review. Link apps are
+    # dock tiles, not directory entries. `include_drafts` is kept for older
+    # clients; own drafts are always listed now.
+    del include_drafts
     rows = await db.scalars(
         select(App)
         .where(
-            App.status.in_(statuses),
-            or_(App.owner_workspace_id.is_(None), App.owner_workspace_id == workspace_id),
+            App.kind != AppKind.LINK.value,
+            App.status != AppStatus.DISABLED.value,
+            or_(
+                App.status == AppStatus.PUBLISHED.value,
+                App.owner_workspace_id == workspace_id,
+            ),
         )
         .order_by(App.is_first_party.desc(), App.name)
     )
@@ -253,8 +414,15 @@ async def install_app(
 
     if app_row.status == AppStatus.DISABLED.value:
         raise Forbidden("This app has been disabled.", code="app_disabled")
-    if app_row.owner_workspace_id and app_row.owner_workspace_id != workspace_id:
-        raise Forbidden("This app is private to another workspace.", code="app_private")
+    # `owner_workspace_id` says who wrote it. Until review publishes the app it
+    # is installable only there; once published, everywhere.
+    if (
+        app_row.status != AppStatus.PUBLISHED.value
+        and app_row.owner_workspace_id != workspace_id
+    ):
+        raise Forbidden(
+            "This app has not been published yet.", code="app_not_published"
+        )
 
     requested = set(app_row.requested_scopes)
     if granted_scopes is None:

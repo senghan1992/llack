@@ -91,6 +91,9 @@ async def main() -> None:
                     db, email=email, password=PASSWORD, display_name=name
                 )
                 user.title = title
+                # The first seeded person runs the server in development: the
+                # app-review queue and server-wide settings need someone.
+                user.is_service_admin = email == "alice@example.com"
                 users[email] = user
                 print(f"  + 사용자 {name} <{email}>")
             else:

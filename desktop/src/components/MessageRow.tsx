@@ -9,7 +9,11 @@ import { useApp } from "@/store/app";
 import { AttachmentImage, isPreviewableImage } from "./AttachmentImage";
 import { Avatar } from "./Avatar";
 import { EmojiPicker } from "./EmojiPicker";
+import { MessageBlocks, isInlineVideo } from "./MessageBlocks";
+import { SaveMenu } from "./SaveMenu";
+import { VideoAttachment } from "./VideoAttachment";
 import {
+  IconBookmark,
   IconEdit,
   IconFile,
   IconImage,
@@ -46,6 +50,7 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
   const [sharing, setSharing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pickingEmoji, setPickingEmoji] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(message.body);
   const refreshChannel = useApp((state) => state.refreshChannel);
   const reportError = useApp((state) => state.reportError);
@@ -236,6 +241,8 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
 
         {message.edited_at ? <span className="message-edited">(수정됨)</span> : null}
 
+        <MessageBlocks message={message} />
+
         {message.attachments.length > 0 ? (
           <ul className="attachments">
             {message.attachments.map((file) => (
@@ -248,6 +255,9 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
                     file={file}
                     gallery={message.attachments.filter(isPreviewableImage)}
                   />
+                ) : null}
+                {isInlineVideo(file) && file.scan_status !== "infected" ? (
+                  <VideoAttachment file={file} />
                 ) : null}
                 <button
                   type="button"
@@ -268,6 +278,19 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
                   </span>
                   <span className="attachment-name">{file.filename}</span>
                   <span className="attachment-size">{formatBytes(file.size_bytes)}</span>
+                  {file.scan_status === "pending" ? (
+                    <span className="attachment-scan is-pending" title="바이러스 검사 중">
+                      검사 중
+                    </span>
+                  ) : file.scan_status === "infected" ? (
+                    <span className="attachment-scan is-infected" title="악성 코드가 발견되어 차단됨">
+                      차단됨
+                    </span>
+                  ) : file.scan_status === "clean" ? (
+                    <span className="attachment-scan is-clean" title="바이러스 검사 통과">
+                      안전
+                    </span>
+                  ) : null}
                 </button>
               </li>
             ))}
@@ -303,6 +326,12 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
               </button>
             </li>
           </ul>
+        ) : null}
+
+        {saving ? (
+          <div className="emoji-anchor">
+            <SaveMenu message={message} onClose={() => setSaving(false)} />
+          </div>
         ) : null}
 
         {pickingEmoji ? (
@@ -366,6 +395,16 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
           aria-label="다른 대화로 공유"
         >
           <IconShare size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setSaving((open) => !open)}
+          title={message.is_saved ? "나중에 볼 항목에서 빼기" : "나중에 보기 (리마인더 설정 가능)"}
+          aria-label={message.is_saved ? "저장 해제" : "나중에 보기"}
+          aria-expanded={saving}
+          className={message.is_saved ? "is-on" : ""}
+        >
+          <IconBookmark size={13} />
         </button>
         <button
           type="button"

@@ -23,7 +23,16 @@ class FileOut(Schema):
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     uploader: UserBrief | None = None
     is_ready: bool = False
+    # skipped | pending | clean | infected | error — see services/scanner.py.
+    scan_status: str = "skipped"
     created_at: datetime
+
+
+class MediaTokenOut(Schema):
+    """A URL a media element can load directly; see services/media_token.py."""
+
+    url: str
+    expires_at: datetime
 
 
 class SharedIn(Schema):

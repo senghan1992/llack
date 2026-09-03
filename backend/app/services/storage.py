@@ -84,6 +84,12 @@ class Storage(ABC):
     @abstractmethod
     async def exists(self, key: str) -> bool: ...
 
+    async def read_range(self, key: str, start: int, end: int) -> AsyncIterator[bytes]:
+        """Bytes `start..end` inclusive. Backends that serve downloads through
+        presigned URLs never reach this — the object store handles Range."""
+        raise NotImplementedError
+        yield b""  # pragma: no cover — makes this an async generator
+
     async def presigned_put_url(self, key: str, *, content_type: str, ttl: int = 900) -> str | None:
         """Return a direct-upload URL, or None if the backend has no such thing."""
         return None
@@ -139,6 +145,20 @@ class LocalStorage(Storage):
             raise NotFound("File contents are missing.", code="file_missing")
         with path.open("rb") as handle:
             while chunk := handle.read(CHUNK_SIZE):
+                yield chunk
+
+    async def read_range(self, key: str, start: int, end: int) -> AsyncIterator[bytes]:
+        path = self._path(key)
+        if not path.is_file():
+            raise NotFound("File contents are missing.", code="file_missing")
+        remaining = end - start + 1
+        with path.open("rb") as handle:
+            handle.seek(start)
+            while remaining > 0:
+                chunk = handle.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
                 yield chunk
 
     async def delete(self, key: str) -> None:

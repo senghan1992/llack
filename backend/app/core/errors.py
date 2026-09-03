@@ -80,6 +80,14 @@ class RateLimited(AppError):
     message = "Too many requests."
 
 
+class Gone(AppError):
+    """The resource existed and was removed on purpose (quarantine, retention)."""
+
+    status_code = status.HTTP_410_GONE
+    code = "gone"
+    message = "This resource is no longer available."
+
+
 class PayloadTooLarge(AppError):
     status_code = status.HTTP_413_CONTENT_TOO_LARGE
     code = "payload_too_large"

@@ -230,6 +230,15 @@ async def create_invites(
     return created
 
 
+async def rotate_invite(db: AsyncSession, *, invite: WorkspaceInvite, ttl_days: int = 14) -> str:
+    """Replace the token and extend expiry. Returns the new raw token (shown once)."""
+    raw_token = new_token(32)
+    invite.token_hash = hash_token(raw_token)
+    invite.expires_at = datetime.now(UTC) + timedelta(days=ttl_days)
+    await db.flush()
+    return raw_token
+
+
 async def peek_invite(db: AsyncSession, *, token: str) -> WorkspaceInvite:
     """Validate an invite token without consuming it.
 

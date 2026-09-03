@@ -8,6 +8,9 @@
 import { useEffect, useState } from "react";
 
 import { ActivityView } from "@/components/ActivityView";
+import { AppHomeView } from "@/components/AppHomeView";
+import { FirstRunCard } from "@/components/FirstRunCard";
+import { SavedView } from "@/components/SavedView";
 import { AppDock } from "@/components/AppDock";
 import { AgentPanel } from "@/components/AgentPanel";
 import { AppPanel } from "@/components/AppPanel";
@@ -193,9 +196,24 @@ function MainPane() {
       </div>
     );
   }
+  if (mainView === "saved") {
+    return (
+      <div className="main-transcript">
+        <SavedView />
+      </div>
+    );
+  }
+  if (mainView === "apphome") {
+    return (
+      <div className="main-transcript">
+        <AppHomeView />
+      </div>
+    );
+  }
   return (
     <div className="main-transcript">
       <ChannelHeader />
+      <FirstRunCard />
       <MessageList />
       <Composer />
     </div>

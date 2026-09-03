@@ -21,7 +21,13 @@ from app.models.workspace import WorkspaceMember
 from app.realtime.events import emit_to_workspace
 from app.realtime.presence import get_presence_store
 from app.schemas.realtime import ServerEvent
-from app.schemas.user import UpdateProfileRequest, UpdateStatusRequest, UserBrief, UserOut
+from app.schemas.user import (
+    UpdateNotificationsRequest,
+    UpdateProfileRequest,
+    UpdateStatusRequest,
+    UserBrief,
+    UserOut,
+)
 from app.services.storage import get_storage
 from app.services.workspaces import list_user_workspaces
 
@@ -160,6 +166,30 @@ async def get_avatar(user_id: str, filename: str, db: DbSession):
         media_type=AVATAR_MEDIA[filename.rsplit(".", 1)[1]],
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+@router.patch("/me/notifications", response_model=UserOut)
+async def update_notifications(
+    payload: UpdateNotificationsRequest, db: DbSession, user: CurrentUser
+) -> UserOut:
+    """방해 금지 시간과 일시 중지.
+
+    Only the caller's own row; nothing is broadcast, because DND is private —
+    teammates see the moon on the sender's side, not a status change.
+    """
+    data = payload.model_dump(exclude_unset=True)
+    if "paused_until" in data:
+        user.notify_paused_until = data.pop("paused_until")
+    for field, value in data.items():
+        setattr(user, field, value)
+    # A window needs both ends; half a window would be a silent misconfiguration.
+    if bool(user.dnd_start) != bool(user.dnd_end):
+        user.dnd_start = None
+        user.dnd_end = None
+    await db.commit()
+    out = UserOut.model_validate(user)
+    out.presence = await get_presence_store().get(user.id)
+    return out
 
 
 @router.put("/me/status", response_model=UserOut)

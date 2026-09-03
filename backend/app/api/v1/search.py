@@ -53,13 +53,16 @@ async def search_messages(
         limit=limit,
         cursor=cursor,
     )
+    saved = await message_service.saved_ids_for(
+        db, viewer_id=ctx.user.id, message_ids=[m.id for m, _c, _s in hits]
+    )
     return SearchResponse(
         query=q,
         took_ms=took_ms,
         total=len(hits),
         hits=[
             SearchHit(
-                message=serialise_message(message, viewer_id=ctx.user.id),
+                message=serialise_message(message, viewer_id=ctx.user.id, saved=saved),
                 channel_id=channel.id,
                 channel_name=channel.name or channel.slug,
                 highlight=snippet,
@@ -179,6 +182,9 @@ async def search_everything(
         query=term,
         limit=limit,
     )
+    saved_everything = await message_service.saved_ids_for(
+        db, viewer_id=ctx.user.id, message_ids=[m.id for m, _c, _s in message_hits]
+    )
 
     return {
         "query": term,
@@ -229,7 +235,9 @@ async def search_everything(
         ],
         "messages": [
             {
-                "message": serialise_message(m, viewer_id=ctx.user.id).model_dump(mode="json"),
+                "message": serialise_message(
+                    m, viewer_id=ctx.user.id, saved=saved_everything
+                ).model_dump(mode="json"),
                 "channel_id": c.id,
                 "channel_name": c.name or c.slug,
                 "highlight": snippet,

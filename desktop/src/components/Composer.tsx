@@ -22,6 +22,17 @@ import { Avatar } from "./Avatar";
 import { EmojiPicker } from "./EmojiPicker";
 import { IconClose, IconPaperclip, IconSmile, IconTemplate } from "./Icon";
 
+/** A row in the mention picker: a person, or `@channel`/`@here`. */
+interface MentionCandidate {
+  id: string;
+  handle: string;
+  display_name: string;
+  avatar_url?: string | null;
+  is_bot?: boolean;
+  broadcast?: boolean;
+  hint?: string;
+}
+
 /** An upload in flight: the bar the file used to lack. */
 interface UploadProgress {
   key: string;
@@ -143,17 +154,66 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
     draftsRef.current.set(draftKey, body);
   }, [body, draftKey]);
 
-  const mentionCandidates = useMemo(() => {
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
     if (mentionQuery === null) return [];
     const needle = mentionQuery.toLowerCase();
-    return [...people.values()]
+    // `@channel` reaches everyone, `@here` only those present — offered as
+    // rows beside people so nobody has to know the syntax by heart. DMs have
+    // no crowd to address, so they are left out there.
+    const broadcast: MentionCandidate[] =
+      channel && channel.kind !== "dm" && channel.kind !== "group_dm"
+        ? [
+            { id: "@channel", handle: "channel", display_name: "채널 전원", hint: "모두에게 알림", broadcast: true },
+            { id: "@here", handle: "here", display_name: "지금 접속 중인 사람", hint: "자리에 있는 사람만", broadcast: true },
+          ].filter(
+            (entry) =>
+              entry.handle.startsWith(needle) || entry.display_name.toLowerCase().includes(needle),
+          )
+        : [];
+    const found = [...people.values()]
       .filter(
         (person) =>
           person.handle.toLowerCase().includes(needle) ||
           person.display_name.toLowerCase().includes(needle),
       )
-      .slice(0, 6);
-  }, [mentionQuery, people]);
+      .slice(0, 6)
+      .map<MentionCandidate>((person) => ({
+        id: person.id,
+        handle: person.handle,
+        display_name: person.display_name,
+        avatar_url: person.avatar_url ?? null,
+        is_bot: person.is_bot ?? false,
+      }));
+    return [...found, ...(needle.length > 0 ? broadcast : broadcast.slice(0, 0))].slice(0, 8);
+  }, [mentionQuery, people, channel]);
+
+  // ── Slash commands: `/rem` at the start of the draft lists what fits ─────
+  const commands = useApp((state) => state.commands);
+  const loadCommands = useApp((state) => state.loadCommands);
+  const pushEphemeral = useApp((state) => state.pushEphemeral);
+  const [commandIndex, setCommandIndex] = useState(0);
+  useEffect(() => {
+    if (commands.length === 0) void loadCommands();
+  }, [commands.length, loadCommands]);
+  const commandQuery = useMemo(() => {
+    const match = /^\/([a-z0-9_-]*)$/i.exec(body);
+    return match ? (match[1] ?? "").toLowerCase() : null;
+  }, [body]);
+  const commandCandidates = useMemo(
+    () =>
+      commandQuery === null
+        ? []
+        : commands.filter((entry) => entry.command.slice(1).toLowerCase().startsWith(commandQuery)).slice(0, 8),
+    [commandQuery, commands],
+  );
+  const applyCommand = (command: string) => {
+    setBody(`${command} `);
+    requestAnimationFrame(() => {
+      const element = textareaRef.current;
+      element?.focus();
+      element?.setSelectionRange(command.length + 1, command.length + 1);
+    });
+  };
 
   const maybeNotifyTyping = useCallback(() => {
     if (!channelId) return;
@@ -240,6 +300,31 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
     // `:tada:` typed in full (no picker) still becomes 🎉.
     const text = replaceShortcodes(body.trim());
     if (!text && attachments.length === 0) return;
+
+    // A slash command is an instruction, not a message. Known commands go to
+    // the server; an unknown `/word` is sent as text (people do start lines
+    // with slashes: "/etc/hosts 확인").
+    const slash = /^\/([a-z0-9_-]+)(?:\s|$)/i.exec(text);
+    if (slash && channelId && attachments.length === 0) {
+      const known = commands.some((entry) => entry.command.toLowerCase() === `/${slash[1]?.toLowerCase()}`);
+      if (known) {
+        setBody("");
+        draftsRef.current.delete(draftKey);
+        try {
+          const result = await api.runCommand(channelId, text);
+          if (result.response?.text && (result.response.ephemeral || !result.handled)) {
+            pushEphemeral(channelId, result.response.text);
+          }
+          if (!result.handled && !result.response) {
+            pushEphemeral(channelId, `${slash[0].trim()} 명령을 처리하지 못했습니다.`);
+          }
+        } catch (error) {
+          reportError(error, "명령을 실행하지 못했습니다.");
+          setBody(text);
+        }
+        return;
+      }
+    }
     setBody("");
     draftsRef.current.delete(draftKey);
     const fileIds = attachments.map((file) => file.id);
@@ -408,16 +493,46 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
                 role="option"
                 aria-selected={index === mentionIndex}
               >
-                <Avatar
-                  id={person.id}
-                  name={person.display_name}
-                  avatarUrl={person.avatar_url}
-                  size={22}
-                  presence={presence.get(person.id)}
-                  isBot={person.is_bot}
-                />
+                {person.broadcast ? (
+                  <span className="mention-broadcast-mark" aria-hidden="true">
+                    @
+                  </span>
+                ) : (
+                  <Avatar
+                    id={person.id}
+                    name={person.display_name}
+                    avatarUrl={person.avatar_url}
+                    size={22}
+                    presence={presence.get(person.id)}
+                    isBot={person.is_bot}
+                  />
+                )}
                 <strong>{person.display_name}</strong>
-                <span>@{person.handle}</span>
+                <span>{person.broadcast ? `@${person.handle} · ${person.hint ?? ""}` : `@${person.handle}`}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {commandQuery !== null && commandCandidates.length > 0 ? (
+        <ul className="mention-picker command-picker" role="listbox" aria-label="명령 제안">
+          {commandCandidates.map((entry, index) => (
+            <li key={entry.command}>
+              <button
+                type="button"
+                className={index === commandIndex ? "is-active" : ""}
+                onMouseEnter={() => setCommandIndex(index)}
+                onClick={() => applyCommand(entry.command)}
+                role="option"
+                aria-selected={index === commandIndex}
+              >
+                <strong>{entry.command}</strong>
+                <span>
+                  {entry.usage ? `${entry.usage} · ` : ""}
+                  {entry.description ?? ""}
+                  {entry.app ? ` · ${entry.app.name}` : ""}
+                </span>
               </button>
             </li>
           ))}
@@ -545,7 +660,27 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
             maybeNotifyTyping();
           }}
           onKeyDown={(event) => {
-            // Emoji suggestions, then the mention picker, take precedence over sending.
+            // Command, emoji and mention pickers take precedence over sending.
+            if (commandQuery !== null && commandCandidates.length > 0) {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setCommandIndex((index) => (index + 1) % commandCandidates.length);
+                return;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setCommandIndex((index) => (index - 1 + commandCandidates.length) % commandCandidates.length);
+                return;
+              }
+              if (event.key === "Tab" || (event.key === "Enter" && commandQuery !== commandCandidates[commandIndex]?.command.slice(1))) {
+                const chosen = commandCandidates[commandIndex];
+                if (chosen) {
+                  event.preventDefault();
+                  applyCommand(chosen.command);
+                  return;
+                }
+              }
+            }
             if (emojiQuery !== null && emojiCandidates.length > 0) {
               if (event.key === "ArrowDown") {
                 event.preventDefault();

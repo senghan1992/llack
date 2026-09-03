@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from tests.conftest import Actor
+from tests.conftest import Actor, grant_service_admin
 from tests.test_channels import _join_workspace
 
 MANIFEST = {
@@ -21,15 +21,19 @@ MANIFEST = {
 
 
 async def _publish(alice: Actor, workspace: dict, manifest: dict | None = None) -> dict:
+    """Register, submit and approve — publication is a review outcome now."""
     body = {**MANIFEST, **(manifest or {})}
     created = await alice.post(
         f"/apps?owner_workspace_id={workspace['id']}", json=body
     )
     assert created.status_code == 201, created.text
     app = created.json()
-    published = await alice.put(f"/apps/{app['id']}/status", json={"status": "published"})
-    assert published.status_code == 200
-    return published.json()
+    submitted = await alice.post(f"/apps/{app['id']}/submit")
+    assert submitted.status_code == 200, submitted.text
+    await grant_service_admin(alice)
+    approved = await alice.post(f"/apps/{app['id']}/review", json={"decision": "approve"})
+    assert approved.status_code == 200, approved.text
+    return approved.json()
 
 
 async def test_register_requires_a_panel_url_for_a_panel_app(
@@ -41,26 +45,36 @@ async def test_register_requires_a_panel_url_for_a_panel_app(
     assert response.json()["error"]["code"] == "manifest_missing_panel_url"
 
 
-async def test_a_draft_app_is_not_in_the_directory_until_published(
-    alice: Actor, workspace: dict
+async def test_a_draft_app_is_in_its_own_directory_only(
+    alice: Actor, bob: Actor, workspace: dict
 ) -> None:
+    """A team tries its own app long before review: at home it is listed and
+    installable as a draft; elsewhere it does not exist until published."""
     created = await alice.post(f"/apps?owner_workspace_id={workspace['id']}", json=MANIFEST)
     app = created.json()
     assert app["status"] == "draft"
+    assert app["secret"].startswith("llack_as_")  # shown once, here
 
     listed = await alice.get(f"/workspaces/{workspace['id']}/apps/available")
-    assert app["id"] not in {a["id"] for a in listed.json()}
+    assert app["id"] in {a["id"] for a in listed.json()}
 
-    with_drafts = await alice.get(
-        f"/workspaces/{workspace['id']}/apps/available?include_drafts=true"
-    )
-    assert app["id"] in {a["id"] for a in with_drafts.json()}
+    # An author cannot publish by fiat any more.
+    fiat = await alice.put(f"/apps/{app['id']}/status", json={"status": "published"})
+    assert fiat.status_code == 403
+    assert fiat.json()["error"]["code"] == "review_required"
+
+    other = (await bob.post("/workspaces", json={"name": "다른 회사", "slug": "other-co"})).json()
+    elsewhere = await bob.get(f"/workspaces/{other['id']}/apps/available")
+    assert app["id"] not in {a["id"] for a in elsewhere.json()}
 
 
-async def test_a_private_app_is_invisible_to_another_workspace(
+async def test_an_unpublished_app_is_invisible_to_another_workspace(
     alice: Actor, bob: Actor, workspace: dict
 ) -> None:
-    app = await _publish(alice, workspace)
+    """Before review an app belongs to the team that wrote it; after approval
+    it is in every directory. `owner_workspace_id` records authorship."""
+    created = await alice.post(f"/apps?owner_workspace_id={workspace['id']}", json=MANIFEST)
+    app = created.json()
     other = (await bob.post("/workspaces", json={"name": "다른 회사", "slug": "other-co"})).json()
 
     listed = await bob.get(f"/workspaces/{other['id']}/apps/available")
@@ -70,7 +84,7 @@ async def test_a_private_app_is_invisible_to_another_workspace(
         f"/workspaces/{other['id']}/apps/{app['id']}/install", json={}
     )
     assert denied.status_code == 403
-    assert denied.json()["error"]["code"] == "app_private"
+    assert denied.json()["error"]["code"] == "app_not_published"
 
 
 async def test_install_grants_the_manifest_scopes_and_a_bot_identity(

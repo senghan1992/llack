@@ -8,7 +8,16 @@
 
 import { useMemo, useState } from "react";
 
-import { ChannelMark, IconActivity, IconFolder, IconGear, IconPlus, IconSearch } from "./Icon";
+import {
+  ChannelMark,
+  IconActivity,
+  IconBookmark,
+  IconFolder,
+  IconGear,
+  IconMoon,
+  IconPlus,
+  IconSearch,
+} from "./Icon";
 import type { Channel } from "@/lib/types";
 import { useApp } from "@/store/app";
 
@@ -39,17 +48,50 @@ export function Sidebar() {
   const [newName, setNewName] = useState("");
   const [newPrivate, setNewPrivate] = useState(false);
 
+  // Rooms split into the person's own sections (membership.section) — a
+  // "프로젝트" group above the rest, folded when they want it out of the way.
   const groups = useMemo(() => {
     const starred: Channel[] = [];
     const rooms: Channel[] = [];
     const dms: Channel[] = [];
+    const sections = new Map<string, Channel[]>();
     for (const channel of channels) {
       if (channel.membership?.is_starred) starred.push(channel);
       else if (channel.kind === "dm" || channel.kind === "group_dm") dms.push(channel);
-      else rooms.push(channel);
+      else if (channel.membership?.section) {
+        const list = sections.get(channel.membership.section) ?? [];
+        list.push(channel);
+        sections.set(channel.membership.section, list);
+      } else rooms.push(channel);
     }
-    return { starred, rooms, dms };
+    return {
+      starred,
+      rooms,
+      dms,
+      sections: [...sections.entries()].sort((a, b) => a[0].localeCompare(b[0], "ko")),
+    };
   }, [channels]);
+
+  const [folded, setFolded] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(
+        window.localStorage.getItem("llack.sidebar-folded") ?? "{}",
+      ) as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
+  const toggleFold = (section: string) => {
+    setFolded((current) => {
+      const next = { ...current, [section]: !current[section] };
+      try {
+        window.localStorage.setItem("llack.sidebar-folded", JSON.stringify(next));
+      } catch {
+        // Not worth a banner.
+      }
+      return next;
+    });
+  };
 
   const submitNewChannel = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -103,13 +145,16 @@ export function Sidebar() {
           <ChannelMark kind={channel.kind} />
         )}
         <span className="sidebar-label">{label}</span>
-        {mentions > 0 ? (
-          <span key={`m${mentions}`} className="badge badge-mention">
-            {mentions}
-          </span>
-        ) : unread > 0 && !muted ? (
-          <span key={`u${unread}`} className="badge">
+        {/* Both counts when both matter: "1 mention" used to hide 4 other
+            unread messages behind it. Mentions keep the signal colour. */}
+        {unread > mentions && !muted ? (
+          <span key={`u${unread}`} className={`badge ${mentions > 0 ? "badge-soft" : ""}`}>
             {unread > 99 ? "99+" : unread}
+          </span>
+        ) : null}
+        {mentions > 0 ? (
+          <span key={`m${mentions}`} className="badge badge-mention" title="나를 부른 메시지">
+            @{mentions}
           </span>
         ) : null}
       </button>
@@ -162,6 +207,17 @@ export function Sidebar() {
               <IconFolder size={14} />
             </span>
             <span className="sidebar-label">파일</span>
+          </button>
+          <button
+            type="button"
+            className={`sidebar-item ${mainView === "saved" && !webAppOpen ? "is-active" : ""}`}
+            onClick={() => setMainView("saved")}
+            title="저장한 메시지와 리마인더"
+          >
+            <span className="sidebar-nav-icon">
+              <IconBookmark size={14} />
+            </span>
+            <span className="sidebar-label">나중에</span>
           </button>
         </section>
 
@@ -233,7 +289,7 @@ export function Sidebar() {
               </button>
             </form>
           ) : null}
-          {groups.rooms.length <= 1 ? (
+          {groups.rooms.length + groups.sections.length <= 1 ? (
             <button
               type="button"
               className="sidebar-empty-action"
@@ -242,6 +298,30 @@ export function Sidebar() {
               팀 채널 둘러보기
             </button>
           ) : null}
+          {groups.sections.map(([section, list]) => {
+            const hidden = folded[section] ?? false;
+            const unreadInside = list.reduce(
+              (sum, channel) => sum + (channel.membership?.unread_count ?? 0),
+              0,
+            );
+            return (
+              <div key={section} className="sidebar-subsection">
+                <button
+                  type="button"
+                  className="sidebar-subsection-head"
+                  onClick={() => toggleFold(section)}
+                  aria-expanded={!hidden}
+                >
+                  <span className={`sidebar-fold ${hidden ? "is-folded" : ""}`} aria-hidden="true">
+                    ▾
+                  </span>
+                  {section}
+                  {hidden && unreadInside > 0 ? <span className="badge">{unreadInside}</span> : null}
+                </button>
+                {!hidden ? list.map(renderChannel) : null}
+              </div>
+            );
+          })}
           {groups.rooms.map(renderChannel)}
         </section>
 
@@ -289,7 +369,14 @@ export function Sidebar() {
             presence={me.presence}
           />
           <div className="sidebar-me">
-            <strong>{me.display_name}</strong>
+            <strong>
+              {me.display_name}
+              {me.in_dnd ? (
+                <span className="dnd-mark" title="방해 금지 중 — 알림이 오지 않습니다">
+                  <IconMoon size={11} />
+                </span>
+              ) : null}
+            </strong>
             <span>
               {me.status_emoji ?? ""} {me.status_text ?? `@${me.handle}`}
             </span>

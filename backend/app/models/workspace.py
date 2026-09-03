@@ -29,8 +29,14 @@ class Workspace(Base, ULIDPrimaryKey, Timestamps):
 
     # Email domains that may self-serve join (["example.com"]).
     allowed_email_domains: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    # Free-form policy knobs: retention days, who may install apps, etc.
+    # Free-form policy knobs: who may install apps, etc.
     settings: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    # Retention: NULL = keep forever. Messages older than N days are
+    # soft-deleted (body cleared, attachments unlinked); files older than N
+    # days are removed from storage. A channel may override the message value.
+    retention_days_messages: Mapped[int | None] = mapped_column(Integer, default=None)
+    retention_days_files: Mapped[int | None] = mapped_column(Integer, default=None)
 
     members: Mapped[list[WorkspaceMember]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan", lazy="raise_on_sql"

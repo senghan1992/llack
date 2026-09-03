@@ -45,6 +45,8 @@ class MessageCore(Schema):
 
     mentioned_user_ids: list[str] = Field(default_factory=list)
     mentions_everyone: bool = False
+    # "channel" reached everyone, "here" only those present. Null otherwise.
+    broadcast: str | None = None
 
     is_pinned: bool = False
     edited_at: datetime | None = None
@@ -57,6 +59,8 @@ class MessageOut(MessageCore):
     reply_users: list[UserBrief] = Field(default_factory=list)
     attachments: list[FileOut] = Field(default_factory=list)
     reactions: list[ReactionOut] = Field(default_factory=list)
+    # Kept for later by the viewer (saved_items). Viewer-dependent like `me`.
+    is_saved: bool = False
 
 
 class CreateMessageRequest(Payload):

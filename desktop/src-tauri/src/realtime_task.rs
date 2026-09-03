@@ -153,6 +153,7 @@ async fn handle_event(app: &AppHandle, state: &Arc<AppState>, event: RealtimeEve
                     body,
                     channel_id,
                     message_id,
+                    notice_kind,
                 }) => {
                     show_notification(app, &title, &body);
                     let _ = app.emit(
@@ -163,6 +164,7 @@ async fn handle_event(app: &AppHandle, state: &Arc<AppState>, event: RealtimeEve
                             "body": body,
                             "channel_id": channel_id,
                             "message_id": message_id,
+                            "notice_kind": notice_kind,
                         }),
                     );
                 }

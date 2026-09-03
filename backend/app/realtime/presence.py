@@ -19,7 +19,8 @@ _PREFIX = "presence:"
 class PresenceStore:
     def __init__(self) -> None:
         self._redis: Any = None
-        self._local: dict[str, tuple[str, float]] = {}
+        # user_id -> (state, expires_at, touched_at); all monotonic seconds.
+        self._local: dict[str, tuple[str, float, float]] = {}
 
     async def start(self) -> None:
         if settings.redis_url:
@@ -39,7 +40,8 @@ class PresenceStore:
         if self._redis is not None:
             await self._redis.set(f"{_PREFIX}{user_id}", state.value, ex=ttl)
             return
-        self._local[user_id] = (state.value, time.monotonic() + ttl)
+        now = time.monotonic()
+        self._local[user_id] = (state.value, now + ttl, now)
 
     async def clear(self, user_id: str) -> None:
         if self._redis is not None:
@@ -56,6 +58,17 @@ class PresenceStore:
             self._local.pop(user_id, None)
             return PresenceState.OFFLINE
         return PresenceState(entry[0])
+
+    async def stale_users(self, *, max_age_seconds: float) -> list[str]:
+        """Users whose last heartbeat is older than `max_age_seconds`.
+
+        Only meaningful for the in-process store; Redis keys carry their own
+        TTL and simply vanish, so there is nothing to clean there.
+        """
+        if self._redis is not None:
+            return []
+        cutoff = time.monotonic() - max_age_seconds
+        return [uid for uid, (_state, _exp, touched) in self._local.items() if touched < cutoff]
 
     async def get_many(self, user_ids: list[str]) -> dict[str, PresenceState]:
         if not user_ids:

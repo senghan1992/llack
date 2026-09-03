@@ -35,6 +35,13 @@ import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
 import { IconClose, IconSearch } from "./Icon";
+import {
+  AuditSection,
+  DeveloperSection,
+  NotificationScheduleSection,
+  RetentionSection,
+  ReviewSection,
+} from "./SettingsAdmin";
 
 export function Settings() {
   const open = useApp((state) => state.settingsOpen);
@@ -77,6 +84,11 @@ export function Settings() {
           </section>
 
           <section className="settings-section">
+            <h3>알림 시간</h3>
+            <NotificationScheduleSection />
+          </section>
+
+          <section className="settings-section">
             <h3>구성원</h3>
             <MembersSection />
           </section>
@@ -90,6 +102,23 @@ export function Settings() {
             <h3>메일 (SMTP)</h3>
             <SmtpSection />
           </section>
+
+          <section className="settings-section">
+            <h3>보관 정책</h3>
+            <RetentionSection />
+          </section>
+
+          <section className="settings-section">
+            <h3>감사 로그</h3>
+            <AuditSection />
+          </section>
+
+          <section className="settings-section">
+            <h3>개발자 콘솔</h3>
+            <DeveloperSection />
+          </section>
+
+          <ReviewSectionWrapper />
 
           <section className="settings-section">
             <h3>에이전트 프로바이더</h3>
@@ -279,6 +308,31 @@ function InviteSection() {
     }
   };
 
+  /** A new link (and a new mail, when the server can send one) for a
+   *  pending invite whose first link went astray. */
+  const resend = async (inviteId: string) => {
+    if (!workspace) return;
+    try {
+      const row = await api.resendInvite(workspace.id, inviteId);
+      setIssued([
+        {
+          email: row.email,
+          link: webInviteUrl(row.invite_url) ?? row.invite_url ?? "링크를 만들지 못했습니다",
+          expires_at: row.expires_at,
+        },
+      ]);
+      await refreshOutstanding();
+      showBanner(
+        "info",
+        row.emailed
+          ? `${row.email} 로 초대 메일을 다시 보냈습니다. 새 링크는 아래에도 있습니다.`
+          : "새 초대 링크를 만들었습니다. 메일 서버가 없어 링크를 직접 전달해주세요.",
+      );
+    } catch (error) {
+      reportError(error, "초대를 다시 보내지 못했습니다.");
+    }
+  };
+
   const invite = async () => {
     if (!workspace || busy) return;
     const list = emails
@@ -386,11 +440,17 @@ function InviteSection() {
                 <div className="invite-info">
                   <strong>{row.email}</strong>
                   <span>
+                    {row.emailed ? "메일 발송됨 · " : ""}
                     {row.expires_at
                       ? `만료: ${new Date(row.expires_at).toLocaleDateString("ko-KR")}`
                       : "대기 중"}
                   </span>
                 </div>
+                {row.id ? (
+                  <button type="button" onClick={() => void resend(row.id!)} title="새 링크를 만들어 다시 보냅니다">
+                    다시 보내기
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => void revoke(row.id)}>
                   회수
                 </button>
@@ -934,6 +994,30 @@ function GuideList() {
     {
       want: "비밀번호 바꾸기 / 잊었을 때",
       how: "여기 계정 섹션에서 언제든 변경. 잊었다면 로그인 화면의 \"비밀번호를 잊으셨나요?\" — 이메일로 6자리 코드가 갑니다.",
+    },
+    {
+      want: "나중에 보기 · 리마인더",
+      how: "메시지에 마우스를 올리고 책갈피 버튼 — 저장만 하거나 '1시간 뒤', '내일 9시' 같은 시각을 고르면 그때 알려드립니다. 모아보기는 사이드바 '나중에'. 컴포저에서 /remind me in 30m 내용 도 됩니다.",
+    },
+    {
+      want: "퇴근 후 알림 끄기 · 잠깐 집중하기",
+      how: "위 '알림 시간' — 매일 반복되는 방해 금지 시간과 요일, 그리고 30분·1시간·내일까지 일시 중지. /dnd 1h 로도 됩니다.",
+    },
+    {
+      want: "슬래시 명령",
+      how: "컴포저 맨 앞에 / 를 치면 쓸 수 있는 명령이 뜹니다. /remind, /dnd, /topic, /leave, /mute, /shrug 와 팀이 붙인 앱 명령.",
+    },
+    {
+      want: "채널을 묶어서 정리하기",
+      how: "채널 설정(톱니) → '사이드바 섹션'에 이름을 넣으면 같은 이름끼리 사이드바에서 한 묶음이 되고 접을 수 있습니다. 나에게만 적용됩니다.",
+    },
+    {
+      want: "누가 뭘 바꿨는지 · 오래된 대화 자동 정리",
+      how: "관리자는 위 '감사 로그'(CSV 내려받기)와 '보관 정책'(메시지·파일 보관 일수, 채널별 예외는 채널 설정)에서.",
+    },
+    {
+      want: "팀이 만든 앱 붙이기",
+      how: "위 '개발자 콘솔'에 매니페스트 JSON 을 넣어 등록 → 앱 디렉터리(도크 +)에서 설치. 슬래시 명령·버튼·웹훅·앱 홈까지 매니페스트 한 장으로 선언합니다.",
     },
     {
       want: "구성원 역할 바꾸기 · 떠난 사람 내보내기 · 다른 기기 끊기",
@@ -1667,5 +1751,17 @@ function SessionsList() {
         </ul>
       ) : null}
     </div>
+  );
+}
+
+/** The review queue only exists for service admins; the header hides with it. */
+function ReviewSectionWrapper() {
+  const isServiceAdmin = useApp((state) => state.me?.is_service_admin ?? false);
+  if (!isServiceAdmin) return null;
+  return (
+    <section className="settings-section">
+      <h3>앱 심사</h3>
+      <ReviewSection />
+    </section>
   );
 }

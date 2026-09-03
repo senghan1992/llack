@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     mail_from: str = "llack@localhost"
 
+    # ── Public web address ──────────────────────────────────────────────
+    # Where people open Llack in a browser (https://llack.example.com). Used
+    # to build the link inside invitation e-mails. Empty → the request's
+    # Origin header is used; no Origin → the invite is not mailed.
+    public_web_url: str = ""
+
+    # ── Link unfurls ────────────────────────────────────────────────────
+    # A message's first http(s) link gets a title/description/image card,
+    # fetched by the server through the same SSRF guard as link-app probes.
+    unfurl_enabled: bool = True
+
     # ── Sign-up policy ──────────────────────────────────────────────────
     # True locks /auth/register behind a valid invite token — the production
     # posture for custom email/password auth until SSO lands. False (the dev
@@ -78,6 +89,33 @@ class Settings(BaseSettings):
     # ── Realtime ────────────────────────────────────────────────────────
     ws_heartbeat_seconds: int = 25
     presence_ttl_seconds: int = 60
+
+    # ── Attachment scanning (ClamAV) ────────────────────────────────────
+    # Empty host = no scanning; files are stored with scan_status="skipped".
+    # Point at a clamd (INSTREAM over TCP) and every upload is scanned in the
+    # background; infected files are quarantined and the uploader is told.
+    clamav_host: str = ""
+    clamav_port: int = 3310
+    clamav_timeout_seconds: float = 30.0
+
+    # ── Metrics ─────────────────────────────────────────────────────────
+    # `GET /metrics` (Prometheus text format). With a token set the endpoint
+    # requires `Authorization: Bearer <token>`; without one it is open in
+    # development and absent (404) in production — an unauthenticated metrics
+    # page leaks request paths and user counts.
+    metrics_token: str = ""
+
+    # ── Background workers ─────────────────────────────────────────────
+    # Retention sweeps, unread recounts, presence cleanup. Off in tests; on
+    # for every server process — with Redis configured only one node runs
+    # each job at a time (leader lock), without Redis every node runs them
+    # (harmless for a single node, which is the only Redis-less deployment).
+    run_workers: bool = True
+
+    # ── Media tokens ────────────────────────────────────────────────────
+    # A short-lived HMAC that lets `<video src>` / `<img src>` fetch a file
+    # without a bearer header (browsers cannot attach one to media elements).
+    media_token_ttl_seconds: int = 600
 
     # ── CORS ────────────────────────────────────────────────────────────
     # A mini-app panel runs on its own origin and calls `/api/v1/app-bridge`

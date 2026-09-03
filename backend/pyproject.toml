@@ -26,6 +26,8 @@ dependencies = [
   "aioboto3>=13.2",
   "structlog>=24.4",
   "orjson>=3.10",
+  "prometheus-client>=0.21",
+  "pillow>=10.4",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +38,8 @@ dev = [
   "asgi-lifespan>=2.1",
   "ruff>=0.8",
   "mypy>=1.13",
+  # Redis-backed rate limiting is exercised against an in-memory fake.
+  "fakeredis[lua]>=2.26",
 ]
 
 # Without this, setuptools' flat-layout auto-discovery sees `app`, `alembic`

@@ -43,6 +43,20 @@ def extract_mentions(body: str) -> tuple[list[str], bool]:
     return user_ids, bool(EVERYONE_RE.search(scannable))
 
 
+def extract_broadcast(body: str) -> str | None:
+    """"channel" for @channel/@everyone, "here" for @here alone, else None.
+
+    `@channel` outranks `@here` when both appear: the wider call wins.
+    """
+    scannable = strip_code(body)
+    words = {m.lower() for m in EVERYONE_RE.findall(scannable)}
+    if not words:
+        return None
+    if words & {"channel", "everyone"}:
+        return "channel"
+    return "here"
+
+
 def extract_handle_mentions(body: str) -> list[str]:
     """Handles written as plain `@name`, for the server to resolve to ids."""
     scannable = strip_code(body)

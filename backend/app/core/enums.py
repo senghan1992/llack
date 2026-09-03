@@ -62,8 +62,10 @@ class AppKind(StrEnum):
 
 
 class AppStatus(StrEnum):
-    DRAFT = "draft"
-    PUBLISHED = "published"
+    DRAFT = "draft"                    # visible and installable only in its owner workspace
+    PENDING_REVIEW = "pending_review"  # submitted for company-wide publication
+    PUBLISHED = "published"            # in every workspace's directory
+    REJECTED = "rejected"              # reviewer said no; still usable at home, resubmittable
     DISABLED = "disabled"
 
 

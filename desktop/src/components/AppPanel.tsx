@@ -31,7 +31,7 @@ import type { CSSProperties } from "react";
 import { api } from "@/lib/ipc";
 import type { PanelSession } from "@/lib/types";
 import { useApp } from "@/store/app";
-import { IconClose } from "./Icon";
+import { IconClose, IconHome } from "./Icon";
 
 /** Messages the frame may send to the host. */
 type BridgeRequest =
@@ -50,6 +50,7 @@ export function AppPanel() {
   const activeChannelId = useApp((state) => state.activeChannelId);
   const serverUrl = useApp((state) => state.serverUrl);
   const openAppPanel = useApp((state) => state.openAppPanel);
+  const openAppHome = useApp((state) => state.openAppHome);
   const openChannel = useApp((state) => state.openChannel);
   const reportError = useApp((state) => state.reportError);
 
@@ -212,6 +213,17 @@ export function AppPanel() {
           {/* Neutral marker: the app is identified by its name, not its brand hue. */}
           {installation.app.accent_color ? <span className="app-panel-accent" /> : null}
         </h2>
+        {installation.app.home_url ? (
+          <button
+            type="button"
+            className="app-panel-home"
+            onClick={() => openAppHome(installation.id)}
+            title="앱 홈 — 채널과 무관한 앱 전용 화면"
+            aria-label="앱 홈 열기"
+          >
+            <IconHome size={13} />
+          </button>
+        ) : null}
         <button type="button" onClick={() => openAppPanel(null)} aria-label="앱 닫기">
           <IconClose size={13} />
         </button>

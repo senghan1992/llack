@@ -939,6 +939,219 @@ impl ApiClient {
 
     /// Register and pin an external web app from a bare URL. The server
     /// derives the manifest; the caller supplies only what a person typed.
+    // ── 운영·사용성·앱 플랫폼 (untyped: the UI owns these shapes) ──────────
+
+    pub async fn list_audit(
+        &self,
+        workspace_id: &str,
+        before: Option<&str>,
+        action: Option<&str>,
+        actor_id: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut path = format!("/workspaces/{workspace_id}/audit?limit=50");
+        if let Some(v) = before {
+            path.push_str(&format!("&before={}", urlencode(v)));
+        }
+        if let Some(v) = action {
+            path.push_str(&format!("&action={}", urlencode(v)));
+        }
+        if let Some(v) = actor_id {
+            path.push_str(&format!("&actor_id={}", urlencode(v)));
+        }
+        self.send::<(), _>(Method::GET, &path, None).await
+    }
+
+    /// The audit trail as CSV bytes (the shell hands them to a save dialog).
+    pub async fn download_audit_csv(&self, workspace_id: &str) -> Result<Vec<u8>> {
+        let mut request = self
+            .http
+            .get(self.url(&format!("/workspaces/{workspace_id}/audit/export.csv")));
+        if let Some(token) = self.session.access_token() {
+            request = request.bearer_auth(token);
+        }
+        let response = check_status(request.send().await?).await?;
+        Ok(response.bytes().await?.to_vec())
+    }
+
+    pub async fn get_retention(&self, workspace_id: &str) -> Result<serde_json::Value> {
+        self.send::<(), _>(
+            Method::GET,
+            &format!("/workspaces/{workspace_id}/retention"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn update_retention(
+        &self,
+        workspace_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        self.send(
+            Method::PATCH,
+            &format!("/workspaces/{workspace_id}/retention"),
+            Some(&patch),
+        )
+        .await
+    }
+
+    pub async fn update_notifications(&self, patch: serde_json::Value) -> Result<User> {
+        self.send(Method::PATCH, "/me/notifications", Some(&patch))
+            .await
+    }
+
+    pub async fn save_message(
+        &self,
+        message_id: &str,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        self.send(
+            Method::PUT,
+            &format!("/messages/{message_id}/save"),
+            Some(&payload),
+        )
+        .await
+    }
+
+    pub async fn unsave_message(&self, message_id: &str) -> Result<()> {
+        self.send::<(), serde_json::Value>(
+            Method::DELETE,
+            &format!("/messages/{message_id}/save"),
+            None,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    pub async fn list_saved(
+        &self,
+        workspace_id: &str,
+        done: bool,
+        before: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let mut path = format!(
+            "/workspaces/{workspace_id}/saved?limit=50&done={}",
+            if done { "true" } else { "false" }
+        );
+        if let Some(v) = before {
+            path.push_str(&format!("&before={}", urlencode(v)));
+        }
+        self.send::<(), _>(Method::GET, &path, None).await
+    }
+
+    pub async fn saved_action(&self, saved_id: &str, action: &str) -> Result<serde_json::Value> {
+        self.send::<(), _>(Method::POST, &format!("/saved/{saved_id}/{action}"), None)
+            .await
+    }
+
+    pub async fn resend_invite(
+        &self,
+        workspace_id: &str,
+        invite_id: &str,
+    ) -> Result<serde_json::Value> {
+        self.send::<(), _>(
+            Method::POST,
+            &format!("/workspaces/{workspace_id}/invites/{invite_id}/resend"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn file_thumbnail(&self, file_id: &str) -> Result<Vec<u8>> {
+        let mut request = self
+            .http
+            .get(self.url(&format!("/files/{file_id}/thumbnail")));
+        if let Some(token) = self.session.access_token() {
+            request = request.bearer_auth(token);
+        }
+        let response = check_status(request.send().await?).await?;
+        Ok(response.bytes().await?.to_vec())
+    }
+
+    /// A short-lived URL a `<video src>` can stream without a bearer header.
+    /// Returned absolute, so the webview can use it as-is.
+    pub async fn media_token(&self, file_id: &str) -> Result<serde_json::Value> {
+        let mut value: serde_json::Value = self
+            .send::<(), _>(Method::POST, &format!("/files/{file_id}/media-token"), None)
+            .await?;
+        if let Some(url) = value.get("url").and_then(|u| u.as_str()) {
+            if !url.starts_with("http") {
+                let absolute = format!("{}{}", self.config.base_url, url);
+                value["url"] = serde_json::Value::String(absolute);
+            }
+        }
+        Ok(value)
+    }
+
+    pub async fn list_commands(&self, workspace_id: &str) -> Result<serde_json::Value> {
+        self.send::<(), _>(
+            Method::GET,
+            &format!("/workspaces/{workspace_id}/commands"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn run_command(&self, channel_id: &str, text: &str) -> Result<serde_json::Value> {
+        let payload = serde_json::json!({ "text": text });
+        self.send(
+            Method::POST,
+            &format!("/channels/{channel_id}/commands"),
+            Some(&payload),
+        )
+        .await
+    }
+
+    pub async fn message_action(
+        &self,
+        message_id: &str,
+        action_id: &str,
+        value: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let payload = serde_json::json!({ "action_id": action_id, "value": value });
+        self.send(
+            Method::POST,
+            &format!("/messages/{message_id}/actions"),
+            Some(&payload),
+        )
+        .await
+    }
+
+    pub async fn open_app_home(&self, installation_id: &str) -> Result<PanelSession> {
+        self.send::<(), _>(
+            Method::POST,
+            &format!("/app-installations/{installation_id}/home-session"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn apps_get(&self, path: &str) -> Result<serde_json::Value> {
+        self.send::<(), _>(Method::GET, path, None).await
+    }
+
+    pub async fn apps_post(
+        &self,
+        path: &str,
+        payload: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        self.send(Method::POST, path, payload.as_ref()).await
+    }
+
+    pub async fn apps_put(
+        &self,
+        path: &str,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        self.send(Method::PUT, path, Some(&payload)).await
+    }
+
+    pub async fn apps_delete(&self, path: &str) -> Result<()> {
+        self.send::<(), serde_json::Value>(Method::DELETE, path, None)
+            .await
+            .map(|_| ())
+    }
+
     /// Rename a link app, pin/unpin, reorder, or change its config.
     pub async fn update_installation(
         &self,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import PresenceState
@@ -42,6 +42,17 @@ class User(Base, ULIDPrimaryKey, Timestamps, SoftDelete):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_service_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # ── 방해 금지 ────────────────────────────────────────────────────────
+    # A daily quiet window in the user's own timezone ("22:00"–"08:00" may
+    # cross midnight) on `dnd_days` (Python weekday, Monday = 0), plus a
+    # one-off pause. Counters keep counting; only notifications go quiet.
+    dnd_start: Mapped[str | None] = mapped_column(String(5), default=None)
+    dnd_end: Mapped[str | None] = mapped_column(String(5), default=None)
+    dnd_days: Mapped[list[int]] = mapped_column(
+        JSON, nullable=False, default=lambda: [0, 1, 2, 3, 4]
+    )
+    notify_paused_until: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     sessions: Mapped[list[Session]] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="raise_on_sql"

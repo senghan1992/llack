@@ -62,6 +62,7 @@ export function Notices() {
   const notices = useApp((state) => state.notices);
   const dismissNotice = useApp((state) => state.dismissNotice);
   const openChannel = useApp((state) => state.openChannel);
+  const revealMessage = useApp((state) => state.revealMessage);
 
   const [paused, setPaused] = useState(false);
   const bottom = useBottomOffset(notices.length > 0);
@@ -114,7 +115,13 @@ export function Notices() {
               // The channel, not the thread: `message_id` is the message
               // itself, so treating it as a thread parent would dock an empty
               // pane for anything that is not a reply.
-              if (notice.channelId) void openChannel(notice.channelId);
+              if (notice.kind === "reminder" && notice.channelId && notice.messageId) {
+                // A reminder points at one message: land on it (its thread, if
+                // it is a reply) rather than at the bottom of the channel.
+                void revealMessage(notice.channelId, notice.messageId, notice.threadId ?? null);
+              } else if (notice.channelId) {
+                void openChannel(notice.channelId);
+              }
               dismissNotice(notice.id);
             }}
           >

@@ -48,29 +48,48 @@ App (slug: deploy-status)
   "tagline": "매일 아침 팀의 진행 상황을 모아 채널에 올립니다",
   "kind": "both",
   "panel_url": "https://apps.example.com/standup/",
+  "home_url": "https://apps.example.com/standup/home",
+  "command_url": "https://apps.example.com/standup/llack/command",
+  "interaction_url": "https://apps.example.com/standup/llack/interact",
+  "event_webhook_url": "https://apps.example.com/standup/llack/events",
   "default_width": 420,
   "accent_color": "#7c6aff",
   "scopes": ["identity:read", "channels:read", "messages:write", "storage", "panel:ui"],
-  "slash_commands": [{ "command": "/standup", "description": "스탠드업 작성" }],
-  "events": ["message.created"]
+  "slash_commands": [{ "command": "/standup", "description": "스탠드업 작성", "usage": "/standup [팀]" }],
+  "events": ["message.created", "app.mention"]
 }
 ```
 
-등록과 게시:
+| 필드 | 뜻 |
+| --- | --- |
+| `panel_url` | 채널 옆 패널(사이드 시트)에 뜨는 화면 |
+| `home_url` | 채널과 무관한 앱 전용 화면 — 메인 패널의 **앱 홈** (`POST /app-installations/{id}/home-session`) |
+| `command_url` | 사람이 `/standup …` 을 치면 서명된 POST 가 오는 곳 |
+| `interaction_url` | 앱 메시지 안의 버튼·선택을 누르면 서명된 POST 가 오는 곳 |
+| `event_webhook_url` + `events` | 구독한 이벤트가 서명된 POST 로 오는 곳 |
+
+등록은 환경설정 → **개발자 콘솔**에 JSON 을 붙이거나 API 로:
 
 ```bash
-# 워크스페이스 전용 앱으로 등록 (owner_workspace_id 를 빼면 배포 전체 공용)
-curl -X POST "$API/apps?owner_workspace_id=$WORKSPACE_ID" \
+curl -X POST "$API/apps?workspace_id=$WORKSPACE_ID" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d @manifest.json
-
-curl -X PUT "$API/apps/$APP_ID/status" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"status": "published"}'
+# → {..., "secret": "llack_as_..."}  ← 서명 비밀. 이 응답에서만 보입니다.
 ```
 
-`draft` 상태에서는 디렉터리에 보이지 않습니다. 만드는 중인 앱이 동료들에게
-노출되지 않게 하려는 의도입니다.
+### 상태와 심사
+
+| 상태 | 뜻 |
+| --- | --- |
+| `draft` | 만든 워크스페이스의 디렉터리에만 보이고 그곳에서만 설치됩니다 — 팀이 자기 앱을 쓰는 데는 이걸로 충분합니다 |
+| `pending_review` | `POST /apps/{id}/submit` — 모든 워크스페이스에 내놓겠다고 신청한 상태 |
+| `published` | 서비스 관리자가 `POST /apps/{id}/review {"decision":"approve"}` — 모든 디렉터리에 보이고 어디서나 설치됩니다 |
+| `rejected` | 반려. `review_note` 에 이유. 고쳐서 다시 신청할 수 있습니다 |
+| `disabled` | 작성자가 잠시 내림 (`PUT /apps/{id}/status`) |
+
+작성자는 `published` 를 직접 쓸 수 없습니다(403 `review_required`). 심사 대기 목록은
+`GET /apps/pending`(서비스 관리자). 결정은 작성자에게 `notification` 프레임(`kind: "review"`)으로
+가고 감사 로그에 `app.review_decided` 로 남습니다.
 
 ## 스코프
 
@@ -191,22 +210,93 @@ try {
 
 ## 서버 대 서버
 
-패널 없이 CI 등에서 메시지를 올리려면 장기 토큰을 발급합니다.
+패널 없이 CI 등에서 메시지를 올리려면 장기 토큰을 발급합니다. 개발자 콘솔의 "토큰 발급"이
+아래를 호출합니다 — 토큰은 앱의 홈 워크스페이스 설치본(봇 계정)에 묶입니다.
 
 ```bash
-curl -X POST "$API/app-installations/$INSTALLATION_ID/tokens" \
+curl -X POST "$API/apps/$APP_ID/tokens" \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name": "github-actions", "ttl_days": 365}'
-# → {"token": "llack_at_...", ...}  ← 이 값은 이때 한 번만 반환됩니다
+  -d '{"name": "github-actions", "expires_in_days": 365}'
+# → {"token": "llack_at_...", "token_prefix": "llack_at_ab12", ...}  ← 이때 한 번만
+curl "$API/apps/$APP_ID/tokens"                       # 목록 (평문 없음)
+curl -X DELETE "$API/apps/$APP_ID/tokens/$TOKEN_ID"   # 폐기
 ```
 
 ```bash
-curl -X POST "$API/app-bridge/messages" \
+curl -X POST "$API/channels/$CHANNEL_ID/messages" \
   -H "Authorization: Bearer llack_at_..." -H "Content-Type: application/json" \
-  -d '{"channel_id": "01...", "body": "빌드 #482 통과 ✅", "client_msg_id": "build-482"}'
+  -d '{"body": "빌드 #482 통과 ✅", "client_msg_id": "build-482",
+       "blocks": [{"type": "actions", "elements": [
+         {"type": "button", "text": "배포", "action_id": "deploy", "style": "primary"}]}]}'
 ```
 
-토큰은 키드 해시로만 저장되고, `token_prefix` 만 UI 에 표시됩니다.
+토큰은 해시로만 저장되고 `token_prefix` 만 UI 에 표시됩니다. 설치본 단위 발급
+(`POST /app-installations/{id}/tokens`)도 그대로 있습니다.
+
+## 서명 — Llack 이 앱을 부를 때
+
+명령·인터랙션·이벤트 웹훅은 모두 같은 방식으로 서명됩니다.
+
+```
+X-Llack-Timestamp: 1788400000
+X-Llack-Signature: sha256=HMAC_SHA256(app_secret, f"{timestamp}.{body}")
+```
+
+`body` 는 받은 바이트 그대로(정렬된 키, 공백 없는 JSON). 앱은 같은 HMAC 을 계산해 비교하고,
+타임스탬프가 5분 이상 오래되면 거부하세요. 비밀은 등록 응답과
+`POST /apps/{id}/rotate-secret` 에서만 보입니다. 타임아웃 5초, 리다이렉트 3회, 대상 주소는
+공개 호스트만(사설·루프백은 링크 프로브와 같은 가드로 거부).
+
+### 슬래시 명령
+
+`GET /workspaces/{ws}/commands` 가 내장(`/remind`, `/dnd`, `/topic`, `/leave`, `/mute`, `/shrug`)과
+설치된 앱의 명령을 합쳐 돌려줍니다. 사람이 `/standup 백엔드` 를 보내면
+`POST /channels/{id}/commands {"text": "/standup 백엔드"}` → `command_url` 로:
+
+```json
+{ "command": "/standup", "text": "백엔드",
+  "user": {"id","handle","display_name"}, "channel": {"id","name"},
+  "workspace_id": "...", "response_url": "https://llack.example.com/api/v1/apps/APP/respond/NONCE" }
+```
+
+앱 응답 `{"text": "...", "ephemeral": true, "blocks": []}` — `ephemeral` 이면 명령한 사람에게만
+보이고, 아니면 앱 봇 메시지로 게시됩니다. 30분 안에 `response_url` 로 (같은 서명으로) POST
+하면 나중에 채널에 게시할 수 있습니다. 한 번만 쓸 수 있는 URL 입니다.
+
+### 인터랙티브 블록
+
+앱 메시지의 `blocks`:
+
+```json
+[
+  {"type": "section", "text": "v2.3.0 을 프로덕션에 올릴까요?"},
+  {"type": "actions", "elements": [
+    {"type": "button", "text": "승인", "action_id": "approve", "value": "v2.3.0", "style": "primary"},
+    {"type": "select", "action_id": "env", "placeholder": "환경", "options": [{"text": "스테이징", "value": "stg"}]}
+  ]},
+  {"type": "context", "text": "배포 봇 · 자동 생성"}
+]
+```
+
+누르면 `POST /messages/{id}/actions {"action_id","value"}` → `interaction_url` 로
+`{"type": "block_action", "action_id", "value", "user", "channel", "message_id", "message", "response_url"}`.
+앱 응답 `{"replace_original": {"text","blocks"}, "ephemeral": {"text"}}` — 원문이 바뀌면
+모두에게 `message.updated` 가 가고, `ephemeral` 은 누른 사람만 봅니다. 알 수 없는 블록 타입은
+422 `invalid_blocks`; `unfurl` 블록은 서버만 씁니다.
+
+### 이벤트 웹훅
+
+`events` 에 적은 것만 옵니다: `message.created`(앱 자신의 봇 글은 제외), `reaction.added`,
+`channel.member_joined`, `app.mention`(앱 봇을 멘션한 메시지). 봉투:
+
+```json
+{"type": "message.created", "delivery_id": "...", "app_id": "...", "installation_id": "...",
+ "workspace_id": "...", "sent_at": "...", "data": {"message": {...}}}
+```
+
+첫 시도는 즉시, 실패하면 30초 → 2분 → 10분 뒤 재시도 후 `failed`. 전달 기록은
+`GET /apps/{id}/deliveries`, 연결 확인은 `POST /apps/{id}/test-webhook`(`ping` 1건). 개발자 콘솔의
+"웹훅 테스트"·"웹훅 전달 기록"이 이 둘입니다.
 
 ## 브릿지 API
 
@@ -230,7 +320,5 @@ curl -X POST "$API/app-bridge/messages" \
 
 지금 초안에 아직 없는 것 — [ROADMAP.md](ROADMAP.md) 참고:
 
-- 슬래시 커맨드 디스패치 (매니페스트에 선언은 되지만 아직 라우팅되지 않음)
-- 이벤트 웹훅 발송 (`event_subscriptions` 저장은 되지만 발송기가 없음)
-- 메시지 안 인터랙티브 블록 (버튼·선택)
-- 앱 심사 워크플로
+- 앱 심사 화면의 스크린샷·권한 diff 미리보기
+- 웹훅 서명 검증용 SDK 헬퍼 (지금은 문서의 HMAC 식을 직접 구현)

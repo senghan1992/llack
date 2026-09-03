@@ -195,6 +195,36 @@ async def open_dm(
     return channel, True
 
 
+async def open_self_dm(db: AsyncSession, *, workspace_id: str, user: User) -> Channel:
+    """The note-to-self conversation: a DM whose only member is you.
+
+    `/remind me …` without a message to point at needs somewhere private to
+    keep the note; posting it into the current channel would leak it. The
+    sidebar already knows how to label a peer-less DM ("(나)").
+    """
+    await require_membership(db, workspace_id=workspace_id, user_id=user.id)
+    dm_key = build_dm_key([user.id])
+    existing = await db.scalar(
+        select(Channel)
+        .where(Channel.workspace_id == workspace_id, Channel.dm_key == dm_key)
+        .limit(1)
+    )
+    if existing is not None:
+        return existing
+    channel = Channel(
+        id=new_ulid(),
+        workspace_id=workspace_id,
+        kind=ChannelKind.DM.value,
+        dm_key=dm_key,
+        created_by=user.id,
+        member_count=1,
+    )
+    db.add(channel)
+    db.add(ChannelMember(id=new_ulid(), channel_id=channel.id, user_id=user.id))
+    await db.flush()
+    return channel
+
+
 async def join_channel(db: AsyncSession, *, channel: Channel, user_id: str) -> ChannelMember:
     if channel.kind_enum.is_conversation:
         raise Forbidden("Direct messages cannot be joined.", code="cannot_join_dm")

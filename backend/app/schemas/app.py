@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AnyHttpUrl, Field, field_validator, model_validator
 
 from app.core.enums import AppKind, AppScope, AppStatus
 from app.schemas.common import Payload, Schema, Slug
@@ -13,8 +13,18 @@ from app.schemas.common import Payload, Schema, Slug
 
 class SlashCommandSpec(Payload):
     command: str = Field(min_length=2, max_length=40, pattern=r"^/[a-z0-9][a-z0-9_-]*$")
-    description: str = Field(max_length=200)
+    description: str = Field(default="", max_length=200)
+    # `usage` is the documented name; `usage_hint` is accepted for manifests
+    # written before the platform batch and normalised to `usage`.
+    usage: str | None = Field(default=None, max_length=120)
     usage_hint: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def _normalise_usage(self) -> SlashCommandSpec:
+        if self.usage is None and self.usage_hint is not None:
+            self.usage = self.usage_hint
+        self.usage_hint = self.usage
+        return self
 
 
 class AppManifest(Payload):
@@ -36,16 +46,31 @@ class AppManifest(Payload):
     panel_url: AnyHttpUrl | None = None
     sidebar_url: AnyHttpUrl | None = None
     event_webhook_url: AnyHttpUrl | None = None
+    # Where slash commands, block clicks and the 앱 홈 screen go. All optional;
+    # an app that declares none of them is a pure panel/bot as before.
+    command_url: AnyHttpUrl | None = None
+    interaction_url: AnyHttpUrl | None = None
+    home_url: AnyHttpUrl | None = None
     default_width: int = Field(default=420, ge=280, le=1200)
 
     scopes: list[AppScope] = Field(default_factory=list, max_length=32)
     slash_commands: list[SlashCommandSpec] = Field(default_factory=list, max_length=20)
     events: list[str] = Field(default_factory=list, max_length=40)
+    # The console speaks `event_subscriptions` (the column name); `events` is
+    # the original manifest key. Either is accepted; both are honoured.
+    event_subscriptions: list[str] | None = Field(default=None, max_length=40)
 
     @field_validator("scopes")
     @classmethod
     def _dedupe_scopes(cls, v: list[AppScope]) -> list[AppScope]:
         return list(dict.fromkeys(v))
+
+    @model_validator(mode="after")
+    def _merge_events(self) -> AppManifest:
+        if self.event_subscriptions:
+            self.events = list(dict.fromkeys([*self.events, *self.event_subscriptions]))
+        self.event_subscriptions = None
+        return self
 
 
 class AppOut(Schema):
@@ -61,12 +86,102 @@ class AppOut(Schema):
     status: AppStatus
     panel_url: str | None = None
     sidebar_url: str | None = None
+    home_url: str | None = None
     default_width: int = 420
     requested_scopes: list[str] = Field(default_factory=list)
     slash_commands: list[dict[str, Any]] = Field(default_factory=list)
     is_first_party: bool = False
     owner_workspace_id: str | None = None
+    review_note: str | None = None
     created_at: datetime
+
+
+class DeveloperAppOut(AppOut):
+    """The author's view: every URL the platform will call, and the review state."""
+
+    command_url: str | None = None
+    interaction_url: str | None = None
+    event_webhook_url: str | None = None
+    event_subscriptions: list[str] = Field(default_factory=list)
+    author_id: str | None = None
+    # Present only on the register / rotate-secret responses.
+    secret: str | None = None
+
+
+class ReviewRequest(Payload):
+    decision: Literal["approve", "reject"]
+    note: str | None = Field(default=None, max_length=500)
+
+
+class SecretOut(Schema):
+    secret: str
+
+
+class WebhookDeliveryOut(Schema):
+    id: str
+    app_id: str
+    installation_id: str | None = None
+    kind: str = "event"
+    event: str
+    status: str
+    attempts: int = 0
+    last_status_code: int | None = None
+    last_error: str | None = None
+    next_attempt_at: datetime | None = None
+    created_at: datetime
+
+
+# ── Slash commands & interactions ───────────────────────────────────────────
+
+
+class CommandAppRef(Schema):
+    id: str
+    name: str
+    icon_url: str | None = None
+
+
+class CommandOut(Schema):
+    command: str
+    description: str | None = None
+    usage: str | None = None
+    app: CommandAppRef | None = None
+    builtin: bool = False
+
+
+class RunCommandRequest(Payload):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class CommandResponseOut(Schema):
+    text: str
+    ephemeral: bool = True
+    blocks: list[dict[str, Any]] | None = None
+
+
+class CommandResultOut(Schema):
+    handled: bool
+    response: CommandResponseOut | None = None
+
+
+class BlockActionRequest(Payload):
+    action_id: str = Field(min_length=1, max_length=120)
+    value: str | None = Field(default=None, max_length=2000)
+
+
+class EphemeralOut(Schema):
+    text: str
+
+
+class ActionResultOut(Schema):
+    handled: bool
+    ephemeral: EphemeralOut | None = None
+
+
+class RespondRequest(Payload):
+    """What an app posts to a command's `response_url` after the fact."""
+
+    text: str = Field(default="", max_length=40_000)
+    blocks: list[dict[str, Any]] | None = None
 
 
 class InstallAppRequest(Payload):
@@ -119,6 +234,14 @@ class AppTokenOut(Schema):
 class CreateAppTokenRequest(Payload):
     name: str = Field(default="default", max_length=120)
     ttl_days: int | None = Field(default=None, ge=1, le=3650)
+    # The console's name for the same knob.
+    expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+
+    @model_validator(mode="after")
+    def _merge_ttl(self) -> CreateAppTokenRequest:
+        if self.ttl_days is None and self.expires_in_days is not None:
+            self.ttl_days = self.expires_in_days
+        return self
 
 
 class PanelSessionOut(Schema):

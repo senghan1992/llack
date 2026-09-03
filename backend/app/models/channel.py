@@ -52,6 +52,9 @@ class Channel(Base, ULIDPrimaryKey, Timestamps):
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Per-channel message retention override; NULL defers to the workspace.
+    retention_days: Mapped[int | None] = mapped_column(Integer, default=None)
+
     created_by: Mapped[str | None] = mapped_column(
         ULID, ForeignKey("users.id", ondelete="SET NULL"), default=None
     )

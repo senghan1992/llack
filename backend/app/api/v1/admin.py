@@ -8,12 +8,13 @@ workspace *admin* is deliberately not enough.
 from __future__ import annotations
 
 import anyio
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import EmailStr, Field
 
 from app.api.deps import DbSession, ServerAdmin
 from app.core.mailer import send_via_smtp
 from app.schemas.common import Payload
+from app.services import audit
 from app.services import server_settings as server_settings_service
 from app.services.server_settings import SmtpConfig
 
@@ -39,7 +40,7 @@ async def get_smtp(db: DbSession, _admin: ServerAdmin) -> dict:
 
 @router.put("/smtp", response_model=dict)
 async def put_smtp(
-    payload: SmtpSettingsRequest, db: DbSession, _admin: ServerAdmin
+    payload: SmtpSettingsRequest, db: DbSession, admin: ServerAdmin, request: Request
 ) -> dict:
     """Save the relay. An empty host clears the override (env/console win)."""
     stored = await server_settings_service.set_smtp(
@@ -50,6 +51,24 @@ async def put_smtp(
         password=payload.password,
         starttls=payload.starttls,
         mail_from=str(payload.mail_from),
+    )
+    # Server-wide, so no workspace: owners see it in every workspace's log.
+    await audit.record(
+        db,
+        workspace_id=None,
+        actor=admin,
+        action="smtp.updated",
+        target_type="server",
+        target_label=payload.host.strip() or "(cleared)",
+        details={
+            "host": payload.host.strip(),
+            "port": payload.port,
+            "username": payload.username.strip(),
+            "starttls": payload.starttls,
+            "mail_from": str(payload.mail_from),
+            "password_changed": payload.password is not None,
+        },
+        request=request,
     )
     await db.commit()
     return server_settings_service.public_view(stored or None)

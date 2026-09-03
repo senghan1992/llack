@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import ChannelCtx, CurrentUser, DbSession, PrincipalChannelCtx
+from app.core import metrics
 from app.core.config import settings
 from app.core.enums import AppScope, ChannelRole, MessageKind
 from app.core.ratelimit import limiter
@@ -23,6 +24,8 @@ from app.schemas.message import (
 from app.schemas.realtime import ServerEvent
 from app.schemas.user import UserBrief
 from app.services import messages as message_service
+from app.services import unfurl, webhooks
+from app.services.blocks import validate_blocks
 
 router = APIRouter(tags=["messages"])
 
@@ -30,16 +33,24 @@ router = APIRouter(tags=["messages"])
 # ── Serialisation ───────────────────────────────────────────────────────────
 
 
-def serialise_message(message, *, viewer_id: str | None) -> MessageOut:  # noqa: ANN001
+def serialise_message(
+    message,  # noqa: ANN001
+    *,
+    viewer_id: str | None,
+    saved: set[str] | None = None,
+) -> MessageOut:
     """Render a Message ORM row for a specific viewer.
 
     Requires `author`, `reactions` and `attachments` to already be loaded —
     the models use `lazy="raise_on_sql"`, so a missing eager load raises here
-    instead of silently firing one query per message.
+    instead of silently firing one query per message. `saved` is the set of
+    message ids the viewer has kept for later, looked up once per page by
+    `message_service.saved_ids_for`; None means "don't know", not "no".
     """
     return MessageOut(
         **MessageCore.model_validate(message).model_dump(),
         author=UserBrief.model_validate(message.author) if message.author else None,
+        is_saved=message.id in saved if saved is not None else False,
         reactions=message_service.reactions_summary(message, viewer_id=viewer_id),
         attachments=[
             FileOut(
@@ -69,7 +80,10 @@ async def list_messages(
     rows, has_more = await message_service.history(
         db, channel_id=ctx.channel.id, limit=limit, before=before, after=after
     )
-    items = [serialise_message(m, viewer_id=ctx.user.id) for m in rows]
+    saved = await message_service.saved_ids_for(
+        db, viewer_id=ctx.user.id, message_ids=[m.id for m in rows]
+    )
+    items = [serialise_message(m, viewer_id=ctx.user.id, saved=saved) for m in rows]
     return CursorPage[MessageOut](
         items=items,
         next_cursor=items[-1].id if items and has_more else None,
@@ -86,7 +100,8 @@ async def get_message(message_id: str, db: DbSession, user: CurrentUser) -> Mess
     await resolve_access(
         db, channel_id=message.channel_id, user_id=user.id, require_member=False
     )
-    return serialise_message(message, viewer_id=user.id)
+    saved = await message_service.saved_ids_for(db, viewer_id=user.id, message_ids=[message.id])
+    return serialise_message(message, viewer_id=user.id, saved=saved)
 
 
 @router.get("/messages/{message_id}/replies", response_model=CursorPage[MessageOut])
@@ -107,7 +122,10 @@ async def list_thread_replies(
     rows, has_more = await message_service.thread_replies(
         db, parent_id=message_id, limit=limit, after=after
     )
-    items = [serialise_message(m, viewer_id=user.id) for m in rows]
+    saved = await message_service.saved_ids_for(
+        db, viewer_id=user.id, message_ids=[m.id for m in rows]
+    )
+    items = [serialise_message(m, viewer_id=user.id, saved=saved) for m in rows]
     return CursorPage[MessageOut](
         items=items,
         next_cursor=items[-1].id if items and has_more else None,
@@ -133,7 +151,10 @@ async def create_message(
     message with 201 rather than posting twice.
     """
     ctx.require_scope(AppScope.MESSAGES_WRITE)
-    ctx.require_member()
+    # A person must have joined; an app posts anywhere in the workspace it is
+    # installed in (the dependency already applied its channel allow-list).
+    if not ctx.is_app:
+        ctx.require_member()
     limiter.check(
         "messages",
         ctx.user.id,
@@ -146,7 +167,7 @@ async def create_message(
         channel=ctx.channel,
         author=ctx.user,
         body=payload.body,
-        blocks=payload.blocks,
+        blocks=validate_blocks(payload.blocks),
         client_msg_id=payload.client_msg_id,
         parent_id=payload.parent_id,
         also_send_to_channel=payload.also_send_to_channel,
@@ -166,11 +187,26 @@ async def create_message(
         # Replayed request: the event was already fanned out the first time.
         return out
 
+    metrics.messages_created_total.inc()
     await emit_to_channel(
         ctx.channel.id,
         ServerEvent.MESSAGE_CREATED,
         {"message": out.model_dump(mode="json")},
         workspace_id=ctx.channel.workspace_id,
+    )
+
+    # The first link's title card arrives a moment later as MESSAGE_UPDATED.
+    unfurl.schedule(message.id, message.body)
+
+    # Apps that subscribed hear about it, off the request path. An app is not
+    # told about its own bot's post; an app whose bot was @mentioned also gets
+    # `app.mention`.
+    webhooks.schedule(
+        "message.created",
+        workspace_id=ctx.channel.workspace_id,
+        payload={"message": out.model_dump(mode="json")},
+        exclude_bot_user_ids={ctx.user.id} if ctx.user.is_bot else None,
+        mentioned_user_ids=list(message.mentioned_user_ids or []),
     )
 
     # Desktop notifications go to the people whose settings ask for them.
@@ -213,7 +249,7 @@ async def update_message(
         message=message,
         actor=user,
         body=payload.body,
-        blocks=payload.blocks,
+        blocks=validate_blocks(payload.blocks, allow_unfurl=True),
         workspace_id=channel.workspace_id,
     )
     await db.commit()
@@ -284,6 +320,16 @@ async def add_reaction(
                 "user_id": user.id,
             },
             workspace_id=channel.workspace_id,
+        )
+        webhooks.schedule(
+            "reaction.added",
+            workspace_id=channel.workspace_id,
+            payload={
+                "message_id": message.id,
+                "channel_id": channel.id,
+                "emoji": payload.emoji,
+                "user": UserBrief.model_validate(user).model_dump(),
+            },
         )
     return OkResponse()
 
@@ -372,4 +418,8 @@ async def list_pins(ctx: ChannelCtx, db: DbSession) -> list[MessageOut]:
         .order_by(Message.id.desc())
         .limit(100)
     )
-    return [serialise_message(m, viewer_id=ctx.user.id) for m in rows.all()]
+    pinned = list(rows.all())
+    saved = await message_service.saved_ids_for(
+        db, viewer_id=ctx.user.id, message_ids=[m.id for m in pinned]
+    )
+    return [serialise_message(m, viewer_id=ctx.user.id, saved=saved) for m in pinned]

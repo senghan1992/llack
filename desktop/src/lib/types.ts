@@ -31,6 +31,13 @@ export interface User extends UserBrief {
   status_text?: string | null;
   presence: Presence;
   is_active: boolean;
+  /** 방해 금지: "22:00"–"08:00" on `dnd_days` (0 = Monday), plus a one-off pause. */
+  dnd_start?: string | null;
+  dnd_end?: string | null;
+  dnd_days?: number[];
+  notify_paused_until?: string | null;
+  /** Server-computed: are notifications suppressed right now? */
+  in_dnd?: boolean;
 }
 
 export interface Workspace {
@@ -41,6 +48,131 @@ export interface Workspace {
   icon_url?: string | null;
   my_role?: WorkspaceRole | null;
   member_count: number;
+  retention_days_messages?: number | null;
+  retention_days_files?: number | null;
+}
+
+export interface RetentionSettings {
+  retention_days_messages: number | null;
+  retention_days_files: number | null;
+}
+
+/** One line of the admin audit trail. */
+export interface AuditEvent {
+  id: string;
+  action: string;
+  actor?: UserBrief | null;
+  target_type: string;
+  target_id?: string | null;
+  target_label?: string | null;
+  details?: Record<string, unknown> | null;
+  ip?: string | null;
+  created_at: string;
+}
+
+/** A message kept for later, optionally with a reminder. */
+export interface SavedItem {
+  id: string;
+  note?: string | null;
+  remind_at?: string | null;
+  reminded_at?: string | null;
+  done_at?: string | null;
+  created_at: string;
+  message: Message;
+  channel: ChannelRef;
+}
+
+/** Short-lived URL an `<img>`/`<video>` can load without a bearer header. */
+export interface MediaToken {
+  url: string;
+  expires_at: string;
+}
+
+export interface SlashCommand {
+  command: string;
+  description?: string | null;
+  usage?: string | null;
+  app?: { id: Id; name: string; icon_url?: string | null } | null;
+  builtin: boolean;
+}
+
+export interface CommandResult {
+  handled: boolean;
+  response?: { text: string; ephemeral: boolean; blocks?: MessageBlock[] | null } | null;
+}
+
+export interface ActionResult {
+  handled: boolean;
+  ephemeral?: { text: string } | null;
+}
+
+/** Rich content a message may carry beside its Markdown body. */
+export type MessageBlock =
+  | {
+      type: "unfurl";
+      url: string;
+      title?: string | null;
+      description?: string | null;
+      image_url?: string | null;
+      site_name?: string | null;
+    }
+  | { type: "section"; text: string }
+  | { type: "context"; text: string }
+  | {
+      type: "actions";
+      elements: Array<
+        | {
+            type: "button";
+            text: string;
+            action_id: string;
+            value?: string | null;
+            style?: "primary" | "danger" | null;
+          }
+        | {
+            type: "select";
+            action_id: string;
+            placeholder?: string | null;
+            options: Array<{ text: string; value: string }>;
+          }
+      >;
+    };
+
+/** An app as its author sees it in the developer console. */
+export interface DeveloperApp extends AppSummary {
+  status: "draft" | "pending_review" | "published" | "rejected" | "disabled";
+  version?: string | null;
+  description?: string | null;
+  review_note?: string | null;
+  command_url?: string | null;
+  interaction_url?: string | null;
+  home_url?: string | null;
+  event_webhook_url?: string | null;
+  event_subscriptions?: string[];
+  slash_commands?: Array<{ command: string; description?: string | null; usage?: string | null }>;
+  owner_workspace_id?: Id | null;
+  created_at?: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  event: string;
+  status: "pending" | "ok" | "failed";
+  attempts: number;
+  last_status_code?: number | null;
+  last_error?: string | null;
+  next_attempt_at?: string | null;
+  created_at: string;
+}
+
+export interface AppToken {
+  id: string;
+  name: string;
+  token_prefix: string;
+  expires_at?: string | null;
+  created_at?: string;
+  last_used_at?: string | null;
+  /** Only present on the create response. */
+  token?: string;
 }
 
 export interface ChannelMembership {
@@ -66,6 +198,8 @@ export interface Channel {
   topic?: string | null;
   purpose?: string | null;
   is_archived: boolean;
+  /** Channel override for message retention; null = workspace default. */
+  retention_days?: number | null;
   last_message_at?: string | null;
   message_count: number;
   member_count: number;
@@ -88,6 +222,8 @@ export interface InviteOut {
   expires_at?: string | null;
   accepted_at?: string | null;
   invite_url?: string | null;
+  /** True when the server mailed the link itself. */
+  emailed?: boolean;
 }
 
 /** The server's SMTP relay as the admin UI sees it — password never echoes. */
@@ -198,6 +334,8 @@ export interface FileRef {
   download_url?: string | null;
   thumbnail_url?: string | null;
   uploader?: UserBrief | null;
+  /** Virus scan: pending | clean | infected | skipped | error. Absent on old servers. */
+  scan_status?: string | null;
 }
 
 export interface Message {
@@ -205,7 +343,7 @@ export interface Message {
   channel_id: Id;
   kind: MessageKind;
   body: string;
-  blocks?: unknown;
+  blocks?: MessageBlock[] | null;
   client_msg_id?: string | null;
   author?: UserBrief | null;
   app_id?: Id | null;
@@ -215,9 +353,13 @@ export interface Message {
   also_sent_to_channel: boolean;
   mentioned_user_ids: Id[];
   mentions_everyone: boolean;
+  /** "channel" (everyone) or "here" (only people present); absent otherwise. */
+  broadcast?: "channel" | "here" | null;
   attachments: FileRef[];
   reactions: Reaction[];
   is_pinned: boolean;
+  /** Kept for later by the viewer. */
+  is_saved?: boolean;
   edited_at?: string | null;
   deleted_at?: string | null;
   created_at: string;
@@ -252,6 +394,8 @@ export interface AppSummary {
   accent_color?: string | null;
   panel_url?: string | null;
   sidebar_url?: string | null;
+  /** A channel-independent screen the app offers (앱 홈). */
+  home_url?: string | null;
   default_width: number;
   requested_scopes: string[];
 }
@@ -379,6 +523,10 @@ export type SyncEffect =
       body: string;
       channel_id?: Id | null;
       message_id?: Id | null;
+      /** "reminder" | "quarantine" | "review" — absent for ordinary messages. */
+      notice_kind?: string | null;
+      /** For a reminder on a thread reply: the thread to open. */
+      thread_id?: Id | null;
     }
   | { kind: "typing"; channel_id: Id; user_id: Id }
   | { kind: "presence"; user_id: Id; presence: Presence }

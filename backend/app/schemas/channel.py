@@ -35,6 +35,8 @@ class ChannelOut(Schema):
     purpose: str | None = None
     is_archived: bool = False
     is_default: bool = False
+    # Message retention override in days; None defers to the workspace.
+    retention_days: int | None = None
     created_at: datetime
     last_message_at: datetime | None = None
     message_count: int = 0
@@ -65,6 +67,8 @@ class UpdateChannelRequest(Payload):
     topic: str | None = Field(default=None, max_length=400)
     purpose: str | None = Field(default=None, max_length=4000)
     is_archived: bool | None = None
+    # Channel-admin only. Explicit null = follow the workspace policy.
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
 
 
 class OpenDmRequest(Payload):

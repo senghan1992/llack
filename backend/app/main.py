@@ -10,13 +10,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from app import workers
 from app.api.v1.router import api_router
 from app.core import db as database
+from app.core import metrics
 from app.core.config import settings, validate_production_settings
 from app.core.errors import (
     AppError,
@@ -26,8 +28,9 @@ from app.core.errors import (
 )
 from app.core.ids import new_ulid
 from app.core.logging import configure_logging, get_logger
+from app.core.ratelimit import configure_from_settings as configure_rate_limiter
 from app.realtime.bus import get_bus, reset_bus
-from app.realtime.hub import reset_hub
+from app.realtime.hub import get_hub, reset_hub
 from app.realtime.presence import get_presence_store, reset_presence_store
 
 configure_logging()
@@ -54,10 +57,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await database.ping()
     await get_bus().start()
     await get_presence_store().start()
+    configure_rate_limiter()
+    metrics.bind_ws_gauge(lambda: get_hub().connection_count)
+    await workers.start()
     try:
         yield
     finally:
         log.info("shutdown")
+        await workers.stop()
         await reset_hub()
         await reset_presence_store()
         await reset_bus()
@@ -106,6 +113,20 @@ async def request_context(request: Request, call_next):  # noqa: ANN001, ANN201
 
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     response.headers["X-Request-Id"] = request_id
+    # The route *template* — `/api/v1/channels/{channel_id}` — not the path.
+    # Nested routers report their own path (`/me`), so the prefix is restored.
+    route = request.scope.get("route")
+    template = getattr(route, "path", None) or "unmatched"
+    if (
+        template != "unmatched"
+        and request.url.path.startswith(settings.api_prefix)
+        and not template.startswith(settings.api_prefix)
+    ):
+        template = settings.api_prefix + template
+    if request.url.path not in ("/metrics",):
+        metrics.observe_request(
+            request.method, template, response.status_code, duration_ms / 1000
+        )
     # Health checks would otherwise dominate the log.
     if request.url.path not in ("/health", "/health/ready"):
         log.info(
@@ -128,6 +149,24 @@ app.include_router(api_router, prefix=settings.api_prefix)
 @app.get("/health", tags=["ops"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/metrics", tags=["ops"], include_in_schema=False)
+async def prometheus_metrics(request: Request) -> Response:
+    """Prometheus scrape target.
+
+    With `LLACK_METRICS_TOKEN` set, a bearer token is required. Without one
+    the page is open in development and does not exist in production — a
+    metrics page names routes and counts people, which is not for the public.
+    """
+    if settings.metrics_token:
+        supplied = request.headers.get("authorization", "").partition(" ")[2].strip()
+        if not supplied or supplied != settings.metrics_token:
+            raise HTTPException(status_code=401, detail="metrics token required")
+    elif settings.is_production:
+        raise HTTPException(status_code=404)
+    body, content_type = metrics.render()
+    return Response(content=body, media_type=content_type)
 
 
 @app.get("/health/ready", tags=["ops"])

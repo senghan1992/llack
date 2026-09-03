@@ -272,6 +272,323 @@ pub async fn probe_link_app(
 }
 
 #[tauri::command]
+pub async fn list_audit(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    before: Option<String>,
+    action: Option<String>,
+    actor_id: Option<String>,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .list_audit(
+            &workspace_id,
+            before.as_deref(),
+            action.as_deref(),
+            actor_id.as_deref(),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn download_audit_csv(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<()> {
+    let bytes = state.api()?.download_audit_csv(&workspace_id).await?;
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| Error::Other(format!("no download dir: {e}")))?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = format!("llack-audit-{stamp}.csv");
+    std::fs::write(dir.join(name), bytes)
+        .map_err(|e| Error::Other(format!("could not write csv: {e}")))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_retention(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.get_retention(&workspace_id).await
+}
+
+#[tauri::command]
+pub async fn update_retention(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    patch: serde_json::Value,
+) -> Result<serde_json::Value> {
+    state.api()?.update_retention(&workspace_id, patch).await
+}
+
+#[tauri::command]
+pub async fn update_notifications(
+    state: State<'_, Arc<AppState>>,
+    patch: serde_json::Value,
+) -> Result<User> {
+    state.api()?.update_notifications(patch).await
+}
+
+#[tauri::command]
+pub async fn save_message(
+    state: State<'_, Arc<AppState>>,
+    message_id: String,
+    note: Option<String>,
+    remind_at: Option<String>,
+) -> Result<serde_json::Value> {
+    let payload = serde_json::json!({ "note": note, "remind_at": remind_at });
+    state.api()?.save_message(&message_id, payload).await
+}
+
+#[tauri::command]
+pub async fn unsave_message(state: State<'_, Arc<AppState>>, message_id: String) -> Result<()> {
+    state.api()?.unsave_message(&message_id).await
+}
+
+#[tauri::command]
+pub async fn list_saved(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    done: bool,
+    before: Option<String>,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .list_saved(&workspace_id, done, before.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn mark_saved_done(
+    state: State<'_, Arc<AppState>>,
+    saved_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.saved_action(&saved_id, "done").await
+}
+
+#[tauri::command]
+pub async fn reopen_saved(
+    state: State<'_, Arc<AppState>>,
+    saved_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.saved_action(&saved_id, "reopen").await
+}
+
+#[tauri::command]
+pub async fn resend_invite(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    invite_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.resend_invite(&workspace_id, &invite_id).await
+}
+
+#[tauri::command]
+pub async fn file_thumbnail(state: State<'_, Arc<AppState>>, file_id: String) -> Result<String> {
+    use base64::Engine as _;
+    let bytes = state.api()?.file_thumbnail(&file_id).await?;
+    let mime = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+    Ok(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+#[tauri::command]
+pub async fn media_token(
+    state: State<'_, Arc<AppState>>,
+    file_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.media_token(&file_id).await
+}
+
+#[tauri::command]
+pub async fn list_commands(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<serde_json::Value> {
+    state.api()?.list_commands(&workspace_id).await
+}
+
+#[tauri::command]
+pub async fn run_command(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    text: String,
+) -> Result<serde_json::Value> {
+    state.api()?.run_command(&channel_id, &text).await
+}
+
+#[tauri::command]
+pub async fn message_action(
+    state: State<'_, Arc<AppState>>,
+    message_id: String,
+    action_id: String,
+    value: Option<String>,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .message_action(&message_id, &action_id, value.as_deref())
+        .await
+}
+
+#[tauri::command]
+pub async fn open_app_home(
+    state: State<'_, Arc<AppState>>,
+    installation_id: String,
+) -> Result<PanelSession> {
+    state.api()?.open_app_home(&installation_id).await
+}
+
+#[tauri::command]
+pub async fn list_my_apps(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_get(&format!("/workspaces/{workspace_id}/apps/mine"))
+        .await
+}
+
+#[tauri::command]
+pub async fn register_app(
+    state: State<'_, Arc<AppState>>,
+    manifest: serde_json::Value,
+    workspace_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_post(
+            &format!("/apps?workspace_id={workspace_id}"),
+            Some(manifest),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn update_manifest(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+    manifest: serde_json::Value,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_put(&format!("/apps/{app_id}/manifest"), manifest)
+        .await
+}
+
+#[tauri::command]
+pub async fn submit_app(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_post(&format!("/apps/{app_id}/submit"), None)
+        .await
+}
+
+#[tauri::command]
+pub async fn review_app(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+    decision: String,
+    note: Option<String>,
+) -> Result<serde_json::Value> {
+    let payload = serde_json::json!({ "decision": decision, "note": note });
+    state
+        .api()?
+        .apps_post(&format!("/apps/{app_id}/review"), Some(payload))
+        .await
+}
+
+#[tauri::command]
+pub async fn list_pending_apps(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value> {
+    state.api()?.apps_get("/apps/pending").await
+}
+
+#[tauri::command]
+pub async fn rotate_app_secret(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_post(&format!("/apps/{app_id}/rotate-secret"), None)
+        .await
+}
+
+#[tauri::command]
+pub async fn test_webhook(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_post(&format!("/apps/{app_id}/test-webhook"), None)
+        .await
+}
+
+#[tauri::command]
+pub async fn list_deliveries(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_get(&format!("/apps/{app_id}/deliveries?limit=50"))
+        .await
+}
+
+#[tauri::command]
+pub async fn list_app_tokens(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+) -> Result<serde_json::Value> {
+    state
+        .api()?
+        .apps_get(&format!("/apps/{app_id}/tokens"))
+        .await
+}
+
+#[tauri::command]
+pub async fn create_app_token(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+    name: String,
+) -> Result<serde_json::Value> {
+    let payload = serde_json::json!({ "name": name });
+    state
+        .api()?
+        .apps_post(&format!("/apps/{app_id}/tokens"), Some(payload))
+        .await
+}
+
+#[tauri::command]
+pub async fn revoke_app_token(
+    state: State<'_, Arc<AppState>>,
+    app_id: String,
+    token_id: String,
+) -> Result<()> {
+    state
+        .api()?
+        .apps_delete(&format!("/apps/{app_id}/tokens/{token_id}"))
+        .await
+}
+
+#[tauri::command]
 pub async fn update_my_status(
     state: State<'_, Arc<AppState>>,
     patch: serde_json::Value,

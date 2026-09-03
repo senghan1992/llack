@@ -34,6 +34,8 @@ export function MessageList() {
   const loadOlder = useApp((state) => state.loadOlder);
   const me = useApp((state) => state.me);
   const unreadMarkers = useApp((state) => state.unreadMarkers);
+  const ephemerals = useApp((state) => (channelId ? state.ephemerals.get(channelId) : undefined));
+  const dismissEphemeral = useApp((state) => state.dismissEphemeral);
   const marker = channelId ? unreadMarkers.get(channelId) : undefined;
   const unread = useApp((state) =>
     state.channels.find((candidate) => candidate.id === state.activeChannelId)
@@ -174,6 +176,20 @@ export function MessageList() {
             />
           );
         })}
+        {(ephemerals ?? []).map((entry) => (
+          <article key={entry.id} className="message message-ephemeral" aria-live="polite">
+            <div className="message-gutter" />
+            <div className="message-content">
+              <span className="ephemeral-tag">나에게만 보임</span>
+              <span className="ephemeral-text">{entry.text}</span>
+              {channelId ? (
+                <button type="button" onClick={() => dismissEphemeral(channelId, entry.id)} aria-label="닫기">
+                  닫기
+                </button>
+              ) : null}
+            </div>
+          </article>
+        ))}
       </div>
 
       {!stickToBottom ? (

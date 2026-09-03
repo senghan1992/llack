@@ -52,6 +52,10 @@ class FileObject(Base, ULIDPrimaryKey, Timestamps, SoftDelete):
     # False until the bytes finished uploading, so a half-written file is
     # never attached to a message.
     is_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Antivirus verdict: skipped (no scanner configured) | pending | clean |
+    # infected | error. Infected files are quarantined (bytes gone, row kept
+    # so the transcript can say what happened).
+    scan_status: Mapped[str] = mapped_column(String(16), nullable=False, default="skipped")
     # Set for files stored by a mini-app rather than a person.
     app_id: Mapped[str | None] = mapped_column(
         ULID, ForeignKey("apps.id", ondelete="SET NULL"), default=None

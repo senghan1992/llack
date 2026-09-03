@@ -48,12 +48,22 @@ import type {
   SmtpSettings,
   SmtpSettingsInput,
   SyncEffect,
+  ActionResult,
   ActivityPage,
+  AppToken,
+  AuditEvent,
+  CommandResult,
+  DeveloperApp,
   LinkProbe,
+  MediaToken,
   MentionActivity,
+  RetentionSettings,
+  SavedItem,
   SessionInfo,
+  SlashCommand,
   ThreadActivity,
   User,
+  WebhookDelivery,
   Workspace,
   WorkspaceFile,
   WorkspaceMember,
@@ -657,6 +667,8 @@ function toSyncEffect(frame: ServerFrame): SyncEffect {
         body: field("body") ?? "",
         channel_id: field("channel_id"),
         message_id: field("message_id"),
+        notice_kind: field("kind") ?? null,
+        thread_id: field("thread_id") ?? null,
       };
 
     case "typing": {
@@ -891,8 +903,10 @@ export const webApi = {
       user_ids: userIds,
     }),
 
-  updateChannel: (channelId: Id, patch: { name?: string; topic?: string; is_archived?: boolean }) =>
-    request<Channel>("PATCH", `/channels/${channelId}`, patch),
+  updateChannel: (
+    channelId: Id,
+    patch: { name?: string; topic?: string; is_archived?: boolean; retention_days?: number | null },
+  ) => request<Channel>("PATCH", `/channels/${channelId}`, patch),
 
   channelMembers: (channelId: Id) =>
     request<ChannelMemberEntry[]>("GET", `/channels/${channelId}/members`),
@@ -1231,6 +1245,145 @@ export const webApi = {
 
   removeWorkspaceMember: (workspaceId: Id, memberId: string) =>
     request<void>("DELETE", `/workspaces/${workspaceId}/members/${memberId}`),
+
+  // ── 운영: 감사 로그 · 보관 정책 ─────────────────────────────────────
+  listAudit: (
+    workspaceId: Id,
+    options: { before?: string | null; action?: string | null; actorId?: string | null } = {},
+  ) =>
+    request<ActivityPage<AuditEvent>>(
+      "GET",
+      `/workspaces/${workspaceId}/audit${query({
+        before: options.before ?? null,
+        action: options.action ?? null,
+        actor_id: options.actorId ?? null,
+        limit: 50,
+      })}`,
+    ),
+
+  /** Hands the CSV to the browser's downloader. */
+  downloadAuditCsv: async (workspaceId: Id): Promise<void> => {
+    const response = await fetch(`${apiRoot()}/workspaces/${workspaceId}/audit/export.csv`, {
+      headers: { authorization: `Bearer ${await accessToken()}` },
+    });
+    if (!response.ok) await errorFromResponse(response);
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = `llack-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(href);
+  },
+
+  getRetention: (workspaceId: Id) =>
+    request<RetentionSettings>("GET", `/workspaces/${workspaceId}/retention`),
+
+  updateRetention: (workspaceId: Id, patch: Partial<RetentionSettings>) =>
+    request<RetentionSettings>("PATCH", `/workspaces/${workspaceId}/retention`, patch),
+
+  // ── 알림 스케줄 · 저장 · 초대 메일 ───────────────────────────────────
+  updateNotifications: (patch: {
+    dnd_start?: string | null;
+    dnd_end?: string | null;
+    dnd_days?: number[];
+    paused_until?: string | null;
+  }) => request<User>("PATCH", "/me/notifications", patch),
+
+  saveMessage: (messageId: Id, options: { note?: string | null; remind_at?: string | null } = {}) =>
+    request<SavedItem>("PUT", `/messages/${messageId}/save`, options),
+
+  unsaveMessage: (messageId: Id) => request<void>("DELETE", `/messages/${messageId}/save`),
+
+  listSaved: (workspaceId: Id, options: { done?: boolean; before?: string | null } = {}) =>
+    request<ActivityPage<SavedItem>>(
+      "GET",
+      `/workspaces/${workspaceId}/saved${query({
+        done: options.done ? "true" : "false",
+        before: options.before ?? null,
+        limit: 50,
+      })}`,
+    ),
+
+  markSavedDone: (savedId: string) => request<SavedItem>("POST", `/saved/${savedId}/done`),
+
+  reopenSaved: (savedId: string) => request<SavedItem>("POST", `/saved/${savedId}/reopen`),
+
+  resendInvite: (workspaceId: Id, inviteId: string) =>
+    request<InviteOut>("POST", `/workspaces/${workspaceId}/invites/${inviteId}/resend`),
+
+  // ── 미디어 ───────────────────────────────────────────────────────────
+  /** A thumbnail as a data URL (same auth as download). */
+  fileThumbnail: async (fileId: Id): Promise<string> => {
+    const response = await fetch(`${apiRoot()}/files/${fileId}/thumbnail`, {
+      headers: { authorization: `Bearer ${await accessToken()}` },
+    });
+    if (!response.ok) await errorFromResponse(response);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(commandError("preview_failed", "미리보기를 만들지 못했습니다."));
+      reader.readAsDataURL(blob);
+    });
+  },
+
+  /** Absolute URL a `<video src>` can stream (Range) for ten minutes. */
+  mediaToken: async (fileId: Id): Promise<MediaToken> => {
+    const token = await request<MediaToken>("POST", `/files/${fileId}/media-token`);
+    return {
+      ...token,
+      url: token.url.startsWith("http") ? token.url : serverUrl + token.url,
+    };
+  },
+
+  // ── 슬래시 커맨드 · 인터랙션 · 앱 홈 ─────────────────────────────────
+  listCommands: (workspaceId: Id) =>
+    request<SlashCommand[]>("GET", `/workspaces/${workspaceId}/commands`),
+
+  runCommand: (channelId: Id, text: string) =>
+    request<CommandResult>("POST", `/channels/${channelId}/commands`, { text }),
+
+  messageAction: (messageId: Id, actionId: string, value?: string | null) =>
+    request<ActionResult>("POST", `/messages/${messageId}/actions`, {
+      action_id: actionId,
+      value: value ?? null,
+    }),
+
+  openAppHome: (installationId: Id) =>
+    request<PanelSession>("POST", `/app-installations/${installationId}/home-session`),
+
+  // ── 개발자 콘솔 · 심사 ────────────────────────────────────────────────
+  listMyApps: (workspaceId: Id) =>
+    request<DeveloperApp[]>("GET", `/workspaces/${workspaceId}/apps/mine`),
+
+  registerApp: (manifest: Record<string, unknown>, workspaceId: Id) =>
+    request<DeveloperApp & { secret?: string }>("POST", `/apps${query({ workspace_id: workspaceId })}`, manifest),
+
+  updateManifest: (appId: Id, manifest: Record<string, unknown>) =>
+    request<DeveloperApp>("PUT", `/apps/${appId}/manifest`, manifest),
+
+  submitApp: (appId: Id) => request<DeveloperApp>("POST", `/apps/${appId}/submit`),
+
+  reviewApp: (appId: Id, decision: "approve" | "reject", note?: string | null) =>
+    request<DeveloperApp>("POST", `/apps/${appId}/review`, { decision, note: note ?? null }),
+
+  listPendingApps: () => request<DeveloperApp[]>("GET", "/apps/pending"),
+
+  rotateAppSecret: (appId: Id) => request<{ secret: string }>("POST", `/apps/${appId}/rotate-secret`),
+
+  testWebhook: (appId: Id) => request<WebhookDelivery>("POST", `/apps/${appId}/test-webhook`),
+
+  listDeliveries: (appId: Id) =>
+    request<WebhookDelivery[]>("GET", `/apps/${appId}/deliveries${query({ limit: 50 })}`),
+
+  listAppTokens: (appId: Id) => request<AppToken[]>("GET", `/apps/${appId}/tokens`),
+
+  createAppToken: (appId: Id, name: string) =>
+    request<AppToken>("POST", `/apps/${appId}/tokens`, { name }),
+
+  revokeAppToken: (appId: Id, tokenId: string) =>
+    request<void>("DELETE", `/apps/${appId}/tokens/${tokenId}`),
 
   /** Hands the bytes to the browser's downloader and returns the filename. */
   downloadFile: async (fileId: Id, filename: string): Promise<string> => {

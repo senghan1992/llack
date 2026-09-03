@@ -19,6 +19,8 @@ os.environ.update(
     LLACK_REDIS_URL="",
     LLACK_STORAGE_BACKEND="local",
     LLACK_STORAGE_LOCAL_DIR=str(_TMP / "uploads"),
+    # Workers are exercised through `workers.run_once`, not on a timer.
+    LLACK_RUN_WORKERS="false",
 )
 
 import httpx  # noqa: E402
@@ -111,6 +113,18 @@ async def register(
     assert response.status_code == 201, response.text
     body = response.json()
     return Actor(client, body["user"], body["tokens"])
+
+
+async def grant_service_admin(actor: Actor) -> None:
+    """Flip the flag the way an operator would (directly in the database)."""
+    from sqlalchemy import update
+
+    from app.core.db import get_sessionmaker
+    from app.models.user import User
+
+    async with get_sessionmaker()() as db:
+        await db.execute(update(User).where(User.id == actor.id).values(is_service_admin=True))
+        await db.commit()
 
 
 @pytest.fixture

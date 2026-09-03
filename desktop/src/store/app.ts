@@ -24,6 +24,7 @@ import type {
   Id,
   Message,
   PendingMessage,
+  SlashCommand,
   ServerFrame,
   Presence,
   User,
@@ -34,7 +35,7 @@ import type {
 export type Screen = "loading" | "signin" | "workspace";
 
 /** The main pane's occupant when no web app has borrowed it. */
-export type MainView = "channel" | "files" | "activity";
+export type MainView = "channel" | "files" | "activity" | "saved" | "apphome";
 
 /**
  * A toast waiting in the bottom-right stack.
@@ -48,7 +49,9 @@ export interface Notice {
   body: string;
   channelId: Id | null;
   messageId: Id | null;
-  kind: "mention" | "dm" | "message";
+  kind: "mention" | "dm" | "message" | "reminder" | "system";
+  /** A reminder on a thread reply opens the thread, not just the channel. */
+  threadId?: Id | null;
   at: number;
 }
 
@@ -114,8 +117,14 @@ interface AppStateShape {
   openWebAppInstallationId: Id | null;
   /** What the main pane shows when no web app has borrowed it. */
   mainView: MainView;
+  /** The installation whose 앱 홈 fills the main pane (mainView "apphome"). */
+  appHomeInstallationId: Id | null;
   /** The image viewer: a set of images and which one is up. */
   lightbox: { files: FileRef[]; index: number } | null;
+  /** "Only you can see this" lines a slash command or app answered with. */
+  ephemerals: Map<Id, Array<{ id: string; text: string; at: number }>>;
+  /** Slash commands the workspace offers (built-in + apps), loaded once. */
+  commands: SlashCommand[];
 
   // ── UI ────────────────────────────────────────────────────────────────
   paletteOpen: boolean;
@@ -171,11 +180,15 @@ interface AppActions {
   openAppPanel: (installationId: Id | null) => void;
   openWebApp: (installationId: Id | null) => void;
   setMainView: (view: MainView) => void;
+  openAppHome: (installationId: Id) => void;
   openLightbox: (files: FileRef[], index: number) => void;
   stepLightbox: (delta: number) => void;
   closeLightbox: () => void;
   /** Reload the people directory (a name or avatar changed). */
   refreshDirectory: () => Promise<void>;
+  pushEphemeral: (channelId: Id, text: string) => void;
+  dismissEphemeral: (channelId: Id, id: string) => void;
+  loadCommands: () => Promise<void>;
 
   setPalette: (open: boolean) => void;
   setSettings: (open: boolean) => void;
@@ -193,6 +206,8 @@ interface AppActions {
     body: string;
     channel_id?: Id | null;
     message_id?: Id | null;
+    notice_kind?: string | null;
+    thread_id?: Id | null;
   }) => void;
   dismissNotice: (id: string) => void;
   noteIncomingFrame: (frame: ServerFrame) => void;
@@ -238,7 +253,10 @@ export const useApp = create<AppStore>((set, get) => ({
   openPanelInstallationId: null,
   openWebAppInstallationId: null,
   mainView: "channel",
+  appHomeInstallationId: null,
   lightbox: null,
+  ephemerals: new Map(),
+  commands: [],
 
   paletteOpen: false,
   settingsOpen: false,
@@ -364,14 +382,19 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   selectWorkspace: async (workspaceId) => {
-    set({
+    set((state) => ({
       activeWorkspaceId: workspaceId,
       activeChannelId: null,
       openThreadId: null,
       openPanelInstallationId: null,
       openWebAppInstallationId: null,
-      mainView: "channel",
-    });
+      // Switching *between* workspaces lands on a channel; the first load
+      // must not undo a view the person already picked while it was loading.
+      mainView:
+        state.activeWorkspaceId && state.activeWorkspaceId !== workspaceId
+          ? "channel"
+          : state.mainView,
+    }));
 
     // Cached first so the sidebar paints immediately, then authoritative.
     try {
@@ -819,6 +842,14 @@ export const useApp = create<AppStore>((set, get) => ({
   setMainView: (mainView) =>
     set({ mainView, openWebAppInstallationId: null, openThreadId: null }),
 
+  openAppHome: (installationId) =>
+    set({
+      mainView: "apphome",
+      appHomeInstallationId: installationId,
+      openWebAppInstallationId: null,
+      openThreadId: null,
+    }),
+
   openLightbox: (files, index) =>
     set({ lightbox: { files, index: Math.max(0, Math.min(index, files.length - 1)) } }),
 
@@ -831,6 +862,30 @@ export const useApp = create<AppStore>((set, get) => ({
     }),
 
   closeLightbox: () => set({ lightbox: null }),
+
+  pushEphemeral: (channelId, text) =>
+    set((state) => {
+      const list = state.ephemerals.get(channelId) ?? [];
+      const entry = { id: `eph-${Date.now()}-${list.length}`, text, at: Date.now() };
+      return { ephemerals: new Map(state.ephemerals).set(channelId, [...list, entry]) };
+    }),
+
+  dismissEphemeral: (channelId, id) =>
+    set((state) => {
+      const list = (state.ephemerals.get(channelId) ?? []).filter((entry) => entry.id !== id);
+      return { ephemerals: new Map(state.ephemerals).set(channelId, list) };
+    }),
+
+  loadCommands: async () => {
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) return;
+    try {
+      set({ commands: await api.listCommands(workspaceId) });
+    } catch {
+      // An older server has no commands endpoint; the composer just has none.
+      set({ commands: [] });
+    }
+  },
 
   refreshDirectory: async () => {
     const workspaceId = get().activeWorkspaceId;
@@ -954,9 +1009,12 @@ export const useApp = create<AppStore>((set, get) => ({
   pushNotice: (effect) => {
     const state = get();
     const channelId = effect.channel_id ?? null;
+    const special = effect.notice_kind === "reminder" || effect.notice_kind === "quarantine"
+      || effect.notice_kind === "review";
 
     // The channel already on screen needs no toast: the message is visible.
-    if (channelId && channelId === state.activeChannelId) return;
+    // A reminder is about *time*, not a new message — it shows regardless.
+    if (!special && channelId && channelId === state.activeChannelId) return;
 
     const channel = state.channels.find((candidate) => candidate.id === channelId);
     const isDm = channel?.kind === "dm" || channel?.kind === "group_dm";
@@ -965,12 +1023,23 @@ export const useApp = create<AppStore>((set, get) => ({
       : false;
 
     const notice: Notice = {
-      id: effect.message_id ?? `notice-${Date.now()}-${state.notices.length}`,
+      id: special
+        ? `${effect.notice_kind}-${effect.message_id ?? Date.now()}`
+        : effect.message_id ?? `notice-${Date.now()}-${state.notices.length}`,
       title: effect.title,
       body: effect.body,
       channelId,
       messageId: effect.message_id ?? null,
-      kind: isMention ? "mention" : isDm ? "dm" : "message",
+      threadId: effect.thread_id ?? null,
+      kind: effect.notice_kind === "reminder"
+        ? "reminder"
+        : special
+          ? "system"
+          : isMention
+            ? "mention"
+            : isDm
+              ? "dm"
+              : "message",
       at: Date.now(),
     };
 

@@ -26,6 +26,7 @@ from app.schemas.activity import (
     ThreadActivityPage,
 )
 from app.schemas.user import UserBrief
+from app.services import messages as message_service
 
 router = APIRouter(tags=["activity"])
 
@@ -177,13 +178,18 @@ async def list_my_threads(
     } if all_ids else {}
 
     refs = await _channel_refs(db, channel_ids={r.channel_id for r in roots}, viewer_id=viewer)
+    saved = await message_service.saved_ids_for(
+        db,
+        viewer_id=viewer,
+        message_ids=[r.id for r in roots] + [m.id for m in last_replies.values()],
+    )
 
     items = [
         ThreadActivityOut(
-            root=serialise_message(root, viewer_id=viewer),
+            root=serialise_message(root, viewer_id=viewer, saved=saved),
             channel=refs[root.channel_id],
             last_reply=(
-                serialise_message(last_replies[root.id], viewer_id=viewer)
+                serialise_message(last_replies[root.id], viewer_id=viewer, saved=saved)
                 if root.id in last_replies
                 else None
             ),
@@ -231,10 +237,14 @@ async def list_my_mentions(
     has_more = len(rows) > limit
     rows = rows[:limit]
     refs = await _channel_refs(db, channel_ids={m.channel_id for m in rows}, viewer_id=viewer)
+    saved = await message_service.saved_ids_for(
+        db, viewer_id=viewer, message_ids=[m.id for m in rows]
+    )
     return MentionActivityPage(
         items=[
             MentionActivityOut(
-                message=serialise_message(m, viewer_id=viewer), channel=refs[m.channel_id]
+                message=serialise_message(m, viewer_id=viewer, saved=saved),
+                channel=refs[m.channel_id],
             )
             for m in rows
         ],

@@ -62,6 +62,9 @@ class Message(Base, ULIDPrimaryKey, Timestamps, SoftDelete):
     # Denormalised mention targets so the notification fan-out is one read.
     mentioned_user_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     mentions_everyone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Which crowd `mentions_everyone` addressed: "channel" (everyone) or "here"
+    # (only people present when it was posted). NULL when nobody was.
+    broadcast: Mapped[str | None] = mapped_column(String(8), default=None)
 
     # ── Threading ───────────────────────────────────────────────────────
     parent_id: Mapped[str | None] = mapped_column(

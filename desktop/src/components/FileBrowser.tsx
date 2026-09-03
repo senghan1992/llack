@@ -225,6 +225,11 @@ export function FileBrowser() {
                       {file.filename}
                     </button>
                     <span className="file-meta">
+                      {file.scan_status === "infected" ? (
+                        <span className="attachment-scan is-infected">차단됨 · </span>
+                      ) : file.scan_status === "pending" ? (
+                        <span className="attachment-scan is-pending">검사 중 · </span>
+                      ) : null}
                       {formatBytes(file.size_bytes)}
                       {file.uploader
                         ? ` · ${file.uploader.id === me?.id ? "나" : file.uploader.display_name}`
@@ -283,7 +288,12 @@ function Thumb({ file }: { file: FileRef }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    loadPreview(file.id, file.mime_type).then(
+    // The server-made 320px thumbnail when it exists (cheap), the full image
+    // otherwise (older uploads, or a server without Pillow).
+    const source = file.thumbnail_url
+      ? api.fileThumbnail(file.id).catch(() => loadPreview(file.id, file.mime_type))
+      : loadPreview(file.id, file.mime_type);
+    source.then(
       (url) => {
         if (alive) setSrc(url);
       },

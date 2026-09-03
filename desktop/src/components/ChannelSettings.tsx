@@ -163,6 +163,55 @@ export function ChannelSettings({
     channel.membership?.notification_level ?? "all",
   );
 
+  // Sidebar section: mine, not the channel's. Existing names are offered so a
+  // "프로젝트" group does not become "프로젠트" and "프로젝트" by a typo.
+  const allChannels = useApp((state) => state.channels);
+  const knownSections = useMemo(
+    () =>
+      [...new Set(allChannels.map((entry) => entry.membership?.section).filter(Boolean) as string[])].sort(
+        (a, b) => a.localeCompare(b, "ko"),
+      ),
+    [allChannels],
+  );
+  const [section, setSection] = useState(channel.membership?.section ?? "");
+  const [sectionBusy, setSectionBusy] = useState(false);
+  const saveSection = async (value: string) => {
+    setSectionBusy(true);
+    try {
+      await api.updateMembership(channel.id, { section: value.trim() || null });
+      await refreshSidebar();
+      showBanner("info", value.trim() ? `사이드바 '${value.trim()}' 섹션으로 옮겼습니다.` : "섹션에서 뺐습니다.");
+    } catch (error) {
+      reportError(error, "섹션을 바꾸지 못했습니다.");
+    } finally {
+      setSectionBusy(false);
+    }
+  };
+
+  // Retention override (admin): days, or empty for the workspace default.
+  const [retention, setRetention] = useState(
+    channel.retention_days != null ? String(channel.retention_days) : "",
+  );
+  const [retentionBusy, setRetentionBusy] = useState(false);
+  const saveRetention = async () => {
+    setRetentionBusy(true);
+    try {
+      const days = retention.trim() === "" ? null : Math.max(1, Number(retention));
+      await api.updateChannel(channel.id, { retention_days: days });
+      await refreshSidebar();
+      showBanner(
+        "info",
+        days === null
+          ? "이 채널은 워크스페이스 보관 정책을 따릅니다."
+          : `이 채널의 메시지는 ${days}일 뒤 자동 삭제됩니다.`,
+      );
+    } catch (error) {
+      reportError(error, "보관 기간을 바꾸지 못했습니다.");
+    } finally {
+      setRetentionBusy(false);
+    }
+  };
+
   const changeNotificationLevel = async (level: string) => {
     const previous = notificationLevel;
     setNotificationLevel(level as typeof notificationLevel);
@@ -367,6 +416,70 @@ export function ChannelSettings({
               </select>
             </label>
           </section>
+
+          <section className="settings-section">
+            <h3>사이드바 섹션</h3>
+            <p className="settings-hint">
+              나만의 묶음입니다. 같은 이름을 쓴 채널들이 사이드바에서 한 묶음으로 보이고 접을 수 있습니다.
+            </p>
+            <div className="linkapp-row">
+              <input
+                className="settings-invite-input"
+                list={`sections-${channel.id}`}
+                value={section}
+                onChange={(event) => setSection(event.target.value)}
+                placeholder="예: 프로젝트, 참고용 (비우면 섹션 없음)"
+                maxLength={80}
+                aria-label="사이드바 섹션"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void saveSection(section);
+                }}
+              />
+              <datalist id={`sections-${channel.id}`}>
+                {knownSections.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+              <button
+                type="button"
+                className="settings-primary"
+                onClick={() => void saveSection(section)}
+                disabled={sectionBusy || (section.trim() || null) === (channel.membership?.section ?? null)}
+              >
+                적용
+              </button>
+            </div>
+          </section>
+
+          {isAdmin ? (
+            <section className="settings-section">
+              <h3>보관 기간</h3>
+              <p className="settings-hint">
+                이 채널만의 보관 기간입니다. 비우면 워크스페이스 정책(환경설정 → 보관 정책)을 따릅니다. 기한이
+                지난 메시지는 매시간 자동으로 지워지고 되돌릴 수 없습니다.
+              </p>
+              <div className="linkapp-row">
+                <input
+                  className="settings-invite-input"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={retention}
+                  onChange={(event) => setRetention(event.target.value)}
+                  placeholder="일 수 (비우면 기본 정책)"
+                  aria-label="보관 기간(일)"
+                />
+                <button
+                  type="button"
+                  className="settings-primary"
+                  onClick={() => void saveRetention()}
+                  disabled={retentionBusy}
+                >
+                  저장
+                </button>
+              </div>
+            </section>
+          ) : null}
 
           <section className="settings-section settings-danger">
             <h3>정리</h3>

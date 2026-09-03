@@ -38,12 +38,22 @@ import type {
   SmtpSettings,
   SmtpSettingsInput,
   SyncEffect,
+  ActionResult,
   ActivityPage,
+  AppToken,
+  AuditEvent,
+  CommandResult,
+  DeveloperApp,
   LinkProbe,
+  MediaToken,
   MentionActivity,
+  RetentionSettings,
+  SavedItem,
   SessionInfo,
+  SlashCommand,
   ThreadActivity,
   User,
+  WebhookDelivery,
   Workspace,
   WorkspaceFile,
   WorkspaceMember,
@@ -171,8 +181,10 @@ const tauriApi = {
   openDm: (workspaceId: Id, userIds: Id[]) =>
     call<Channel>("open_dm", { workspaceId, userIds }),
 
-  updateChannel: (channelId: Id, patch: { name?: string; topic?: string; is_archived?: boolean }) =>
-    call<Channel>("update_channel", { channelId, patch }),
+  updateChannel: (
+    channelId: Id,
+    patch: { name?: string; topic?: string; is_archived?: boolean; retention_days?: number | null },
+  ) => call<Channel>("update_channel", { channelId, patch }),
 
   channelMembers: (channelId: Id) =>
     call<ChannelMemberEntry[]>("channel_members", { channelId }),
@@ -334,6 +346,91 @@ const tauriApi = {
 
   removeWorkspaceMember: (workspaceId: Id, memberId: string) =>
     call<void>("remove_workspace_member", { workspaceId, memberId }),
+
+  listAudit: (
+    workspaceId: Id,
+    options: { before?: string | null; action?: string | null; actorId?: string | null } = {},
+  ) =>
+    call<ActivityPage<AuditEvent>>("list_audit", {
+      workspaceId,
+      before: options.before ?? null,
+      action: options.action ?? null,
+      actorId: options.actorId ?? null,
+    }),
+
+  downloadAuditCsv: (workspaceId: Id) => call<void>("download_audit_csv", { workspaceId }),
+
+  getRetention: (workspaceId: Id) => call<RetentionSettings>("get_retention", { workspaceId }),
+
+  updateRetention: (workspaceId: Id, patch: Partial<RetentionSettings>) =>
+    call<RetentionSettings>("update_retention", { workspaceId, patch }),
+
+  updateNotifications: (patch: {
+    dnd_start?: string | null;
+    dnd_end?: string | null;
+    dnd_days?: number[];
+    paused_until?: string | null;
+  }) => call<User>("update_notifications", { patch }),
+
+  saveMessage: (messageId: Id, options: { note?: string | null; remind_at?: string | null } = {}) =>
+    call<SavedItem>("save_message", { messageId, note: options.note ?? null, remindAt: options.remind_at ?? null }),
+
+  unsaveMessage: (messageId: Id) => call<void>("unsave_message", { messageId }),
+
+  listSaved: (workspaceId: Id, options: { done?: boolean; before?: string | null } = {}) =>
+    call<ActivityPage<SavedItem>>("list_saved", {
+      workspaceId,
+      done: options.done ?? false,
+      before: options.before ?? null,
+    }),
+
+  markSavedDone: (savedId: string) => call<SavedItem>("mark_saved_done", { savedId }),
+
+  reopenSaved: (savedId: string) => call<SavedItem>("reopen_saved", { savedId }),
+
+  resendInvite: (workspaceId: Id, inviteId: string) =>
+    call<InviteOut>("resend_invite", { workspaceId, inviteId }),
+
+  fileThumbnail: (fileId: Id) => call<string>("file_thumbnail", { fileId }),
+
+  mediaToken: (fileId: Id) => call<MediaToken>("media_token", { fileId }),
+
+  listCommands: (workspaceId: Id) => call<SlashCommand[]>("list_commands", { workspaceId }),
+
+  runCommand: (channelId: Id, text: string) => call<CommandResult>("run_command", { channelId, text }),
+
+  messageAction: (messageId: Id, actionId: string, value?: string | null) =>
+    call<ActionResult>("message_action", { messageId, actionId, value: value ?? null }),
+
+  openAppHome: (installationId: Id) => call<PanelSession>("open_app_home", { installationId }),
+
+  listMyApps: (workspaceId: Id) => call<DeveloperApp[]>("list_my_apps", { workspaceId }),
+
+  registerApp: (manifest: Record<string, unknown>, workspaceId: Id) =>
+    call<DeveloperApp & { secret?: string }>("register_app", { manifest, workspaceId }),
+
+  updateManifest: (appId: Id, manifest: Record<string, unknown>) =>
+    call<DeveloperApp>("update_manifest", { appId, manifest }),
+
+  submitApp: (appId: Id) => call<DeveloperApp>("submit_app", { appId }),
+
+  reviewApp: (appId: Id, decision: "approve" | "reject", note?: string | null) =>
+    call<DeveloperApp>("review_app", { appId, decision, note: note ?? null }),
+
+  listPendingApps: () => call<DeveloperApp[]>("list_pending_apps"),
+
+  rotateAppSecret: (appId: Id) => call<{ secret: string }>("rotate_app_secret", { appId }),
+
+  testWebhook: (appId: Id) => call<WebhookDelivery>("test_webhook", { appId }),
+
+  listDeliveries: (appId: Id) => call<WebhookDelivery[]>("list_deliveries", { appId }),
+
+  listAppTokens: (appId: Id) => call<AppToken[]>("list_app_tokens", { appId }),
+
+  createAppToken: (appId: Id, name: string) => call<AppToken>("create_app_token", { appId, name }),
+
+  revokeAppToken: (appId: Id, tokenId: string) =>
+    call<void>("revoke_app_token", { appId, tokenId }),
 
   downloadFile: (fileId: Id, filename: string) =>
     call<string>("download_file", { fileId, filename }),

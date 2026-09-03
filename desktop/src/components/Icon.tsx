@@ -335,3 +335,46 @@ export function IconSmile(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconBookmark(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.6 2.8h6.8v10.6L8 10.6l-3.4 2.8V2.8Z" />
+    </Svg>
+  );
+}
+
+export function IconMoon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12.6 9.6A5 5 0 0 1 6.4 3.4a5 5 0 1 0 6.2 6.2Z" />
+    </Svg>
+  );
+}
+
+export function IconShield(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 2.4l4.6 1.8v3.6c0 2.7-1.9 4.6-4.6 5.8-2.7-1.2-4.6-3.1-4.6-5.8V4.2L8 2.4Z" />
+      <path d="M6 7.9l1.4 1.4L10.2 6.5" />
+    </Svg>
+  );
+}
+
+export function IconSlash(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.6" y="3" width="10.8" height="10" rx="1.6" />
+      <path d="M9.6 5.2 6.4 10.8" />
+    </Svg>
+  );
+}
+
+export function IconHome(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.8 8 8 3.2 13.2 8" />
+      <path d="M4.4 7v6h7.2V7" />
+    </Svg>
+  );
+}

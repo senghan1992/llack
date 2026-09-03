@@ -10,7 +10,7 @@ from __future__ import annotations
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 from pydantic import AnyHttpUrl, Field
 
 from app.api.deps import (
@@ -33,6 +33,7 @@ from app.schemas.app import (
     AppStorageSetRequest,
     AppTokenOut,
     CreateAppTokenRequest,
+    DeveloperAppOut,
     InstallAppRequest,
     PanelSessionOut,
     UpdateInstallationRequest,
@@ -41,8 +42,9 @@ from app.schemas.common import OkResponse, Payload
 from app.schemas.realtime import ServerEvent
 from app.schemas.user import UserBrief
 from app.services import apps as app_service
-from app.services import linkprobe
+from app.services import audit, linkprobe, webhooks
 from app.services import messages as message_service
+from app.services.blocks import validate_blocks
 
 router = APIRouter(tags=["apps"])
 
@@ -66,23 +68,28 @@ async def list_available_apps(
     return [AppOut.model_validate(row) for row in rows]
 
 
-@router.post("/apps", response_model=AppOut, status_code=status.HTTP_201_CREATED)
+@router.post("/apps", response_model=DeveloperAppOut, status_code=status.HTTP_201_CREATED)
 async def register_app(
     manifest: AppManifest,
     db: DbSession,
     user: CurrentUser,
     owner_workspace_id: Annotated[str | None, Query(max_length=26)] = None,
-) -> AppOut:
+    workspace_id: Annotated[str | None, Query(max_length=26)] = None,
+) -> DeveloperAppOut:
     """Register an app from a manifest.
 
-    Pass `owner_workspace_id` to make it private to that workspace — the normal
-    case for a team publishing its own internal tool.
+    Pass `owner_workspace_id` (or the console's `workspace_id`) to make it
+    private to that workspace — the normal case for a team publishing its own
+    internal tool. The response carries the signing `secret` exactly once.
     """
+    home = owner_workspace_id or workspace_id
     app_row = await app_service.register_app(
-        db, manifest=manifest, author=user, owner_workspace_id=owner_workspace_id
+        db, manifest=manifest, author=user, owner_workspace_id=home
     )
     await db.commit()
-    return AppOut.model_validate(app_row)
+    out = DeveloperAppOut.model_validate(app_row)
+    out.secret = app_row.app_secret
+    return out
 
 
 @router.get("/apps/{app_id}", response_model=AppOut)
@@ -143,7 +150,11 @@ async def list_installed(
     status_code=status.HTTP_201_CREATED,
 )
 async def install_app(
-    app_id: str, payload: InstallAppRequest, ctx: AdminWorkspaceCtx, db: DbSession
+    app_id: str,
+    payload: InstallAppRequest,
+    ctx: AdminWorkspaceCtx,
+    db: DbSession,
+    request: Request,
 ) -> AppInstallationOut:
     app_row = await db.get(App, app_id)
     if app_row is None:
@@ -157,6 +168,20 @@ async def install_app(
         granted_scopes=payload.granted_scopes,
         config=payload.config,
         pin_to_dock=payload.pin_to_dock,
+    )
+    await audit.record(
+        db,
+        workspace_id=ctx.workspace.id,
+        actor=ctx.user,
+        action="app.installed",
+        target_type="app",
+        target_id=app_row.id,
+        target_label=app_row.name,
+        details={
+            "installation_id": installation.id,
+            "scopes": list(installation.granted_scopes or []),
+        },
+        request=request,
     )
     await db.commit()
     await db.refresh(installation, ["app"])
@@ -182,7 +207,7 @@ class AddLinkAppRequest(Payload):
     status_code=status.HTTP_201_CREATED,
 )
 async def add_link_app(
-    payload: AddLinkAppRequest, ctx: WorkspaceCtx, db: DbSession
+    payload: AddLinkAppRequest, ctx: WorkspaceCtx, db: DbSession, request: Request
 ) -> AppInstallationOut:
     """Register and pin an external web app in one step.
 
@@ -247,6 +272,17 @@ async def add_link_app(
         pin_to_dock=True,
         minimum_role=WorkspaceRole.MEMBER,
     )
+    await audit.record(
+        db,
+        workspace_id=ctx.workspace.id,
+        actor=ctx.user,
+        action="app.installed",
+        target_type="app",
+        target_id=app_row.id,
+        target_label=app_row.name,
+        details={"installation_id": installation.id, "kind": "link", "url": str(payload.url)},
+        request=request,
+    )
     await db.commit()
     await db.refresh(installation, ["app"])
 
@@ -265,6 +301,7 @@ async def update_installation(
     payload: UpdateInstallationRequest,
     db: DbSession,
     user: CurrentUser,
+    request: Request,
 ) -> AppInstallationOut:
     installation = await app_service.get_installation(
         db, installation_id=installation_id, user_id=user.id
@@ -280,6 +317,21 @@ async def update_installation(
         sort_order=payload.sort_order,
         name=payload.name,
         icon_url=payload.icon_url,
+    )
+    await db.refresh(installation, ["app"])
+    await audit.record(
+        db,
+        workspace_id=installation.workspace_id,
+        actor=user,
+        action="app.updated",
+        target_type="app",
+        target_id=installation.app_id,
+        target_label=installation.app.name,
+        details={
+            "installation_id": installation.id,
+            "changed": sorted(payload.model_dump(exclude_unset=True).keys()),
+        },
+        request=request,
     )
     await db.commit()
     await db.refresh(installation, ["app"])
@@ -319,13 +371,28 @@ async def probe_link_app(payload: LinkProbeRequest, ctx: WorkspaceCtx) -> LinkPr
 
 
 @router.delete("/app-installations/{installation_id}", response_model=OkResponse)
-async def uninstall(installation_id: str, db: DbSession, user: CurrentUser) -> OkResponse:
+async def uninstall(
+    installation_id: str, db: DbSession, user: CurrentUser, request: Request
+) -> OkResponse:
     installation = await app_service.get_installation(
         db, installation_id=installation_id, user_id=user.id
     )
     workspace_id = installation.workspace_id
     app_id = installation.app_id
+    await db.refresh(installation, ["app"])
+    app_name = installation.app.name
     await app_service.uninstall_app(db, installation=installation, actor=user)
+    await audit.record(
+        db,
+        workspace_id=workspace_id,
+        actor=user,
+        action="app.uninstalled",
+        target_type="app",
+        target_id=app_id,
+        target_label=app_name,
+        details={"installation_id": installation_id},
+        request=request,
+    )
     await db.commit()
 
     await emit_to_workspace(
@@ -483,7 +550,7 @@ async def bridge_post_message(
         channel=channel,
         author=author,
         body=payload.body,
-        blocks=payload.blocks,
+        blocks=validate_blocks(payload.blocks),
         client_msg_id=payload.client_msg_id,
         parent_id=payload.parent_id,
         app_id=principal.installation.app_id,
@@ -501,6 +568,13 @@ async def bridge_post_message(
             ServerEvent.MESSAGE_CREATED,
             {"message": out.model_dump(mode="json")},
             workspace_id=channel.workspace_id,
+        )
+        webhooks.schedule(
+            "message.created",
+            workspace_id=channel.workspace_id,
+            payload={"message": out.model_dump(mode="json")},
+            exclude_bot_user_ids={author.id} if author.is_bot else None,
+            mentioned_user_ids=list(message.mentioned_user_ids or []),
         )
     return {"message": out.model_dump(mode="json"), "created": created}
 

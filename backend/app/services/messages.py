@@ -13,14 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.enums import ChannelKind, MessageKind, NotificationLevel
-from app.core.errors import Forbidden, NotFound
+from app.core.errors import Forbidden, Gone, NotFound
 from app.core.ids import is_ulid, new_ulid
 from app.core.logging import get_logger
 from app.models.channel import Channel, ChannelMember
 from app.models.file import FileObject
 from app.models.message import Message, MessageAttachment, Reaction
 from app.models.user import User
+from app.services.dnd import in_dnd
 from app.services.text import (
+    extract_broadcast,
     extract_handle_mentions,
     extract_mentions,
     extract_name_mention_tokens,
@@ -215,6 +217,7 @@ async def create_message(
         also_sent_to_channel=bool(parent_id) and also_send_to_channel,
         mentioned_user_ids=mentioned,
         mentions_everyone=everyone,
+        broadcast=extract_broadcast(normalised_body) if everyone else None,
     )
     db.add(message)
 
@@ -291,10 +294,33 @@ async def _attach_files(
     found = {f.id for f in files}
     missing = set(file_ids) - found
     if missing:
+        # A quarantined file is gone on purpose; say so rather than "not found".
+        quarantined = list(
+            (
+                await db.scalars(
+                    select(FileObject.id).where(
+                        FileObject.id.in_(missing), FileObject.scan_status == "infected"
+                    )
+                )
+            ).all()
+        )
+        if quarantined:
+            raise Gone(
+                "This attachment was quarantined by the virus scanner.",
+                code="file_quarantined",
+                details={"file_ids": sorted(quarantined)},
+            )
         raise NotFound(
             "Some attachments could not be found or are still uploading.",
             code="attachment_not_ready",
             details={"file_ids": sorted(missing)},
+        )
+    infected = [f.id for f in files if f.scan_status == "infected"]
+    if infected:
+        raise Gone(
+            "This attachment was quarantined by the virus scanner.",
+            code="file_quarantined",
+            details={"file_ids": sorted(infected)},
         )
     # Preserve the order the client sent.
     order = {fid: i for i, fid in enumerate(file_ids)}
@@ -329,7 +355,18 @@ async def _bump_unread(db: AsyncSession, *, message: Message, channel: Channel) 
             .values(unread_count=ChannelMember.unread_count + 1)
         )
 
-    if message.mentions_everyone:
+    if message.mentions_everyone and message.broadcast == "here":
+        # @here is "whoever is around": only members present right now are
+        # called, so the badge does not greet someone back from holiday.
+        present = await present_member_ids(db, channel_id=channel.id)
+        targets = set(present) | set(message.mentioned_user_ids)
+        if not targets:
+            return
+        mention_filter = [
+            ChannelMember.user_id.in_(targets),
+            ChannelMember.notification_level != NotificationLevel.NOTHING.value,
+        ]
+    elif message.mentions_everyone:
         mention_filter = [
             ChannelMember.notification_level != NotificationLevel.NOTHING.value
         ]
@@ -369,6 +406,7 @@ async def update_message(
     message.blocks = blocks
     message.mentioned_user_ids = mentioned
     message.mentions_everyone = everyone
+    message.broadcast = extract_broadcast(normalised_body) if everyone else None
     message.edited_at = datetime.now(UTC)
     message.edit_count += 1
     await db.flush()
@@ -391,6 +429,7 @@ async def delete_message(
     message.blocks = None
     message.mentioned_user_ids = []
     message.mentions_everyone = False
+    message.broadcast = None
     await db.flush()
     return message
 
@@ -471,9 +510,12 @@ async def search_messages(
 ) -> tuple[list[tuple[Message, Channel, str]], bool, int]:
     """Search messages the user can actually see.
 
-    Deliberately a LIKE scan over the channels the user belongs to. It is
-    correct and needs no extra infrastructure; swapping in Postgres full-text
-    or an external index later only changes this function.
+    Two engines behind one function. On Postgres it is full-text search with
+    the `simple` configuration (no stemming — Korean has none to stem, and it
+    keeps `dash_v2` findable as typed) ranked by `ts_rank`, backed by the GIN
+    index the migration adds. Everywhere else it is a LIKE scan, which is
+    correct and needs nothing installed. An external index later only changes
+    this function.
     """
     started = time.perf_counter()
     term = query.strip()
@@ -481,30 +523,16 @@ async def search_messages(
         return [], False, 0
 
     limit = max(1, min(limit, 100))
-    pattern = f"%{term.lower()}%"
-
-    stmt = (
-        select(Message, Channel)
-        .join(Channel, Channel.id == Message.channel_id)
-        .join(
-            ChannelMember,
-            (ChannelMember.channel_id == Channel.id) & (ChannelMember.user_id == user_id),
-        )
-        .where(
-            Channel.workspace_id == workspace_id,
-            Message.deleted_at.is_(None),
-            func.lower(Message.body).like(pattern),
-        )
-        .options(*_with_relations())
+    stmt = search_statement(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        term=term,
+        dialect=db.bind.dialect.name if db.bind is not None else "sqlite",
+        channel_id=channel_id,
+        from_user_id=from_user_id,
+        cursor=cursor,
+        limit=limit,
     )
-    if channel_id:
-        stmt = stmt.where(Message.channel_id == channel_id)
-    if from_user_id:
-        stmt = stmt.where(Message.user_id == from_user_id)
-    if cursor and is_ulid(cursor):
-        stmt = stmt.where(Message.id < cursor)
-
-    stmt = stmt.order_by(Message.id.desc()).limit(limit + 1)
     rows = (await db.execute(stmt)).all()
     has_more = len(rows) > limit
     trimmed = rows[:limit]
@@ -514,6 +542,50 @@ async def search_messages(
     ]
     took_ms = int((time.perf_counter() - started) * 1000)
     return hits, has_more, took_ms
+
+
+def search_statement(
+    *,
+    workspace_id: str,
+    user_id: str,
+    term: str,
+    dialect: str,
+    channel_id: str | None = None,
+    from_user_id: str | None = None,
+    cursor: str | None = None,
+    limit: int = 30,
+) -> Any:
+    """Build the search query for a dialect. Separate so the Postgres branch
+    can be compiled and inspected in tests without a Postgres server."""
+    stmt = (
+        select(Message, Channel)
+        .join(Channel, Channel.id == Message.channel_id)
+        .join(
+            ChannelMember,
+            (ChannelMember.channel_id == Channel.id) & (ChannelMember.user_id == user_id),
+        )
+        .where(Channel.workspace_id == workspace_id, Message.deleted_at.is_(None))
+        .options(*_with_relations())
+    )
+    if dialect == "postgresql":
+        vector = func.to_tsvector("simple", Message.body)
+        tsquery = func.plainto_tsquery("simple", term)
+        # Fall back to substring for a single token FTS cannot split (an id
+        # fragment, an emoji) so "nothing found" never means "not indexed".
+        stmt = stmt.where(
+            or_(vector.op("@@")(tsquery), func.lower(Message.body).like(f"%{term.lower()}%"))
+        )
+        order = (func.ts_rank(vector, tsquery).desc(), Message.id.desc())
+    else:
+        stmt = stmt.where(func.lower(Message.body).like(f"%{term.lower()}%"))
+        order = (Message.id.desc(),)
+    if channel_id:
+        stmt = stmt.where(Message.channel_id == channel_id)
+    if from_user_id:
+        stmt = stmt.where(Message.user_id == from_user_id)
+    if cursor and is_ulid(cursor):
+        stmt = stmt.where(Message.id < cursor)
+    return stmt.order_by(*order).limit(limit + 1)
 
 
 # ── Presentation helpers ────────────────────────────────────────────────────
@@ -581,24 +653,78 @@ async def notifiable_user_ids(
     only gets mentions (DMs always count as a mention), `nothing` gets none.
     """
     rows = await db.execute(
-        select(ChannelMember.user_id, ChannelMember.notification_level, ChannelMember.is_muted)
+        select(
+            ChannelMember.user_id,
+            ChannelMember.notification_level,
+            ChannelMember.is_muted,
+            User.dnd_start,
+            User.dnd_end,
+            User.dnd_days,
+            User.notify_paused_until,
+            User.timezone,
+        )
+        .join(User, User.id == ChannelMember.user_id)
         .where(ChannelMember.channel_id == channel.id)
     )
     is_dm = channel.kind_enum.is_conversation
     mentioned = set(message.mentioned_user_ids)
+    # @here calls only the people present; @channel calls everyone.
+    here_only = message.mentions_everyone and message.broadcast == "here"
+    present = set(await present_member_ids(db, channel_id=channel.id)) if here_only else set()
     targets: list[str] = []
 
-    for user_id, level, is_muted in rows.all():
+    for user_id, level, is_muted, dnd_start, dnd_end, dnd_days, paused, tz in rows.all():
         if user_id == message.user_id or is_muted:
             continue
         if level == NotificationLevel.NOTHING.value:
             continue
+        # 방해 금지: quiet hours and pauses silence *every* notification, DMs
+        # included — the badge still counts, the toast waits for morning.
+        if in_dnd(
+            dnd_start=dnd_start,
+            dnd_end=dnd_end,
+            dnd_days=dnd_days,
+            paused_until=paused,
+            timezone=tz,
+        ):
+            continue
+        broadcast_hit = message.mentions_everyone and (
+            not here_only or user_id in present
+        )
         if level == NotificationLevel.MENTIONS.value:
-            if is_dm or user_id in mentioned or message.mentions_everyone:
+            if is_dm or user_id in mentioned or broadcast_hit:
                 targets.append(user_id)
             continue
         targets.append(user_id)
     return targets
+
+
+async def present_member_ids(db: AsyncSession, *, channel_id: str) -> list[str]:
+    """Channel members whose presence is `active` right now (@here's crowd)."""
+    from app.core.enums import PresenceState
+    from app.realtime.presence import get_presence_store
+
+    member_ids = await channel_member_ids(db, channel_id)
+    if not member_ids:
+        return []
+    states = await get_presence_store().get_many(member_ids)
+    return [uid for uid, state in states.items() if state == PresenceState.ACTIVE]
+
+
+async def saved_ids_for(
+    db: AsyncSession, *, viewer_id: str | None, message_ids: Sequence[str]
+) -> set[str]:
+    """Which of these messages the viewer has kept for later — one query per page."""
+    if not viewer_id or not message_ids:
+        return set()
+    from app.models.saved import SavedItem
+
+    rows = await db.scalars(
+        select(SavedItem.message_id).where(
+            SavedItem.user_id == viewer_id, SavedItem.message_id.in_(list(message_ids))
+        )
+    )
+    return set(rows.all())
 
 
 async def channel_member_ids(db: AsyncSession, channel_id: str) -> list[str]:

@@ -36,6 +36,9 @@ pub enum SyncEffect {
         body: String,
         channel_id: Option<String>,
         message_id: Option<String>,
+        /// "reminder" | "quarantine" | "review" — absent for ordinary messages.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notice_kind: Option<String>,
     },
     /// Someone is typing.
     Typing { channel_id: String, user_id: String },
@@ -137,6 +140,7 @@ impl SyncEngine {
                 body: string_field(&frame.data, "body").unwrap_or_default(),
                 channel_id: string_field(&frame.data, "channel_id"),
                 message_id: string_field(&frame.data, "message_id"),
+                notice_kind: string_field(&frame.data, "kind"),
             }),
 
             "typing" => {
@@ -478,6 +482,7 @@ mod tests {
                 body: "확인 부탁드립니다".into(),
                 channel_id: Some("01CH".into()),
                 message_id: Some("01M1".into()),
+                notice_kind: None,
             }
         );
     }

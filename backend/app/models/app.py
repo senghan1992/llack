@@ -66,6 +66,19 @@ class App(Base, ULIDPrimaryKey, Timestamps):
     sidebar_url: Mapped[str | None] = mapped_column(Text, default=None)
     # Where the backend POSTs events the app subscribed to.
     event_webhook_url: Mapped[str | None] = mapped_column(Text, default=None)
+    # Slash commands typed by people are POSTed here (signed); the app answers
+    # with text to show the caller or to post as its bot.
+    command_url: Mapped[str | None] = mapped_column(Text, default=None)
+    # Button/select clicks inside the app's messages are POSTed here (signed).
+    interaction_url: Mapped[str | None] = mapped_column(Text, default=None)
+    # A channel-independent screen (앱 홈) opened in the main pane.
+    home_url: Mapped[str | None] = mapped_column(Text, default=None)
+    # Shared secret the server signs outbound calls with. Plaintext by
+    # necessity — HMAC needs the key — so it is shown to the author exactly
+    # once (register / rotate) and never rendered again.
+    app_secret: Mapped[str | None] = mapped_column(Text, default=None)
+    # What the reviewer wrote when approving or rejecting publication.
+    review_note: Mapped[str | None] = mapped_column(String(500), default=None)
     # Default panel geometry hint for the host window.
     default_width: Mapped[int] = mapped_column(Integer, nullable=False, default=420)
 
@@ -152,6 +165,45 @@ class AppToken(Base, ULIDPrimaryKey, Timestamps):
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+
+class WebhookDelivery(Base, ULIDPrimaryKey, Timestamps):
+    """One outbound call to an app, and how it went.
+
+    Covers event webhooks (retried by the `webhook_retry` worker), slash
+    command and interaction dispatches (one shot, kept for the console's
+    delivery log) and the `response_url` nonce a command handler may post
+    back to later. A row is the app author's only window into "did Llack
+    actually call me?", so failures are recorded, not swallowed.
+    """
+
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        Index("ix_webhook_deliveries_app_id_id", "app_id", "id"),
+        Index("ix_webhook_deliveries_status_next", "status", "next_attempt_at"),
+        Index("ix_webhook_deliveries_nonce", "response_nonce", unique=True),
+    )
+
+    app_id: Mapped[str] = mapped_column(
+        ULID, ForeignKey("apps.id", ondelete="CASCADE"), nullable=False
+    )
+    installation_id: Mapped[str | None] = mapped_column(
+        ULID, ForeignKey("app_installations.id", ondelete="CASCADE"), default=None
+    )
+    # event | command | interaction | test
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="event")
+    event: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # pending | ok | failed
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_status_code: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_error: Mapped[str | None] = mapped_column(String(500), default=None)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # For commands: where a late `response_url` post lands, and until when.
+    channel_id: Mapped[str | None] = mapped_column(ULID, default=None)
+    response_nonce: Mapped[str | None] = mapped_column(String(64), default=None)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
 class AppStorageItem(Base, ULIDPrimaryKey, Timestamps):
