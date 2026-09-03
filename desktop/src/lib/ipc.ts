@@ -35,6 +35,8 @@ import type {
   SearchResult,
   SendResult,
   ServerFrame,
+  SmtpSettings,
+  SmtpSettingsInput,
   SyncEffect,
   User,
   Workspace,
@@ -93,6 +95,15 @@ const tauriApi = {
 
   changePassword: (currentPassword: string, newPassword: string) =>
     call<void>("change_password", { currentPassword, newPassword }),
+
+  /** Server-wide SMTP relay (owner-only). Password is write-only. */
+  getSmtpSettings: () => call<SmtpSettings>("get_smtp_settings"),
+
+  updateSmtpSettings: (payload: SmtpSettingsInput) =>
+    call<SmtpSettings>("update_smtp_settings", { payload }),
+
+  testSmtp: (payload: SmtpSettingsInput) =>
+    call<{ ok: boolean; error?: string; sent_to?: string }>("test_smtp", { payload }),
 
   /** Mail a reset code. Public; the same answer whether the account exists. */
   forgotPassword: (email: string) => call<void>("forgot_password", { email }),

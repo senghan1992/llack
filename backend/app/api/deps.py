@@ -290,3 +290,37 @@ async def pagination(
 
 
 Paging = Annotated[Pagination, Depends(pagination)]
+
+
+async def require_server_admin(db: DbSession, user: CurrentUser) -> User:
+    """Server-wide settings (SMTP, …) need more than a workspace role.
+
+    The bar: `is_service_admin`, or **owner** of at least one workspace. On a
+    single-workspace 사내 서버 that is exactly "the person who set this up";
+    a mere channel/workspace admin cannot re-point everyone's outbound mail.
+    """
+    if user.is_service_admin:
+        return user
+    from sqlalchemy import select as _select
+
+    from app.core.enums import WorkspaceRole
+    from app.models.workspace import WorkspaceMember as _WM
+
+    owner = await db.scalar(
+        _select(_WM.id)
+        .where(
+            _WM.user_id == user.id,
+            _WM.role == WorkspaceRole.OWNER.value,
+            _WM.is_active.is_(True),
+        )
+        .limit(1)
+    )
+    if owner is None:
+        raise Forbidden(
+            "Server settings require a workspace owner.",
+            code="server_admin_required",
+        )
+    return user
+
+
+ServerAdmin = Annotated[User, Depends(require_server_admin)]

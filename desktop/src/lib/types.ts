@@ -22,6 +22,7 @@ export interface UserBrief {
 }
 
 export interface User extends UserBrief {
+  is_service_admin?: boolean;
   email: string;
   title?: string | null;
   timezone: string;
@@ -87,6 +88,27 @@ export interface InviteOut {
   expires_at?: string | null;
   accepted_at?: string | null;
   invite_url?: string | null;
+}
+
+/** The server's SMTP relay as the admin UI sees it — password never echoes. */
+export interface SmtpSettings {
+  source: "database" | "env" | "none";
+  host: string;
+  port: number;
+  username: string;
+  starttls: boolean;
+  mail_from: string;
+  password_set: boolean;
+}
+
+/** What the admin form submits. `password: null` keeps the stored secret. */
+export interface SmtpSettingsInput {
+  host: string;
+  port: number;
+  username: string;
+  password: string | null;
+  starttls: boolean;
+  mail_from: string;
 }
 
 /** One row of the channel member list. */

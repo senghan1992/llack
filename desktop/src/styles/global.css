@@ -5270,3 +5270,25 @@ kbd {
 .no-workspace-signout:hover {
   color: var(--ink);
 }
+
+.settings-smtp-actions {
+  gap: 8px;
+}
+
+.settings-secondary {
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  background: var(--n2);
+  border-radius: var(--r-md);
+}
+
+.settings-secondary:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--n3);
+}
+
+.settings-secondary:disabled {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}

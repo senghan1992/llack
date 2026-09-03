@@ -259,6 +259,7 @@ async def issue_password_reset(db: AsyncSession, *, email: str) -> None:
     from app.core.mailer import send_email
     from app.core.security import hash_token
     from app.models.user import PasswordResetCode
+    from app.services.server_settings import resolve_smtp
 
     normalised = email.strip().lower()
     user = await db.scalar(select(User).where(User.email == normalised).limit(1))
@@ -287,8 +288,10 @@ async def issue_password_reset(db: AsyncSession, *, email: str) -> None:
     )
     await db.flush()
 
-    await send_email(
-        to=user.email,
+    try:
+        await send_email(
+            config=await resolve_smtp(db),
+            to=user.email,
         subject="[Llack] 비밀번호 재설정 코드",
         body=(
             f"{user.display_name} 님, 안녕하세요.\n\n"
@@ -297,8 +300,13 @@ async def issue_password_reset(db: AsyncSession, *, email: str) -> None:
             f"이 코드는 {RESET_CODE_TTL_MINUTES}분 동안만 유효하며, 한 번만 쓸 수 있습니다.\n"
             f"본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다 — 코드를 모르는 사람은\n"
             f"비밀번호를 바꿀 수 없습니다.\n"
-        ),
-    )
+            ),
+        )
+    except Exception:  # noqa: BLE001
+        # A broken relay must not turn this endpoint into a 500 (which would
+        # also leak that the account exists). The operator's signal is the
+        # log; the code row stays valid, so a retry after fixing SMTP works.
+        log.exception("mail.reset_code_failed", user_id=user.id)
 
 
 async def redeem_password_reset(

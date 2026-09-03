@@ -22,7 +22,7 @@ import {
 } from "@/lib/agent/models";
 import { webInviteUrl } from "@/lib/invite";
 import { agentHost, api, capabilities } from "@/lib/ipc";
-import type { InviteOut } from "@/lib/types";
+import type { InviteOut, SmtpSettings } from "@/lib/types";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
 
@@ -71,6 +71,11 @@ export function Settings() {
           <section className="settings-section">
             <h3>구성원 초대</h3>
             <InviteSection />
+          </section>
+
+          <section className="settings-section">
+            <h3>메일 (SMTP)</h3>
+            <SmtpSection />
           </section>
 
           <section className="settings-section">
@@ -475,6 +480,225 @@ function ResetPasswordRow({ workspaceId }: { workspaceId: string }) {
         </ul>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The server's outbound mail relay, editable from here.
+ *
+ * Each company points this at its own SMTP (사내 릴레이, Gmail/Workspace,
+ * SES, …) — no env editing, no redeploy. Owner-only: this decides where
+ * everyone's reset codes go, which is exactly the kind of thing a lower role
+ * must not be able to re-point. The password is write-only — the server
+ * returns `password_set`, never the secret — and "테스트 메일 보내기" tries
+ * the values as typed before anything is saved.
+ */
+function SmtpSection() {
+  const workspace = useApp((state) =>
+    state.workspaces.find((entry) => entry.id === state.activeWorkspaceId),
+  );
+  const me = useApp((state) => state.me);
+  const showBanner = useApp((state) => state.showBanner);
+  const reportError = useApp((state) => state.reportError);
+
+  const isOwner = workspace?.my_role === "owner" || Boolean(me?.is_service_admin);
+
+  const [loaded, setLoaded] = useState<SmtpSettings | null>(null);
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("587");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [starttls, setStarttls] = useState(true);
+  const [mailFrom, setMailFrom] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOwner) return;
+    let alive = true;
+    api
+      .getSmtpSettings()
+      .then((settings) => {
+        if (!alive) return;
+        setLoaded(settings);
+        setHost(settings.host);
+        setPort(String(settings.port || 587));
+        setUsername(settings.username);
+        setStarttls(settings.starttls);
+        setMailFrom(settings.mail_from);
+      })
+      .catch(() => {
+        if (alive) setLoaded(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isOwner]);
+
+  if (!isOwner) {
+    return (
+      <p className="settings-hint">
+        메일 서버 설정은 워크스페이스 소유자만 볼 수 있습니다. 비밀번호
+        재설정 메일이 오지 않으면 소유자에게 이 설정을 요청해주세요.
+      </p>
+    );
+  }
+
+  const payload = () => ({
+    host: host.trim(),
+    port: Number(port) || 587,
+    username: username.trim(),
+    // Empty input = keep the stored secret; the server treats null as "keep".
+    password: password ? password : null,
+    starttls,
+    mail_from: mailFrom.trim() || "llack@localhost",
+  });
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setTestResult(null);
+    try {
+      const settings = await api.updateSmtpSettings(payload());
+      setLoaded(settings);
+      setPassword("");
+      showBanner(
+        "info",
+        settings.source === "database"
+          ? "메일 서버 설정을 저장했습니다. 이제 재설정 코드가 이 서버로 발송됩니다."
+          : "메일 서버 설정을 비웠습니다. 환경 변수 또는 서버 로그(콘솔)로 돌아갑니다.",
+      );
+    } catch (error) {
+      reportError(error, "메일 서버 설정을 저장하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    if (testing || !host.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.testSmtp(payload());
+      setTestResult(
+        result.ok
+          ? `테스트 메일을 보냈습니다 → ${result.sent_to}. 받은 편지함을 확인해주세요.`
+          : `연결 실패: ${result.error}`,
+      );
+    } catch (error) {
+      reportError(error, "테스트를 실행하지 못했습니다.");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="settings-provider">
+      <p className="settings-hint">
+        회사 메일 서버(SMTP) 정보를 넣으면 비밀번호 재설정 코드가 그 서버로
+        발송됩니다. 비워두면 코드가 서버 로그에만 남습니다.
+        {loaded ? (
+          <>
+            {" "}
+            현재:{" "}
+            <strong>
+              {loaded.source === "database"
+                ? "이 화면에서 저장한 설정 사용 중"
+                : loaded.source === "env"
+                  ? "서버 환경 변수 사용 중"
+                  : "미설정 (콘솔 로그)"}
+            </strong>
+          </>
+        ) : null}
+      </p>
+
+      <div className="settings-status-row">
+        <label className="settings-field settings-status-text">
+          <span>SMTP 호스트</span>
+          <input
+            value={host}
+            onChange={(event) => setHost(event.target.value)}
+            placeholder="smtp.company.com"
+          />
+        </label>
+        <label className="settings-field settings-status-emoji">
+          <span>포트</span>
+          <input
+            value={port}
+            onChange={(event) => setPort(event.target.value)}
+            inputMode="numeric"
+            placeholder="587"
+          />
+        </label>
+      </div>
+
+      <div className="settings-status-row">
+        <label className="settings-field settings-status-text">
+          <span>사용자 이름 (없으면 비움)</span>
+          <input
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="mailer@company.com"
+            autoComplete="off"
+          />
+        </label>
+        <label className="settings-field settings-status-text">
+          <span>비밀번호</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder={loaded?.password_set ? "저장됨 — 바꿀 때만 입력" : ""}
+            autoComplete="new-password"
+          />
+        </label>
+      </div>
+
+      <label className="settings-field">
+        <span>보내는 주소 (From)</span>
+        <input
+          value={mailFrom}
+          onChange={(event) => setMailFrom(event.target.value)}
+          placeholder="llack@company.com"
+        />
+      </label>
+
+      <label className="sidebar-new-private">
+        <input
+          type="checkbox"
+          checked={starttls}
+          onChange={(event) => setStarttls(event.target.checked)}
+        />
+        STARTTLS 사용 (대부분의 587 포트 릴레이)
+      </label>
+
+      {testResult ? (
+        <p className={testResult.startsWith("연결 실패") ? "settings-error" : "settings-hint"}>
+          {testResult}
+        </p>
+      ) : null}
+
+      <div className="settings-actions settings-smtp-actions">
+        <button
+          type="button"
+          onClick={() => void test()}
+          disabled={testing || !host.trim()}
+          className="settings-secondary"
+        >
+          {testing ? "보내는 중…" : "테스트 메일 보내기"}
+        </button>
+        <button
+          type="button"
+          className="settings-primary"
+          onClick={() => void save()}
+          disabled={busy}
+        >
+          {busy ? "저장 중…" : "저장"}
+        </button>
+      </div>
+    </div>
   );
 }
 

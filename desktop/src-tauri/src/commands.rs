@@ -137,6 +137,27 @@ pub async fn update_my_status(
 }
 
 #[tauri::command]
+pub async fn get_smtp_settings(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value> {
+    state.api()?.get_smtp_settings().await
+}
+
+#[tauri::command]
+pub async fn update_smtp_settings(
+    state: State<'_, Arc<AppState>>,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value> {
+    state.api()?.update_smtp_settings(payload).await
+}
+
+#[tauri::command]
+pub async fn test_smtp(
+    state: State<'_, Arc<AppState>>,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value> {
+    state.api()?.test_smtp(payload).await
+}
+
+#[tauri::command]
 pub async fn forgot_password(state: State<'_, Arc<AppState>>, email: String) -> Result<()> {
     state.api()?.forgot_password(&email).await
 }

@@ -340,7 +340,7 @@ async def test_forgot_password_mails_a_code_that_resets_and_kills_sessions(
 ) -> None:
     sent: list[dict] = []
 
-    async def capture(to: str, subject: str, body: str) -> None:
+    async def capture(to: str, subject: str, body: str, config=None) -> None:  # noqa: ANN001
         sent.append({"to": to, "body": body})
 
     monkeypatch.setattr("app.core.mailer.send_email", capture)
@@ -398,7 +398,7 @@ async def test_forgot_password_does_not_reveal_whether_an_account_exists(
 ) -> None:
     sent: list[str] = []
 
-    async def capture(to: str, subject: str, body: str) -> None:
+    async def capture(to: str, subject: str, body: str, config=None) -> None:  # noqa: ANN001
         sent.append(to)
 
     monkeypatch.setattr("app.core.mailer.send_email", capture)
@@ -416,7 +416,7 @@ async def test_reset_codes_are_attempt_limited_and_superseded(
 
     sent: list[str] = []
 
-    async def capture(to: str, subject: str, body: str) -> None:
+    async def capture(to: str, subject: str, body: str, config=None) -> None:  # noqa: ANN001
         sent.append(body)
 
     monkeypatch.setattr("app.core.mailer.send_email", capture)
@@ -453,3 +453,90 @@ async def test_reset_codes_are_attempt_limited_and_superseded(
         json={"email": "alice@example.com", "code": second, "new_password": "x" * 12},
     )
     assert burned.status_code == 401
+
+
+# ── Admin SMTP settings ──────────────────────────────────────────────────────
+
+
+async def test_a_workspace_owner_manages_smtp_and_the_password_never_echoes(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    from tests.test_channels import _join_workspace
+
+    await _join_workspace(alice, bob, workspace)
+
+    # A plain member is refused.
+    denied = await bob.get("/admin/smtp")
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "server_admin_required"
+
+    # Before anything is stored: env is empty in tests → source none.
+    initial = (await alice.get("/admin/smtp")).json()
+    assert initial["source"] in ("none", "env")
+
+    saved = await alice.put(
+        "/admin/smtp",
+        json={
+            "host": "smtp.acme.example",
+            "port": 465,
+            "username": "mailer@acme.example",
+            "password": "relay-secret",
+            "starttls": False,
+            "mail_from": "llack@acme.example",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["source"] == "database"
+    assert body["password_set"] is True
+    assert "relay-secret" not in saved.text, "비밀번호는 어떤 응답에도 나오면 안 됩니다"
+
+    # Editing without retyping the password keeps the stored secret.
+    edited = await alice.put(
+        "/admin/smtp",
+        json={
+            "host": "smtp.acme.example",
+            "port": 587,
+            "username": "mailer@acme.example",
+            "password": None,
+            "starttls": True,
+            "mail_from": "llack@acme.example",
+        },
+    )
+    assert edited.json()["password_set"] is True
+
+    # The reset-mail path now resolves the stored relay.
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.core.db import get_engine
+    from app.services.server_settings import resolve_smtp
+
+    async with AsyncSession(get_engine()) as db:
+        config = await resolve_smtp(db)
+    assert config.host == "smtp.acme.example"
+    assert config.port == 587
+    assert config.password == "relay-secret"
+
+    # An empty host clears the override.
+    cleared = await alice.put(
+        "/admin/smtp",
+        json={"host": "", "mail_from": "llack@acme.example"},
+    )
+    assert cleared.json()["source"] in ("none", "env")
+
+
+async def test_smtp_test_endpoint_reports_failure_instead_of_500(
+    alice: Actor, workspace: dict
+) -> None:
+    result = await alice.post(
+        "/admin/smtp/test",
+        json={
+            "host": "127.0.0.1",
+            "port": 9,  # discard port: nothing listens
+            "mail_from": "llack@acme.example",
+        },
+    )
+    assert result.status_code == 200
+    body = result.json()
+    assert body["ok"] is False
+    assert body["error"]

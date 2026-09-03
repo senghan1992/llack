@@ -45,6 +45,8 @@ import type {
   SearchResult,
   SendResult,
   ServerFrame,
+  SmtpSettings,
+  SmtpSettingsInput,
   SyncEffect,
   User,
   Workspace,
@@ -732,6 +734,18 @@ export const webApi = {
       current_password: currentPassword,
       new_password: newPassword,
     }),
+
+  getSmtpSettings: () => request<SmtpSettings>("GET", "/admin/smtp"),
+
+  updateSmtpSettings: (payload: SmtpSettingsInput) =>
+    request<SmtpSettings>("PUT", "/admin/smtp", payload),
+
+  testSmtp: (payload: SmtpSettingsInput) =>
+    request<{ ok: boolean; error?: string; sent_to?: string }>(
+      "POST",
+      "/admin/smtp/test",
+      payload,
+    ),
 
   forgotPassword: (email: string) =>
     request<void>("POST", "/auth/forgot-password", { email }, { auth: false }),

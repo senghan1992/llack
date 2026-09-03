@@ -285,6 +285,27 @@ impl ApiClient {
         self.send(Method::PUT, "/me/status", Some(&patch)).await
     }
 
+    // ── Server admin (owner-only) ──────────────────────────────────────
+
+    /// Current SMTP relay, password redacted to `password_set`.
+    pub async fn get_smtp_settings(&self) -> Result<serde_json::Value> {
+        self.send::<(), _>(Method::GET, "/admin/smtp", None).await
+    }
+
+    pub async fn update_smtp_settings(
+        &self,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        self.send(Method::PUT, "/admin/smtp", Some(&payload)).await
+    }
+
+    /// Try the typed relay values by mailing the caller. Failures come back
+    /// in the body (`ok: false`), not as an HTTP error.
+    pub async fn test_smtp(&self, payload: serde_json::Value) -> Result<serde_json::Value> {
+        self.send(Method::POST, "/admin/smtp/test", Some(&payload))
+            .await
+    }
+
     /// Ask the server to mail a reset code. Public; the response is the same
     /// whether or not the account exists.
     pub async fn forgot_password(&self, email: &str) -> Result<()> {
