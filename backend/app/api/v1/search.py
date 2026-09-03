@@ -24,6 +24,7 @@ from app.models.file import FileObject
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.schemas.message import SearchHit, SearchResponse
+from app.services import files as file_service
 from app.services import messages as message_service
 
 router = APIRouter(tags=["search"])
@@ -150,9 +151,9 @@ async def search_everything(
         or term.lower() in (inst.app.tagline or "").lower()
     ][:limit]
 
-    # Same visibility as the workspace file browser: filename metadata is
-    # workspace-wide; the bytes themselves stay behind the download check
-    # (membership in a channel the file was shared into).
+    # Same visibility as the workspace file browser and as download: my own
+    # uploads, or files shared into a channel I am in. A private channel's
+    # filenames are not workspace knowledge.
     files = list(
         (
             await db.scalars(
@@ -162,6 +163,7 @@ async def search_everything(
                     FileObject.deleted_at.is_(None),
                     FileObject.is_ready.is_(True),
                     func.lower(FileObject.filename).like(pattern),
+                    file_service.visible_to(ctx.user.id),
                 )
                 .options(selectinload(FileObject.uploader))
                 .order_by(FileObject.id.desc())

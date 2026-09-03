@@ -77,9 +77,7 @@ async def test_only_the_uploader_may_supply_the_bytes(
             json={"filename": "x.txt", "size_bytes": 1},
         )
     ).json()
-    response = await bob.put(
-        ticket["upload_url"].removeprefix("/api/v1"), content=b"x"
-    )
+    response = await bob.put(ticket["upload_url"].removeprefix("/api/v1"), content=b"x")
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "not_file_uploader"
 
@@ -113,9 +111,7 @@ async def test_a_file_shared_into_a_private_channel_is_not_readable_by_outsiders
     assert (await alice.get(f"/files/{file['id']}/download")).status_code == 200
 
 
-async def test_attaching_an_unfinished_upload_is_rejected(
-    alice: Actor, workspace: dict
-) -> None:
+async def test_attaching_an_unfinished_upload_is_rejected(alice: Actor, workspace: dict) -> None:
     ticket = (
         await alice.post(
             f"/workspaces/{workspace['id']}/files",
@@ -151,18 +147,14 @@ async def test_workspace_file_browser_filters_by_name(alice: Actor, workspace: d
     assert [f["filename"] for f in filtered] == ["기획서.pdf"]
 
 
-async def test_path_traversal_in_a_filename_is_neutralised(
-    alice: Actor, workspace: dict
-) -> None:
+async def test_path_traversal_in_a_filename_is_neutralised(alice: Actor, workspace: dict) -> None:
     ticket = (
         await alice.post(
             f"/workspaces/{workspace['id']}/files",
             json={"filename": "../../../../etc/passwd", "size_bytes": len(CONTENT)},
         )
     ).json()
-    uploaded = await alice.put(
-        ticket["upload_url"].removeprefix("/api/v1"), content=CONTENT
-    )
+    uploaded = await alice.put(ticket["upload_url"].removeprefix("/api/v1"), content=CONTENT)
     assert uploaded.status_code == 200
     # The display name keeps no directory component...
     assert uploaded.json()["filename"] == "passwd"
@@ -187,3 +179,48 @@ async def test_unified_search_finds_files_by_name_but_not_unfinished_uploads(
     hit = result["files"][0]
     assert hit["size_bytes"] == len(CONTENT)
     assert hit["uploader_name"] == "김앨리스"
+
+
+async def test_private_channel_filenames_are_not_workspace_knowledge(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    """The bytes were always guarded; the *name* used to leak via ⌘K and the
+    file list. `layoffs-q4.xlsx` existing is the secret."""
+    from tests.test_channels import _join_workspace
+
+    await _join_workspace(alice, bob, workspace)
+    private = (
+        await alice.post(
+            f"/workspaces/{workspace['id']}/channels",
+            json={"name": "경영", "kind": "private"},
+        )
+    ).json()
+    file = await _upload(alice, workspace, name="리뷰전용-비공개시안.csv")
+    posted = await alice.post(
+        f"/channels/{private['id']}/messages",
+        json={"body": "비공개 첨부", "file_ids": [file["id"]]},
+    )
+    assert posted.status_code == 201
+
+    listed = (await bob.get(f"/workspaces/{workspace['id']}/files?q=리뷰전용")).json()
+    assert listed == []
+    searched = (await bob.get(f"/workspaces/{workspace['id']}/search?q=리뷰전용")).json()
+    assert searched["files"] == []
+
+    # The uploader and channel members still find it.
+    mine = (await alice.get(f"/workspaces/{workspace['id']}/files?q=리뷰전용")).json()
+    assert [f["filename"] for f in mine] == ["리뷰전용-비공개시안.csv"]
+
+    # Shared into a channel bob is in → visible to bob.
+    shared = await _upload(alice, workspace, name="공개-회의록.csv")
+    general = next(
+        c
+        for c in (await alice.get(f"/workspaces/{workspace['id']}/channels")).json()
+        if c["name"] == "general"
+    )
+    await alice.post(
+        f"/channels/{general['id']}/messages",
+        json={"body": "회의록", "file_ids": [shared["id"]]},
+    )
+    visible = (await bob.get(f"/workspaces/{workspace['id']}/files?q=회의록")).json()
+    assert [f["filename"] for f in visible] == ["공개-회의록.csv"]

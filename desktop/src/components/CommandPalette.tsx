@@ -23,7 +23,15 @@ type Entry =
   | { kind: "channel"; id: string; label: string; hint?: string }
   | { kind: "person"; id: string; label: string; hint?: string; avatarUrl?: string | null }
   | { kind: "app"; id: string; label: string; hint?: string }
-  | { kind: "message"; id: string; channelId: string; label: string; hint?: string }
+  | {
+      kind: "message";
+      id: string;
+      channelId: string;
+      /** Set for thread replies — the palette opens the thread, not the transcript. */
+      parentId?: string;
+      label: string;
+      hint?: string;
+    }
   | { kind: "file"; id: string; label: string; hint?: string };
 
 export function CommandPalette() {
@@ -91,9 +99,24 @@ export function CommandPalette() {
     };
 
     // Local first — instant, and covers the common "jump to a channel" case.
-    for (const channel of channels) {
-      const name = channel.name ?? channel.peers.map((p) => p.display_name).join(", ");
-      if (!needle || name.toLowerCase().includes(needle)) {
+    // Exact name first, then prefix, then anywhere: typing "디자인" must land on
+    // #디자인, not #디자인-리뷰.
+    const rank = (name: string): number => {
+      const lowered = name.toLowerCase();
+      if (!needle) return 0;
+      if (lowered === needle) return 0;
+      if (lowered.startsWith(needle)) return 1;
+      return 2;
+    };
+    const localChannels = channels
+      .map((channel) => ({
+        channel,
+        name: channel.name ?? channel.peers.map((p) => p.display_name).join(", "),
+      }))
+      .filter(({ name }) => !needle || name.toLowerCase().includes(needle))
+      .sort((a, b) => rank(a.name) - rank(b.name));
+    for (const { channel, name } of localChannels) {
+      {
         push({
           kind: "channel",
           id: channel.id,
@@ -149,17 +172,23 @@ export function CommandPalette() {
         });
       }
       for (const hit of remote.messages) {
+        const local = channels.find((channel) => channel.id === hit.channel_id);
+        const isDm = local?.kind === "dm" || local?.kind === "group_dm";
+        const where = isDm
+          ? (local?.peers ?? []).map((peer) => peer.display_name).join(", ") || "DM"
+          : `#${hit.channel_name ?? local?.name ?? ""}`;
         push({
           kind: "message",
           id: hit.message.id,
           channelId: hit.channel_id,
+          ...(hit.message.parent_id ? { parentId: hit.message.parent_id } : {}),
           label:
-            hit.highlight?.replace(/<\/?mark>/g, "") ??
+            hit.highlight ??
             previewText(hit.message.body, {
               userName: (id) => people.get(id)?.display_name,
               channelName: () => undefined,
             }),
-          hint: `#${hit.channel_name ?? ""} · ${hit.message.author?.display_name ?? ""}`,
+          hint: `${where} · ${hit.message.author?.display_name ?? ""}`,
         });
       }
       // `files` is absent on servers older than this feature — treat it as
@@ -199,7 +228,8 @@ export function CommandPalette() {
         case "message":
           // Not just the channel: the message. The store pages back until the
           // hit is loaded, then the transcript scrolls to it and flashes it.
-          await revealMessage(entry.channelId, entry.id);
+          // A thread reply opens its thread instead.
+          await revealMessage(entry.channelId, entry.id, entry.parentId ?? null);
           break;
         case "file":
           try {
@@ -275,7 +305,9 @@ export function CommandPalette() {
                     size={20}
                   />
                 ) : null}
-                <span className="palette-label">{entry.label}</span>
+                <span className="palette-label">
+                  {entry.kind === "message" ? highlighted(entry.label) : entry.label}
+                </span>
                 {entry.hint ? <span className="palette-hint">{entry.hint}</span> : null}
               </button>
             </li>
@@ -316,4 +348,18 @@ function kindLabel(kind: Entry["kind"]): string {
     case "file":
       return "파일";
   }
+}
+
+/**
+ * The server wraps the matched term in `<mark>`; render that as a real mark
+ * rather than stripping it. Only `<mark>` is interpreted — everything else is
+ * text, so a message containing HTML cannot inject anything here.
+ */
+function highlighted(label: string): React.ReactNode {
+  const parts = label.split(/(<mark>.*?<\/mark>)/g);
+  if (parts.length === 1) return label;
+  return parts.map((part, index) => {
+    const marked = /^<mark>(.*)<\/mark>$/.exec(part);
+    return marked ? <mark key={index}>{marked[1]}</mark> : part;
+  });
 }

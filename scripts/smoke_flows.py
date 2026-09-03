@@ -99,7 +99,7 @@ async def main():
         await page.locator('.settings button:has-text("저장")').first.click()
         await page.wait_for_selector('.banner:has-text("프로필을 저장했습니다"), :text("프로필을 저장했습니다")')
         ok("프로필: 상태 문구 저장 배너")
-        logout = page.locator('.settings button:has-text("로그아웃")')
+        logout = page.locator('.settings .settings-danger-row button:text-is("로그아웃")')
         await logout.click()
         await page.wait_for_selector('input[type="email"]', state="visible", timeout=15000)
         ok("로그아웃 버튼: 로그인 화면으로 복귀")

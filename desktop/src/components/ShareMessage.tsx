@@ -6,10 +6,13 @@
  * channel → paste → re-type the attribution — four steps that lose the source.
  *
  * The share is a quoted message, not a new message kind: the quote carries the
- * text, and the attribution line carries a `<#channel>` reference that renders
- * as a real channel link, so the reader can jump to the source. Attachments are
- * named in the quote rather than re-attached — re-using file ids would let a
- * share smuggle a private channel's file past that channel's membership.
+ * first lines of the text, and the attribution line carries a
+ * `<#channel:message>` permalink that renders as "원문 보기" and jumps to the
+ * exact message. A 33-line schema used to be copied whole into every share,
+ * so the knowledge spread as copies nobody could tell from the original.
+ * Attachments are named in the quote rather than re-attached — re-using file
+ * ids would let a share smuggle a private channel's file past that channel's
+ * membership.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +24,9 @@ import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
 import { ChannelMark, IconClose, IconSearch } from "./Icon";
+
+/** Enough to recognise the message; the permalink carries the rest. */
+const QUOTE_LINES = 6;
 
 export function ShareMessage({
   message,
@@ -74,10 +80,10 @@ export function ShareMessage({
     if (!targetId || busy) return;
     setBusy(true);
     try {
-      const quoted = message.body
-        .split("\n")
-        .map((line) => `> ${line}`)
-        .join("\n");
+      const lines = message.body.split("\n");
+      const shown = lines.slice(0, QUOTE_LINES);
+      if (lines.length > QUOTE_LINES) shown.push("…");
+      const quoted = shown.map((line) => `> ${line}`).join("\n");
       const files =
         message.attachments.length > 0
           ? `\n> 첨부: ${message.attachments.map((file) => file.filename).join(", ")}`
@@ -85,7 +91,7 @@ export function ShareMessage({
       const author = message.author?.display_name ?? "알 수 없는 사용자";
       const body = [
         comment.trim(),
-        `${quoted}${files}\n> — <#${message.channel_id}> 에서 ${author}`,
+        `${quoted}${files}\n> — ${author} · <#${message.channel_id}:${message.id}>`,
       ]
         .filter(Boolean)
         .join("\n");

@@ -536,6 +536,35 @@ impl ApiClient {
         .map(|_| ())
     }
 
+    pub async fn set_channel_member_role(
+        &self,
+        channel_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<ChannelMemberEntry> {
+        let payload = serde_json::json!({ "role": role });
+        self.send(
+            Method::PATCH,
+            &format!("/channels/{channel_id}/members/{user_id}"),
+            Some(&payload),
+        )
+        .await
+    }
+
+    /// Sign every other device out; the current session stays valid.
+    pub async fn revoke_other_sessions(&self) -> Result<()> {
+        self.send::<(), serde_json::Value>(Method::POST, "/auth/sessions/revoke-others", None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Uploader-only: drop a file that never made it into a message.
+    pub async fn delete_file(&self, file_id: &str) -> Result<()> {
+        self.send::<(), serde_json::Value>(Method::DELETE, &format!("/files/{file_id}"), None)
+            .await
+            .map(|_| ())
+    }
+
     pub async fn join_channel(&self, channel_id: &str) -> Result<Channel> {
         self.send::<(), _>(Method::POST, &format!("/channels/{channel_id}/join"), None)
             .await

@@ -122,6 +122,28 @@ export function ChannelSettings({
     }
   };
 
+  /** Hand admin to a teammate (or take it back). The creator was the only
+   *  admin for life before this; one holiday froze the channel. */
+  const setRole = async (userId: Id, role: "admin" | "member") => {
+    setBusyUserId(userId);
+    try {
+      const updated = await api.setChannelMemberRole(channel.id, userId, role);
+      setMembers((current) =>
+        (current ?? []).map((entry) => (entry.user.id === userId ? updated : entry)),
+      );
+      showBanner(
+        "info",
+        role === "admin"
+          ? `${updated.user.display_name} 님을 채널 관리자로 지정했습니다.`
+          : `${updated.user.display_name} 님의 관리자 권한을 해제했습니다.`,
+      );
+    } catch (error) {
+      reportError(error, "권한을 바꾸지 못했습니다.");
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
   const removeMember = async (userId: Id) => {
     setBusyUserId(userId);
     try {
@@ -291,15 +313,35 @@ export function ChannelSettings({
                       <span className="member-role">관리자</span>
                     ) : null}
                     {isAdmin && entry.user.id !== me?.id ? (
-                      <button
-                        type="button"
-                        className="member-action is-destructive"
-                        onClick={() => void removeMember(entry.user.id)}
-                        disabled={busyUserId === entry.user.id}
-                        title="채널에서 제거 (다시 추가할 수 있습니다)"
-                      >
-                        제거
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="member-action"
+                          onClick={() =>
+                            void setRole(
+                              entry.user.id,
+                              entry.role === "admin" ? "member" : "admin",
+                            )
+                          }
+                          disabled={busyUserId === entry.user.id}
+                          title={
+                            entry.role === "admin"
+                              ? "관리자 권한 해제"
+                              : "채널 관리자로 지정 (이름 변경·보관·구성원 제거 가능)"
+                          }
+                        >
+                          {entry.role === "admin" ? "관리자 해제" : "관리자로"}
+                        </button>
+                        <button
+                          type="button"
+                          className="member-action is-destructive"
+                          onClick={() => void removeMember(entry.user.id)}
+                          disabled={busyUserId === entry.user.id}
+                          title="채널에서 제거 (다시 추가할 수 있습니다)"
+                        >
+                          제거
+                        </button>
+                      </>
                     ) : null}
                   </li>
                 ))

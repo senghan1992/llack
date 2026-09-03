@@ -9,9 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import ChannelCtx, DbSession, WorkspaceCtx
-from app.core.enums import ChannelKind, ChannelRole
-from app.core.errors import Forbidden
-from app.models.channel import ChannelMember
+from app.api.v1.messages import serialise_message
+from app.core.enums import ChannelKind, ChannelRole, MessageKind
+from app.core.errors import Forbidden, NotFound
+from app.models.channel import Channel, ChannelMember
+from app.models.user import User
 from app.realtime.events import emit_to_channel, emit_to_workspace
 from app.schemas.channel import (
     AddMembersRequest,
@@ -22,12 +24,14 @@ from app.schemas.channel import (
     MarkReadRequest,
     OpenDmRequest,
     UpdateChannelRequest,
+    UpdateMemberRoleRequest,
     UpdateMembershipRequest,
 )
 from app.schemas.common import OkResponse
 from app.schemas.realtime import ServerEvent
 from app.schemas.user import UserBrief
 from app.services import channels as channel_service
+from app.services import messages as message_service
 
 router = APIRouter(tags=["channels"])
 
@@ -43,9 +47,7 @@ async def _serialise(
     if membership is not None:
         out.membership = ChannelMembershipOut.model_validate(membership)
     if channel.kind_enum.is_conversation:
-        peers = await channel_service.dm_peers(
-            db, channel_id=channel.id, exclude_user_id=viewer_id
-        )
+        peers = await channel_service.dm_peers(db, channel_id=channel.id, exclude_user_id=viewer_id)
         out.peers = [UserBrief.model_validate(p) for p in peers]
         # DMs have no stored name; derive one so the client has something to show.
         out.name = ", ".join(p.display_name for p in peers) or "나와의 대화"
@@ -85,16 +87,20 @@ async def browse_channels(
     rows = await channel_service.browse_channels(
         db, workspace_id=ctx.workspace.id, user_id=ctx.user.id, query=q, limit=limit
     )
-    joined = set(
-        (
-            await db.scalars(
-                select(ChannelMember.channel_id).where(
-                    ChannelMember.user_id == ctx.user.id,
-                    ChannelMember.channel_id.in_([c.id for c in rows]),
+    joined = (
+        set(
+            (
+                await db.scalars(
+                    select(ChannelMember.channel_id).where(
+                        ChannelMember.user_id == ctx.user.id,
+                        ChannelMember.channel_id.in_([c.id for c in rows]),
+                    )
                 )
-            )
-        ).all()
-    ) if rows else set()
+            ).all()
+        )
+        if rows
+        else set()
+    )
 
     out: list[ChannelOut] = []
     for channel in rows:
@@ -222,9 +228,10 @@ async def update_channel(
 
 @router.post("/channels/{channel_id}/join", response_model=ChannelOut)
 async def join_channel(ctx: ChannelCtx, db: DbSession) -> ChannelOut:
-    membership = await channel_service.join_channel(
-        db, channel=ctx.channel, user_id=ctx.user.id
-    )
+    was_member = ctx.membership is not None
+    membership = await channel_service.join_channel(db, channel=ctx.channel, user_id=ctx.user.id)
+    if not was_member:
+        await _announce(db, ctx.channel, f"{ctx.user.display_name} 님이 참여했습니다.")
     await db.commit()
     await emit_to_channel(
         ctx.channel.id,
@@ -240,7 +247,10 @@ async def join_channel(ctx: ChannelCtx, db: DbSession) -> ChannelOut:
 
 @router.post("/channels/{channel_id}/leave", response_model=OkResponse)
 async def leave_channel(ctx: ChannelCtx, db: DbSession) -> OkResponse:
+    was_member = ctx.membership is not None
     await channel_service.leave_channel(db, channel=ctx.channel, user_id=ctx.user.id)
+    if was_member and not ctx.channel.kind_enum.is_conversation:
+        await _announce(db, ctx.channel, f"{ctx.user.display_name} 님이 나갔습니다.")
     await db.commit()
     await emit_to_channel(
         ctx.channel.id,
@@ -275,6 +285,13 @@ async def add_channel_members(
     added = await channel_service.add_members(
         db, channel=ctx.channel, user_ids=payload.user_ids, actor_id=ctx.user.id
     )
+    if added:
+        names = list((await db.scalars(select(User.display_name).where(User.id.in_(added)))).all())
+        await _announce(
+            db,
+            ctx.channel,
+            f"{ctx.user.display_name} 님이 {', '.join(names)} 님을 추가했습니다.",
+        )
     await db.commit()
     for user_id in added:
         await emit_to_channel(
@@ -287,9 +304,7 @@ async def add_channel_members(
 
 
 @router.delete("/channels/{channel_id}/members/{user_id}", response_model=OkResponse)
-async def remove_channel_member(
-    user_id: str, ctx: ChannelCtx, db: DbSession
-) -> OkResponse:
+async def remove_channel_member(user_id: str, ctx: ChannelCtx, db: DbSession) -> OkResponse:
     """Remove someone from a channel. Channel-admin only.
 
     Removing yourself is `leave` — routing it there keeps "I left" and "I was
@@ -297,17 +312,20 @@ async def remove_channel_member(
     """
     membership = ctx.require_member()
     if ctx.channel.kind_enum.is_conversation:
-        raise Forbidden(
-            "People cannot be removed from a direct message.", code="cannot_edit_dm"
-        )
+        raise Forbidden("People cannot be removed from a direct message.", code="cannot_edit_dm")
     if membership.role != ChannelRole.ADMIN.value:
-        raise Forbidden(
-            "Only a channel admin can remove members.", code="not_channel_admin"
-        )
+        raise Forbidden("Only a channel admin can remove members.", code="not_channel_admin")
     if user_id == ctx.user.id:
         raise Forbidden("Use leave to remove yourself.", code="cannot_remove_self")
 
+    removed = await db.get(User, user_id)
     await channel_service.leave_channel(db, channel=ctx.channel, user_id=user_id)
+    if removed is not None:
+        await _announce(
+            db,
+            ctx.channel,
+            f"{ctx.user.display_name} 님이 {removed.display_name} 님을 내보냈습니다.",
+        )
     await db.commit()
     await emit_to_channel(
         ctx.channel.id,
@@ -316,6 +334,77 @@ async def remove_channel_member(
         workspace_id=ctx.channel.workspace_id,
     )
     return OkResponse()
+
+
+@router.patch("/channels/{channel_id}/members/{user_id}", response_model=ChannelMemberOut)
+async def update_channel_member_role(
+    user_id: str, payload: UpdateMemberRoleRequest, ctx: ChannelCtx, db: DbSession
+) -> ChannelMemberOut:
+    """Promote or demote a channel member. Channel-admin only.
+
+    Until this existed the creator was the channel's only admin for life —
+    one holiday and nobody could rename, archive or remove. An admin cannot
+    change their own role: the last admin demoting themself would orphan the
+    channel, and promoting yourself is meaningless.
+    """
+    membership = ctx.require_member()
+    if ctx.channel.kind_enum.is_conversation:
+        raise Forbidden("Direct messages have no roles.", code="cannot_edit_dm")
+    if membership.role != ChannelRole.ADMIN.value:
+        raise Forbidden("Only a channel admin can change roles.", code="not_channel_admin")
+    if user_id == ctx.user.id:
+        raise Forbidden("Ask another admin to change your role.", code="cannot_change_own_role")
+
+    target = await db.scalar(
+        select(ChannelMember)
+        .where(ChannelMember.channel_id == ctx.channel.id, ChannelMember.user_id == user_id)
+        .options(selectinload(ChannelMember.user))
+        .limit(1)
+    )
+    if target is None:
+        raise NotFound("That person is not in this channel.", code="not_channel_member")
+
+    if target.role != payload.role.value:
+        target.role = payload.role.value
+        promoted = payload.role == ChannelRole.ADMIN
+        verb = "관리자로 지정했습니다" if promoted else "관리자에서 해제했습니다"
+        await _announce(
+            db,
+            ctx.channel,
+            f"{ctx.user.display_name} 님이 {target.user.display_name} 님을 {verb}.",
+        )
+        await db.commit()
+        await emit_to_channel(
+            ctx.channel.id,
+            ServerEvent.CHANNEL_UPDATED,
+            {"channel_id": ctx.channel.id, "member_role_changed": user_id},
+            workspace_id=ctx.channel.workspace_id,
+        )
+    return ChannelMemberOut.model_validate(target)
+
+
+async def _announce(db: DbSession, channel: Channel, body: str) -> None:
+    """Leave a system line in the transcript and fan it out.
+
+    Joins, leaves, adds and removals used to happen silently: a person could be
+    pulled out of a channel and neither they nor anyone else saw a trace. The
+    row is a real message (kind=system, no author) so it pages, searches and
+    syncs like everything else; it never bumps unread counters.
+    """
+    message, created = await message_service.create_message(
+        db, channel=channel, author=None, body=body, kind=MessageKind.SYSTEM
+    )
+    if not created:
+        return
+    await db.flush()
+    await db.refresh(message, ["author", "reactions", "attachments"])
+    out = serialise_message(message, viewer_id=None)
+    await emit_to_channel(
+        channel.id,
+        ServerEvent.MESSAGE_CREATED,
+        {"message": out.model_dump(mode="json")},
+        workspace_id=channel.workspace_id,
+    )
 
 
 @router.patch("/channels/{channel_id}/membership", response_model=ChannelMembershipOut)

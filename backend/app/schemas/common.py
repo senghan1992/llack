@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 
@@ -42,7 +42,19 @@ Handle = Annotated[
     str,
     Field(min_length=2, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$"),
 ]
-Emoji = Annotated[str, Field(min_length=1, max_length=80)]
+
+
+def _must_look_like_emoji(value: str) -> str:
+    # `:+1:` and `thumbsup` are shortcodes, not emoji; rendering them as a
+    # reaction chip produced a literal `:+1: 1` under the message.
+    if value.isascii() or any(ch.isspace() for ch in value):
+        raise ValueError("Reactions must be an emoji character, not text.")
+    return value
+
+
+Emoji = Annotated[
+    str, Field(min_length=1, max_length=80), AfterValidator(_must_look_like_emoji)
+]
 
 
 class OkResponse(Schema):

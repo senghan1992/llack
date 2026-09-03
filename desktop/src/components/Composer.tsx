@@ -11,7 +11,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { api, shell } from "@/lib/ipc";
+import { asCommandError } from "@/lib/errors";
+import { formatBytes } from "@/lib/format";
+import { api, isDesktopShell, shell } from "@/lib/ipc";
 import type { Id } from "@/lib/types";
 import { useApp } from "@/store/app";
 
@@ -19,6 +21,24 @@ import { Avatar } from "./Avatar";
 import { IconClose, IconPaperclip, IconTemplate } from "./Icon";
 
 const TYPING_THROTTLE_MS = 2_500;
+
+/** Say *why* an upload failed. "파일을 업로드하지 못했습니다" for a 110 MB file
+ *  hid the one fact the person needed — the limit. */
+function uploadFailureMessage(error: unknown): string {
+  const parsed = asCommandError(error);
+  if (parsed.code === "payload_too_large") {
+    const max = Number(
+      (parsed.details as { max_upload_bytes?: number } | null | undefined)?.max_upload_bytes,
+    );
+    return max > 0
+      ? `파일이 너무 큽니다. 한 파일은 ${formatBytes(max)} 까지 올릴 수 있습니다.`
+      : "파일이 너무 큽니다. 워크스페이스 업로드 한도를 넘었습니다.";
+  }
+  if (parsed.code === "network_error" || parsed.code === "offline") {
+    return "연결이 끊겨 업로드하지 못했습니다. 연결되면 다시 시도해주세요.";
+  }
+  return "파일을 업로드하지 못했습니다.";
+}
 
 /**
  * Message templates: the shares people make all day, pre-shaped.
@@ -132,7 +152,10 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
   /** Track a trailing `@word` at the caret to drive the mention picker. */
   const updateMentionQuery = (value: string, caret: number) => {
     const upToCaret = value.slice(0, caret);
-    const match = /(?:^|\s)@([a-zA-Z0-9._-]*)$/.exec(upToCaret);
+    // Anything up to whitespace, so `@김앨` keeps the picker open — the
+    // ASCII-only pattern closed it on the first Hangul syllable, and people
+    // shipped `@김앨리스` as plain text believing they had mentioned someone.
+    const match = /(?:^|\s)@([^\s@]*)$/.exec(upToCaret);
     setMentionQuery(match ? (match[1] ?? "") : null);
     setMentionIndex(0);
   };
@@ -141,7 +164,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
     const element = textareaRef.current;
     if (!element) return;
     const caret = element.selectionStart;
-    const before = body.slice(0, caret).replace(/@([a-zA-Z0-9._-]*)$/, `@${handle} `);
+    const before = body.slice(0, caret).replace(/@([^\s@]*)$/, `@${handle} `);
     const next = before + body.slice(caret);
     setBody(next);
     setMentionQuery(null);
@@ -178,7 +201,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
         setAttachments((current) => [...current, { id: file.id, filename: file.filename }]);
       });
     } catch (error) {
-      reportError(error, "파일을 업로드하지 못했습니다.");
+      reportError(error, uploadFailureMessage(error));
     } finally {
       setUploading(false);
     }
@@ -210,7 +233,7 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
               ]);
             }
           } catch (error) {
-            reportError(error, "파일을 업로드하지 못했습니다.");
+            reportError(error, uploadFailureMessage(error));
           } finally {
             setUploading(false);
           }
@@ -237,6 +260,44 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
       window.removeEventListener("keydown", onKey);
     };
   }, [templatesOpen]);
+
+  /**
+   * Screenshots arrive by ⌘V. A pasted image is a file on the clipboard; it
+   * attaches like a dropped one. Text pastes fall through untouched. The
+   * desktop shell uploads by path and has no path for clipboard bytes, so it
+   * keeps the browser default there.
+   */
+  const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!workspaceId || disabled || isDesktopShell()) return;
+    const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (files.length === 0) return;
+    event.preventDefault();
+    void (async () => {
+      setUploading(true);
+      try {
+        for (const [index, file] of files.entries()) {
+          const extension = file.type.split("/")[1] ?? "png";
+          const named =
+            file.name && file.name !== "image.png"
+              ? file
+              : new File([file], `스크린샷-${stamp()}${index > 0 ? `-${index + 1}` : ""}.${extension}`, {
+                  type: file.type,
+                });
+          const uploaded = await api.uploadFile(workspaceId, named);
+          setAttachments((current) => [
+            ...current,
+            { id: uploaded.id, filename: uploaded.filename },
+          ]);
+        }
+      } catch (error) {
+        reportError(error, uploadFailureMessage(error));
+      } finally {
+        setUploading(false);
+      }
+    })();
+  };
 
   /** Insert a template at the caret, on its own line, and put the caret after it. */
   const insertTemplate = (text: string) => {
@@ -291,11 +352,14 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
               {file.filename}
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
                   setAttachments((current) =>
                     current.filter((candidate) => candidate.id !== file.id),
-                  )
-                }
+                  );
+                  // Removed before sending: the upload is an orphan. Drop it
+                  // so it does not haunt ⌘K's file results.
+                  void api.deleteFile(file.id).catch(() => {});
+                }}
                 aria-label="첨부 제거"
               >
                 <IconClose size={11} />
@@ -343,10 +407,10 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
               ? channel?.is_archived
                 ? "보관된 채널에는 메시지를 보낼 수 없습니다."
                 : "왼쪽에서 채널을 고르거나 ⌘K 로 대화를 찾아보세요."
-              : placeholder ??
-                (channel?.name ? `#${channel.name} 에 메시지 보내기` : "메시지 보내기")
+              : placeholder ?? composerPlaceholder(channel)
           }
           rows={Math.min(12, body.split("\n").length)}
+          onPaste={onPaste}
           onChange={(event) => {
             setBody(event.target.value);
             updateMentionQuery(event.target.value, event.target.selectionStart);
@@ -441,9 +505,29 @@ export function Composer({ parentId, placeholder }: ComposerProps) {
       ) : (
         <p className="composer-hint">
           <kbd>Enter</kbd> 전송 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈 ·{" "}
-          <kbd>@</kbd> 멘션 · <kbd>```</kbd> 코드 블록
+          <kbd>@이름</kbd> 멘션 · <kbd>⌘V</kbd> 이미지 붙여넣기 · <kbd>```</kbd> 코드
         </p>
       )}
     </div>
   );
+}
+
+/** `#개발 에 메시지 보내기` for rooms; DMs are people, not hashtags. */
+function composerPlaceholder(
+  channel: { kind: string; name?: string | null; peers: Array<{ display_name: string }> } | undefined,
+): string {
+  if (!channel) return "메시지 보내기";
+  if (channel.kind === "dm" || channel.kind === "group_dm") {
+    const names = channel.peers.map((peer) => peer.display_name).join(", ");
+    return names ? `${names} 에게 메시지 보내기` : "나에게 메모 남기기";
+  }
+  return channel.name ? `#${channel.name} 에 메시지 보내기` : "메시지 보내기";
+}
+
+function stamp(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+    now.getHours(),
+  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 }

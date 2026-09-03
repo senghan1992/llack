@@ -44,9 +44,7 @@ async def test_history_is_keyset_paginated(alice: Actor, bob: Actor, workspace: 
     assert first["has_more"] is True
 
     second = (
-        await alice.get(
-            f"/channels/{channel['id']}/messages?limit=4&before={first['next_cursor']}"
-        )
+        await alice.get(f"/channels/{channel['id']}/messages?limit=4&before={first['next_cursor']}")
     ).json()
     assert len(second["items"]) == 4
     # Pages must not overlap.
@@ -123,9 +121,7 @@ async def test_unread_and_mention_counters(alice: Actor, bob: Actor, workspace: 
     channel = await _setup(alice, bob, workspace)
 
     await alice.post(f"/channels/{channel['id']}/messages", json={"body": "첫 번째"})
-    await alice.post(
-        f"/channels/{channel['id']}/messages", json={"body": f"<@{bob.id}> 봐주세요"}
-    )
+    await alice.post(f"/channels/{channel['id']}/messages", json={"body": f"<@{bob.id}> 봐주세요"})
 
     membership = (await bob.get(f"/channels/{channel['id']}")).json()["membership"]
     assert membership["unread_count"] == 2
@@ -139,21 +135,13 @@ async def test_unread_and_mention_counters(alice: Actor, bob: Actor, workspace: 
     assert read.json()["mention_count"] == 0
 
 
-async def test_read_cursor_never_moves_backwards(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
+async def test_read_cursor_never_moves_backwards(alice: Actor, bob: Actor, workspace: dict) -> None:
     channel = await _setup(alice, bob, workspace)
-    first = (
-        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "1"})
-    ).json()
-    second = (
-        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "2"})
-    ).json()
+    first = (await alice.post(f"/channels/{channel['id']}/messages", json={"body": "1"})).json()
+    second = (await alice.post(f"/channels/{channel['id']}/messages", json={"body": "2"})).json()
 
     await bob.post(f"/channels/{channel['id']}/read", json={"message_id": second["id"]})
-    rewound = await bob.post(
-        f"/channels/{channel['id']}/read", json={"message_id": first["id"]}
-    )
+    rewound = await bob.post(f"/channels/{channel['id']}/read", json={"message_id": first["id"]})
     assert rewound.json()["last_read_message_id"] == second["id"]
 
 
@@ -188,9 +176,7 @@ async def test_replying_to_a_reply_joins_the_same_thread(
 ) -> None:
     """Threads are one level deep, as in Slack — no nested sub-threads."""
     channel = await _setup(alice, bob, workspace)
-    root = (
-        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "루트"})
-    ).json()
+    root = (await alice.post(f"/channels/{channel['id']}/messages", json={"body": "루트"})).json()
     reply = (
         await bob.post(
             f"/channels/{channel['id']}/messages",
@@ -212,9 +198,7 @@ async def test_also_send_to_channel_surfaces_a_reply(
     alice: Actor, bob: Actor, workspace: dict
 ) -> None:
     channel = await _setup(alice, bob, workspace)
-    root = (
-        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "루트"})
-    ).json()
+    root = (await alice.post(f"/channels/{channel['id']}/messages", json={"body": "루트"})).json()
     await bob.post(
         f"/channels/{channel['id']}/messages",
         json={"body": "모두에게도", "parent_id": root["id"], "also_send_to_channel": True},
@@ -243,9 +227,7 @@ async def test_delete_is_soft_and_preserves_thread_counts(
     alice: Actor, bob: Actor, workspace: dict
 ) -> None:
     channel = await _setup(alice, bob, workspace)
-    root = (
-        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "루트"})
-    ).json()
+    root = (await alice.post(f"/channels/{channel['id']}/messages", json={"body": "루트"})).json()
     await bob.post(
         f"/channels/{channel['id']}/messages",
         json={"body": "답글", "parent_id": root["id"]},
@@ -282,7 +264,8 @@ async def test_reactions_group_and_toggle(alice: Actor, bob: Actor, workspace: d
 
     await alice.delete(f"/messages/{message['id']}/reactions?emoji=👍")
     thumbs = next(
-        r for r in (await alice.get(f"/messages/{message['id']}")).json()["reactions"]
+        r
+        for r in (await alice.get(f"/messages/{message['id']}")).json()["reactions"]
         if r["emoji"] == "👍"
     )
     assert thumbs["count"] == 1 and thumbs["me"] is False
@@ -346,9 +329,7 @@ async def test_unified_search_covers_channels_people_and_messages(
 async def test_a_non_member_cannot_post(alice: Actor, bob: Actor, workspace: dict) -> None:
     await _join_workspace(alice, bob, workspace)
     channel = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels", json={"name": "혼자만"}
-        )
+        await alice.post(f"/workspaces/{workspace['id']}/channels", json={"name": "혼자만"})
     ).json()
     response = await bob.post(f"/channels/{channel['id']}/messages", json={"body": "끼어들기"})
     assert response.status_code == 403
@@ -384,3 +365,76 @@ def test_a_notification_preview_still_strips_markdown() -> None:
     assert plain_text_preview("**굵게** _기울임_ `코드`") == "굵게 기울임 [코드]"
     assert plain_text_preview("> 인용문입니다") == "인용문입니다"
     assert plain_text_preview("```\nprint(1)\n```") == "[코드]"
+    # Markers go; characters that happen to be markers stay. These came out
+    # as `landingctaclick` and `9/139/15` in real notifications.
+    assert plain_text_preview("(landing_cta_click) 컬럼") == "(landing_cta_click) 컬럼"
+    assert plain_text_preview("QA 9/13~9/15 3일 #개발") == "QA 9/13~9/15 3일 #개발"
+    assert plain_text_preview("## 제목\n| a | b |\n|---|---|\n| 1 | 2 |") == "제목 a b 1 2"
+
+
+async def test_display_name_mentions_reach_the_person(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    """`@이밥` typed the way the UI shows it is a mention — with or without 님."""
+    channel = await _setup(alice, bob, workspace)
+    posted = (
+        await alice.post(
+            f"/channels/{channel['id']}/messages",
+            json={"body": "@이밥님 랜딩 페이지 진행 상황 공유해주세요"},
+        )
+    ).json()
+    assert posted["mentioned_user_ids"] == [bob.id]
+    assert posted["body"].startswith(f"<@{bob.id}>님 ")
+
+    membership = (await bob.get(f"/channels/{channel['id']}")).json()["membership"]
+    assert membership["mention_count"] == 1
+
+    # Unknown names stay literal text; nobody is pinged by accident.
+    stray = (
+        await alice.post(
+            f"/channels/{channel['id']}/messages", json={"body": "@아무개 님 안녕하세요"}
+        )
+    ).json()
+    assert stray["mentioned_user_ids"] == []
+    assert stray["body"] == "@아무개 님 안녕하세요"
+
+
+async def test_thread_replies_do_not_bold_the_channel(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    channel = await _setup(alice, bob, workspace)
+    root = (await alice.post(f"/channels/{channel['id']}/messages", json={"body": "루트"})).json()
+    await bob.post(f"/channels/{channel['id']}/read", json={})
+
+    await alice.post(
+        f"/channels/{channel['id']}/messages", json={"body": "답글", "parent_id": root["id"]}
+    )
+    membership = (await bob.get(f"/channels/{channel['id']}")).json()["membership"]
+    assert membership["unread_count"] == 0
+
+    # A reply that mentions me still counts as a mention …
+    await alice.post(
+        f"/channels/{channel['id']}/messages",
+        json={"body": f"<@{bob.id}> 스레드에서 부릅니다", "parent_id": root["id"]},
+    )
+    membership = (await bob.get(f"/channels/{channel['id']}")).json()["membership"]
+    assert membership["mention_count"] == 1
+
+    # … and one also sent to the channel is channel traffic.
+    await alice.post(
+        f"/channels/{channel['id']}/messages",
+        json={"body": "채널에도", "parent_id": root["id"], "also_send_to_channel": True},
+    )
+    membership = (await bob.get(f"/channels/{channel['id']}")).json()["membership"]
+    assert membership["unread_count"] == 1
+
+
+async def test_a_reaction_must_be_an_emoji(alice: Actor, bob: Actor, workspace: dict) -> None:
+    channel = await _setup(alice, bob, workspace)
+    message = (
+        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "리액션"})
+    ).json()
+    shortcode = await bob.put(f"/messages/{message['id']}/reactions", json={"emoji": ":+1:"})
+    assert shortcode.status_code == 422
+    real = await bob.put(f"/messages/{message['id']}/reactions", json={"emoji": "👍"})
+    assert real.status_code == 200

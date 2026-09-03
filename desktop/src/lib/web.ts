@@ -166,20 +166,23 @@ function ulid(): string {
 async function errorFromResponse(response: Response): Promise<never> {
   let code = `http_${response.status}`;
   let message = `요청이 실패했습니다 (HTTP ${response.status}).`;
+  let details: Record<string, unknown> | null = null;
   try {
     const body = (await response.json()) as {
-      error?: { code?: string; message?: string };
+      error?: { code?: string; message?: string; details?: Record<string, unknown> };
       detail?: string;
     };
     if (body.error?.code) code = body.error.code;
     if (body.error?.message) message = body.error.message;
     else if (body.detail) message = body.detail;
+    if (body.error?.details) details = body.error.details;
   } catch {
     // Non-JSON error body; the status-derived defaults stand.
   }
   throw commandError(code, message, {
     status: response.status,
     requiresReauth: response.status === 401,
+    details,
   });
 }
 
@@ -838,6 +841,17 @@ export const webApi = {
 
   removeChannelMember: (channelId: Id, userId: Id) =>
     request<void>("DELETE", `/channels/${channelId}/members/${userId}`),
+
+  setChannelMemberRole: (channelId: Id, userId: Id, role: "admin" | "member") =>
+    request<ChannelMemberEntry>("PATCH", `/channels/${channelId}/members/${userId}`, {
+      role,
+    }),
+
+  /** Sign every other device out; this session stays. */
+  revokeOtherSessions: () => request<void>("POST", "/auth/sessions/revoke-others"),
+
+  /** Uploader-only: drop a file that never made it into a message. */
+  deleteFile: (fileId: Id) => request<void>("DELETE", `/files/${fileId}`),
 
   joinChannel: async (channelId: Id): Promise<Channel> => {
     const channel = await request<Channel>("POST", `/channels/${channelId}/join`);

@@ -133,30 +133,34 @@ async def websocket_gateway(
     topics, workspace_ids = await _topics_for(user.id, workspace_id=workspace_id)
     await hub.register(conn, topics)
 
-    await conn.send_now(
-        {
-            "type": ServerEvent.HELLO.value,
-            "data": HelloData(
-                session_id=conn.id,
-                user_id=user.id,
-                workspace_ids=workspace_ids,
-                heartbeat_seconds=settings.ws_heartbeat_seconds,
-                server_time=datetime.now(UTC),
-            ).model_dump(mode="json"),
-        }
-    )
-
-    await presence.touch(user.id, PresenceState.ACTIVE)
-    for wid in workspace_ids:
-        await emit_to_workspace(
-            wid,
-            ServerEvent.PRESENCE_UPDATED,
-            {"user_id": user.id, "presence": PresenceState.ACTIVE.value},
-        )
-
     idle_timeout = settings.ws_heartbeat_seconds * 2.5
 
+    # Everything after `register` lives inside this try: a tab closed between
+    # the handshake and the hello frame used to raise out of `send_now` past
+    # the `finally`, leaving the dead connection registered in the hub (and
+    # the person "active" for as long as the process lived).
     try:
+        await conn.send_now(
+            {
+                "type": ServerEvent.HELLO.value,
+                "data": HelloData(
+                    session_id=conn.id,
+                    user_id=user.id,
+                    workspace_ids=workspace_ids,
+                    heartbeat_seconds=settings.ws_heartbeat_seconds,
+                    server_time=datetime.now(UTC),
+                ).model_dump(mode="json"),
+            }
+        )
+
+        await presence.touch(user.id, PresenceState.ACTIVE)
+        for wid in workspace_ids:
+            await emit_to_workspace(
+                wid,
+                ServerEvent.PRESENCE_UPDATED,
+                {"user_id": user.id, "presence": PresenceState.ACTIVE.value},
+            )
+
         while True:
             try:
                 raw = await asyncio.wait_for(websocket.receive_text(), timeout=idle_timeout)

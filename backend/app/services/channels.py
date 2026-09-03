@@ -372,6 +372,8 @@ async def recompute_unread(
                 Message.id > cursor,
                 Message.deleted_at.is_(None),
                 Message.user_id != membership.user_id,
+                # Same rule as the live counter: thread replies stay in threads.
+                or_(Message.parent_id.is_(None), Message.also_sent_to_channel.is_(True)),
             )
         )
     ) or 0

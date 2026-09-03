@@ -38,6 +38,7 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
   const editMessage = useApp((state) => state.editMessage);
   const deleteMessage = useApp((state) => state.deleteMessage);
   const openChannel = useApp((state) => state.openChannel);
+  const revealMessage = useApp((state) => state.revealMessage);
 
   const [editing, setEditing] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -72,12 +73,38 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
     ? message.mentions_everyone || message.mentioned_user_ids.includes(me.id)
     : false;
 
+  // "김앨리스 님이 참여했습니다" — a line of context, not a person speaking.
+  if (message.kind === "system") {
+    return (
+      <article className="message message-system" data-message-id={message.id}>
+        <div className="message-gutter" />
+        <div className="message-content">
+          <span>{message.body}</span>
+          <time dateTime={message.created_at}>
+            {formatTime(message.created_at, me?.timezone)}
+          </time>
+        </div>
+      </article>
+    );
+  }
+
   if (message.deleted_at) {
     return (
       <article className="message message-deleted" data-message-id={message.id}>
         <div className="message-gutter" />
         <div className="message-content">
           <em>삭제된 메시지입니다.</em>
+          {/* The replies outlive their root. Without this the thread was
+              unreachable — the data stayed, the door vanished. */}
+          {!inThread && message.reply_count > 0 ? (
+            <button
+              type="button"
+              className="thread-summary"
+              onClick={() => void openThread(message.id)}
+            >
+              답글 {message.reply_count}개
+            </button>
+          ) : null}
         </div>
       </article>
     );
@@ -154,7 +181,10 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
                   setEditing(false);
                   setDraft(message.body);
                 }
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                // Same contract as the composer: Enter saves, Shift+Enter
+                // newlines. Enter-as-newline here while Enter-sends there
+                // meant every edit ended with a stray blank line.
+                if (event.key === "Enter" && !event.shiftKey) {
                   void submitEdit(event);
                 }
               }}
@@ -170,7 +200,7 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
               >
                 취소
               </button>
-              <span className="hint">⌘+Enter 로 저장, Esc 로 취소</span>
+              <span className="hint">Enter 로 저장 · Shift+Enter 줄바꿈 · Esc 취소</span>
             </div>
           </form>
         ) : (
@@ -180,10 +210,22 @@ export function MessageRow({ message, grouped, inThread = false }: MessageRowPro
             dangerouslySetInnerHTML={{ __html: html }}
             onClick={(event) => {
               const target = event.target as HTMLElement;
+              if (target.classList.contains("code-copy")) {
+                const code = target.parentElement?.querySelector("pre")?.textContent ?? "";
+                void navigator.clipboard?.writeText(code).then(() => {
+                  target.textContent = "복사됨";
+                  window.setTimeout(() => {
+                    target.textContent = "복사";
+                  }, 1_500);
+                });
+                return;
+              }
               const channelId = target.dataset.channelId;
+              const messageId = target.dataset.messageId;
               if (channelId) {
                 event.preventDefault();
-                void openChannel(channelId);
+                if (messageId) void revealMessage(channelId, messageId);
+                else void openChannel(channelId);
               }
             }}
           />

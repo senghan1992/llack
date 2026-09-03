@@ -378,6 +378,29 @@ pub async fn add_channel_members(
 }
 
 #[tauri::command]
+pub async fn set_channel_member_role(
+    state: State<'_, Arc<AppState>>,
+    channel_id: String,
+    user_id: String,
+    role: String,
+) -> Result<llack_core::ChannelMemberEntry> {
+    state
+        .api()?
+        .set_channel_member_role(&channel_id, &user_id, &role)
+        .await
+}
+
+#[tauri::command]
+pub async fn revoke_other_sessions(state: State<'_, Arc<AppState>>) -> Result<()> {
+    state.api()?.revoke_other_sessions().await
+}
+
+#[tauri::command]
+pub async fn delete_file(state: State<'_, Arc<AppState>>, file_id: String) -> Result<()> {
+    state.api()?.delete_file(&file_id).await
+}
+
+#[tauri::command]
 pub async fn remove_channel_member(
     state: State<'_, Arc<AppState>>,
     channel_id: String,

@@ -21,7 +21,7 @@ import {
   type ProviderModel,
 } from "@/lib/agent/models";
 import { webInviteUrl } from "@/lib/invite";
-import { agentHost, api, capabilities } from "@/lib/ipc";
+import { agentHost, api, capabilities, isDesktopShell } from "@/lib/ipc";
 import type { InviteOut, SmtpSettings } from "@/lib/types";
 import { useAgent } from "@/store/agent";
 import { useApp } from "@/store/app";
@@ -712,6 +712,22 @@ function AccountSection() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+
+  /** Every other device out, this one stays. Sessions accumulated silently
+   *  (22 on one test account) with no way to see or end them. */
+  const revokeOthers = async () => {
+    if (revoking) return;
+    setRevoking(true);
+    try {
+      await api.revokeOtherSessions();
+      showBanner("info", "다른 기기의 세션을 모두 종료했습니다. 이 기기는 그대로 로그인 상태입니다.");
+    } catch (error) {
+      reportError(error, "다른 기기를 로그아웃하지 못했습니다.");
+    } finally {
+      setRevoking(false);
+    }
+  };
 
   const changePassword = async () => {
     if (busy || !current || next.length < 10) return;
@@ -761,6 +777,18 @@ function AccountSection() {
         </button>
       </div>
 
+      <NotificationPermissionRow />
+
+      <div className="settings-danger-row">
+        <div>
+          <strong>다른 기기 모두 로그아웃</strong>
+          <p>잃어버린 노트북, 공용 PC 에 남긴 로그인을 여기서 끊습니다. 이 기기는 유지됩니다.</p>
+        </div>
+        <button type="button" onClick={() => void revokeOthers()} disabled={revoking}>
+          {revoking ? "종료 중…" : "다른 기기 로그아웃"}
+        </button>
+      </div>
+
       <div className="settings-danger-row">
         <div>
           <strong>로그아웃</strong>
@@ -770,6 +798,49 @@ function AccountSection() {
           로그아웃
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Browser notification state, said out loud. The permission prompt fired once
+ * at first sign-in with no context; someone who clicked "차단" then had no way
+ * to know why nothing ever popped up, or how to turn it back on.
+ */
+function NotificationPermissionRow() {
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(() =>
+    isDesktopShell() || typeof Notification === "undefined"
+      ? "unsupported"
+      : Notification.permission,
+  );
+  if (permission === "unsupported") return null;
+
+  const ask = async () => {
+    try {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+    } catch {
+      // Some browsers throw instead of resolving; the row keeps its state.
+    }
+  };
+
+  return (
+    <div className="settings-danger-row settings-notify-row">
+      <div>
+        <strong>브라우저 알림</strong>
+        <p>
+          {permission === "granted"
+            ? "켜져 있습니다. 탭이 뒤에 있을 때 멘션·DM·새 메시지를 알려드립니다. 채널별로는 머리글의 종 버튼으로 조절하세요."
+            : permission === "denied"
+              ? "브라우저에서 차단되어 있습니다. 주소창 왼쪽의 사이트 정보(🔒) → 알림 → 허용으로 바꾸면 다시 켜집니다."
+              : "아직 허용하지 않았습니다. 허용하면 탭이 뒤에 있을 때 멘션과 DM 을 놓치지 않습니다."}
+        </p>
+      </div>
+      {permission === "default" ? (
+        <button type="button" onClick={() => void ask()}>
+          알림 허용
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -785,12 +856,24 @@ function AccountSection() {
 function GuideList() {
   const rows: Array<{ want: string; how: string }> = [
     {
+      want: "팀 채널에 들어가기",
+      how: "사이드바 '채널' 옆의 돋보기(채널 둘러보기) — 공개 채널을 보고 '참여'를 누르면 지난 대화까지 모두 보입니다.",
+    },
+    {
+      want: "누군가에게 바로 말하기 (DM)",
+      how: "사이드바 '다이렉트 메시지' 옆의 + — 여러 명을 고르면 그룹 대화가 됩니다.",
+    },
+    {
+      want: "사람 부르기 (멘션)",
+      how: "@ 뒤에 이름이나 아이디를 치면 목록이 뜹니다. @김앨리스 처럼 이름 그대로 써도 멘션됩니다.",
+    },
+    {
       want: "채널·사람·앱·메시지·파일을 한 번에 찾기",
       how: "⌘K (Windows/Linux 는 Ctrl+K) — 목록에서 Enter 로 바로 이동하거나 파일을 내려받습니다.",
     },
     {
-      want: "파일 보내기",
-      how: "컴포저의 클립 버튼을 누르거나, 파일을 창에 끌어다 놓습니다.",
+      want: "파일·스크린샷 보내기",
+      how: "컴포저의 클립 버튼, 파일을 창에 끌어다 놓기, 또는 이미지를 복사해 ⌘V 로 붙여넣기.",
     },
     {
       want: "이미지 크게 보기",
@@ -809,8 +892,8 @@ function GuideList() {
       how: "메시지의 답글 버튼 — 스레드가 오른쪽 열에 나란히 열립니다.",
     },
     {
-      want: "채널 관리 (이름·주제·구성원 추가/제거·보관)",
-      how: "채널 머리글 오른쪽의 톱니 버튼. 이름 변경·보관은 채널 관리자만 할 수 있습니다.",
+      want: "채널 관리 (이름·주제·구성원·보관)",
+      how: "채널 머리글 오른쪽의 톱니 버튼. 구성원 추가는 누구나, 이름 변경·제거·보관은 채널 관리자만 — 관리자는 같은 화면에서 '관리자로' 버튼으로 다른 사람에게 넘길 수 있습니다.",
     },
     {
       want: "채널 알림 끄기/켜기",

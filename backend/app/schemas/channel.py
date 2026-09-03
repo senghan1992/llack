@@ -84,6 +84,10 @@ class ChannelMemberOut(Schema):
     joined_at: datetime = Field(validation_alias="created_at")
 
 
+class UpdateMemberRoleRequest(Payload):
+    role: ChannelRole
+
+
 class UpdateMembershipRequest(Payload):
     notification_level: NotificationLevel | None = None
     is_muted: bool | None = None

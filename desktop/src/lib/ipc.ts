@@ -175,6 +175,13 @@ const tauriApi = {
   removeChannelMember: (channelId: Id, userId: Id) =>
     call<void>("remove_channel_member", { channelId, userId }),
 
+  setChannelMemberRole: (channelId: Id, userId: Id, role: "admin" | "member") =>
+    call<ChannelMemberEntry>("set_channel_member_role", { channelId, userId, role }),
+
+  revokeOtherSessions: () => call<void>("revoke_other_sessions"),
+
+  deleteFile: (fileId: Id) => call<void>("delete_file", { fileId }),
+
   joinChannel: (channelId: Id) => call<Channel>("join_channel", { channelId }),
 
   leaveChannel: (channelId: Id) => call<void>("leave_channel", { channelId }),

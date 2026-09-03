@@ -32,7 +32,7 @@ async def test_a_non_member_cannot_see_the_workspace(bob: Actor, workspace: dict
 
 
 async def test_invite_flow_admits_a_member_to_default_channels(
-    alice: Actor, bob: Actor, workspace: dict
+    alice: Actor, bob: Actor, workspace: dict, client
 ) -> None:
     invites = await alice.post(
         f"/workspaces/{workspace['id']}/invites",
@@ -50,9 +50,18 @@ async def test_invite_flow_admits_a_member_to_default_channels(
     channels = (await bob.get(f"/workspaces/{workspace['id']}/channels")).json()
     assert {c["name"] for c in channels} == {"general"}
 
-    # A token cannot be reused.
+    # The member who spent the token re-opening their bookmarked link lands
+    # in the workspace, not on an error.
     replay = await bob.post("/invites/accept", json={"token": token})
-    assert replay.status_code == 409
+    assert replay.status_code == 200
+    assert replay.json()["id"] == workspace["id"]
+
+    # Anyone else presenting the spent token is refused.
+    from tests.conftest import register
+
+    carol = await register(client, "carol@example.com", "박캐롤")
+    stolen = await carol.post("/invites/accept", json={"token": token})
+    assert stolen.status_code == 409
 
 
 async def test_an_invite_is_bound_to_its_email(
@@ -228,15 +237,67 @@ async def test_only_a_channel_admin_can_remove_members(
     assert blocked.status_code == 403
 
 
-async def test_nobody_can_be_removed_from_a_dm(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
+async def test_nobody_can_be_removed_from_a_dm(alice: Actor, bob: Actor, workspace: dict) -> None:
     await _join_workspace(alice, bob, workspace)
     dm = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels/dm", json={"user_ids": [bob.id]}
-        )
+        await alice.post(f"/workspaces/{workspace['id']}/channels/dm", json={"user_ids": [bob.id]})
     ).json()
     response = await alice.delete(f"/channels/{dm['id']}/members/{bob.id}")
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "cannot_edit_dm"
+
+
+async def test_membership_changes_leave_a_system_line(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    await _join_workspace(alice, bob, workspace)
+    channel = (
+        await alice.post(f"/workspaces/{workspace['id']}/channels", json={"name": "q3 런치"})
+    ).json()
+
+    joined = await bob.post(f"/channels/{channel['id']}/join")
+    assert joined.status_code == 200
+    page = (await alice.get(f"/channels/{channel['id']}/messages")).json()
+    system = [m for m in page["items"] if m["kind"] == "system"]
+    assert [m["body"] for m in system] == ["이밥 님이 참여했습니다."]
+    assert system[0]["author"] is None
+    # Context, not a thing to catch up on: nobody's unread moved.
+    assert (await alice.get(f"/channels/{channel['id']}")).json()["membership"]["unread_count"] == 0
+
+    removed = await alice.delete(f"/channels/{channel['id']}/members/{bob.id}")
+    assert removed.status_code == 200
+    page = (await alice.get(f"/channels/{channel['id']}/messages")).json()
+    assert page["items"][0]["body"] == "김앨리스 님이 이밥 님을 내보냈습니다."
+
+
+async def test_a_channel_admin_can_hand_over_admin(
+    alice: Actor, bob: Actor, workspace: dict
+) -> None:
+    await _join_workspace(alice, bob, workspace)
+    channel = (
+        await alice.post(
+            f"/workspaces/{workspace['id']}/channels",
+            json={"name": "위임", "member_ids": [bob.id]},
+        )
+    ).json()
+
+    # A member cannot promote anyone, not even themself.
+    denied = await bob.patch(f"/channels/{channel['id']}/members/{bob.id}", json={"role": "admin"})
+    assert denied.status_code == 403
+
+    promoted = await alice.patch(
+        f"/channels/{channel['id']}/members/{bob.id}", json={"role": "admin"}
+    )
+    assert promoted.status_code == 200
+    assert promoted.json()["role"] == "admin"
+
+    # Now bob can do admin things — rename — and alice cannot demote herself.
+    renamed = await bob.patch(f"/channels/{channel['id']}", json={"name": "위임 완료"})
+    assert renamed.status_code == 200
+    own = await alice.patch(
+        f"/channels/{channel['id']}/members/{alice.id}", json={"role": "member"}
+    )
+    assert own.status_code == 403
+
+    page = (await alice.get(f"/channels/{channel['id']}/messages")).json()
+    assert page["items"][0]["body"] == "김앨리스 님이 이밥 님을 관리자로 지정했습니다."

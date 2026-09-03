@@ -89,6 +89,8 @@ export function ChannelHeader() {
           className="header-button"
           onClick={() => void toggleMute(channel.id)}
           title={muted ? "알림 켜기" : "알림 끄기"}
+          aria-label={muted ? "알림 켜기" : "알림 끄기"}
+          aria-pressed={muted}
         >
           {muted ? <IconBellOff size={15} /> : <IconBell size={15} />}
         </button>

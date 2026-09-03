@@ -28,12 +28,17 @@ export function asCommandError(error: unknown): CommandError {
 export function commandError(
   code: string,
   message: string,
-  options: { status?: number; requiresReauth?: boolean } = {},
+  options: {
+    status?: number;
+    requiresReauth?: boolean;
+    details?: Record<string, unknown> | null;
+  } = {},
 ): CommandError {
   return {
     code,
     message,
     status: options.status ?? null,
     requires_reauth: options.requiresReauth ?? false,
+    details: options.details ?? null,
   };
 }

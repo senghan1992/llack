@@ -280,6 +280,9 @@ export interface CommandError {
   message: string;
   status?: number | null;
   requires_reauth: boolean;
+  /** Server-side specifics (e.g. `max_upload_bytes` on payload_too_large).
+   *  Only the browser adapter fills this in. */
+  details?: Record<string, unknown> | null;
 }
 
 // ── Realtime events emitted by the shell ────────────────────────────────────

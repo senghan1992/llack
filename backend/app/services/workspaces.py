@@ -250,6 +250,27 @@ async def peek_invite(db: AsyncSession, *, token: str) -> WorkspaceInvite:
 
 
 async def accept_invite(db: AsyncSession, *, token: str, user: User) -> Workspace:
+    # A member who re-opens a bookmarked invite link is already where the link
+    # leads. Answer with the workspace instead of "already used" — the token
+    # is spent precisely because *they* spent it.
+    spent = await db.scalar(
+        select(WorkspaceInvite).where(WorkspaceInvite.token_hash == hash_token(token)).limit(1)
+    )
+    if spent is not None:
+        membership = await db.scalar(
+            select(WorkspaceMember.id)
+            .where(
+                WorkspaceMember.workspace_id == spent.workspace_id,
+                WorkspaceMember.user_id == user.id,
+                WorkspaceMember.is_active.is_(True),
+            )
+            .limit(1)
+        )
+        if membership is not None:
+            workspace = await db.get(Workspace, spent.workspace_id)
+            if workspace is not None:
+                return workspace
+
     invite = await peek_invite(db, token=token)
     if invite.email != user.email:
         raise Forbidden("This invitation was issued to a different email address.",

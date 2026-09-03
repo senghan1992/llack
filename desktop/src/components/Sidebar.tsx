@@ -8,11 +8,12 @@
 
 import { useMemo, useState } from "react";
 
-import { ChannelMark, IconGear, IconPlus } from "./Icon";
+import { ChannelMark, IconGear, IconPlus, IconSearch } from "./Icon";
 import type { Channel } from "@/lib/types";
 import { useApp } from "@/store/app";
 
 import { Avatar } from "./Avatar";
+import { BrowseChannels } from "./BrowseChannels";
 import { NewDm } from "./NewDm";
 
 export function Sidebar() {
@@ -30,6 +31,7 @@ export function Sidebar() {
   const setSettings = useApp((state) => state.setSettings);
 
   const [creating, setCreating] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [startingDm, setStartingDm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPrivate, setNewPrivate] = useState(false);
@@ -57,9 +59,13 @@ export function Sidebar() {
   };
 
   const renderChannel = (channel: Channel) => {
-    const unread = channel.membership?.unread_count ?? 0;
     const mentions = channel.membership?.mention_count ?? 0;
-    const muted = channel.membership?.is_muted ?? false;
+    // "멘션만" means exactly that: ordinary traffic neither bolds the row nor
+    // counts on the badge. The server keeps counting (for the read marker);
+    // the sidebar honours the person's choice.
+    const level = channel.membership?.notification_level ?? "all";
+    const muted = (channel.membership?.is_muted ?? false) || level === "nothing";
+    const unread = level === "mentions" ? 0 : (channel.membership?.unread_count ?? 0);
     const isDm = channel.kind === "dm" || channel.kind === "group_dm";
     const peer = isDm ? channel.peers[0] : undefined;
     const label = displayName(channel);
@@ -146,9 +152,18 @@ export function Sidebar() {
             <button
               type="button"
               className="sidebar-add"
+              onClick={() => setBrowsing(true)}
+              aria-label="채널 둘러보기"
+              title="채널 둘러보기 — 팀의 공개 채널을 보고 참여합니다"
+            >
+              <IconSearch size={13} />
+            </button>
+            <button
+              type="button"
+              className="sidebar-add"
               onClick={() => setCreating((open) => !open)}
-              aria-label="채널 추가"
-              title="채널 추가"
+              aria-label="채널 만들기"
+              title="채널 만들기"
             >
               <IconPlus size={13} />
             </button>
@@ -179,7 +194,20 @@ export function Sidebar() {
                 />
                 비공개 채널 (초대한 사람만 볼 수 있습니다)
               </label>
+              {/* Enter from the checkbox did nothing; a real button always works. */}
+              <button type="submit" className="sidebar-new-submit" disabled={!newName.trim()}>
+                만들기
+              </button>
             </form>
+          ) : null}
+          {groups.rooms.length <= 1 ? (
+            <button
+              type="button"
+              className="sidebar-empty-action"
+              onClick={() => setBrowsing(true)}
+            >
+              팀 채널 둘러보기
+            </button>
           ) : null}
           {groups.rooms.map(renderChannel)}
         </section>
@@ -246,6 +274,7 @@ export function Sidebar() {
       ) : null}
       <span className="sr-only">{people.size}명의 구성원</span>
       {startingDm ? <NewDm onClose={() => setStartingDm(false)} /> : null}
+      {browsing ? <BrowseChannels onClose={() => setBrowsing(false)} /> : null}
     </nav>
   );
 }

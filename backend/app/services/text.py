@@ -16,6 +16,12 @@ from collections.abc import Mapping
 MENTION_RE = re.compile(r"<@([0-9A-HJKMNP-TV-Z]{26})>")
 # @handle  — tolerated on input and normalised server-side
 HANDLE_MENTION_RE = re.compile(r"(?<![\w<])@([a-z0-9][a-z0-9._-]{1,63})\b", re.IGNORECASE)
+# @김앨리스  — a display name typed the way the UI shows it. Korean teams write
+# `@이름`, not `@handle`, and the UI renders every mention as `@표시이름`, so
+# people naturally type what they see. The token runs to whitespace or
+# punctuation; `resolve_name_mentions` then finds the longest display name it
+# starts with, so `@김앨리스님` still reaches 김앨리스.
+NAME_MENTION_RE = re.compile(r"(?<![\w<@])@([^\s@<>`*_~,.!?;:()\[\]{}\"'…/\\]{1,64})")
 # <#01J...>  — channel link
 CHANNEL_RE = re.compile(r"<#([0-9A-HJKMNP-TV-Z]{26})>")
 EVERYONE_RE = re.compile(r"(?<![\w<])@(here|channel|everyone)\b", re.IGNORECASE)
@@ -43,6 +49,65 @@ def extract_handle_mentions(body: str) -> list[str]:
     found = HANDLE_MENTION_RE.findall(scannable)
     reserved = {"here", "channel", "everyone"}
     return list(dict.fromkeys(h.lower() for h in found if h.lower() not in reserved))
+
+
+def extract_name_mention_tokens(body: str) -> list[str]:
+    """Candidate `@something` tokens that are not ASCII handles.
+
+    Returned lower-cased and de-duplicated; the caller matches them against
+    display names. ASCII-only tokens are left to the handle path — a handle
+    and a display name can legitimately differ, and the handle wins.
+    """
+    scannable = strip_code(body)
+    tokens: list[str] = []
+    for match in NAME_MENTION_RE.finditer(scannable):
+        token = match.group(1)
+        if token.isascii():
+            continue
+        tokens.append(token.lower())
+    return list(dict.fromkeys(tokens))
+
+
+def name_prefixes(tokens: list[str], *, max_length: int = 32) -> list[str]:
+    """Every prefix of every token, for one IN-list lookup of display names."""
+    prefixes: set[str] = set()
+    for token in tokens:
+        for end in range(1, min(len(token), max_length) + 1):
+            prefixes.add(token[:end])
+    return sorted(prefixes)
+
+
+def rewrite_names_to_mentions(body: str, name_to_id: dict[str, str]) -> str:
+    """Turn `@표시이름` into `<@id>`, longest matching name first.
+
+    `name_to_id` keys are lower-cased display names. A token such as
+    `@김앨리스님` matches `김앨리스` and keeps the trailing `님` as text.
+    """
+    if not name_to_id:
+        return body
+
+    protected: list[str] = []
+
+    def _protect(match: re.Match[str]) -> str:
+        protected.append(match.group(0))
+        return f"\x00{len(protected) - 1}\x00"
+
+    stashed = CODE_BLOCK_RE.sub(_protect, body)
+    names = sorted(name_to_id, key=len, reverse=True)
+
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(1)
+        if token.isascii():
+            return match.group(0)
+        lowered = token.lower()
+        for name in names:
+            if lowered.startswith(name):
+                rest = token[len(name) :]
+                return f"<@{name_to_id[name]}>{rest}"
+        return match.group(0)
+
+    rewritten = NAME_MENTION_RE.sub(_replace, stashed)
+    return re.sub(r"\x00(\d+)\x00", lambda m: protected[int(m.group(1))], rewritten)
 
 
 def extract_channel_links(body: str) -> list[str]:
@@ -123,6 +188,14 @@ def plain_text_preview(
         return f"@{display}" if display else "@사용자"
 
     text = MENTION_RE.sub(_mention, text)
-    text = re.sub(r"[*_~>#|]+", "", text)
+    # Strip Markdown *markers*, not characters: `landing_cta_click` and
+    # `9/13~9/15` used to come out as `landingctaclick` and `9/139/15`.
+    text = re.sub(r"\*\*|__|~~|\*", "", text)
+    text = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"\1", text)
+    text = re.sub(r"^[ \t]{0,3}#{1,6}[ \t]+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^[ \t]*>[ \t]?", "", text, flags=re.MULTILINE)
+    table_rule = r"^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$"
+    text = re.sub(table_rule, "", text, flags=re.MULTILINE)
+    text = text.replace("|", " ")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit] + ("…" if len(text) > limit else "")

@@ -14,7 +14,7 @@ import { create } from "zustand";
 
 import { api, asCommandError } from "@/lib/ipc";
 import { clearPendingInvite, pendingInviteToken } from "@/lib/invite";
-import { canonicaliseMentions } from "@/lib/markdown";
+import { canonicaliseMentions, uniqueNameMap } from "@/lib/markdown";
 import type {
   AppInstallation,
   Channel,
@@ -142,7 +142,7 @@ interface AppActions {
   loadOlder: (channelId: Id) => Promise<void>;
   /** Open a channel *at* a message: page back until it is loaded, then mark
    *  it for the transcript to scroll to and flash. */
-  revealMessage: (channelId: Id, messageId: Id) => Promise<void>;
+  revealMessage: (channelId: Id, messageId: Id, parentId?: Id | null) => Promise<void>;
   clearHighlight: () => void;
   refreshSidebar: () => Promise<void>;
   createChannel: (name: string, kind: "public" | "private") => Promise<Channel | null>;
@@ -303,6 +303,11 @@ export const useApp = create<AppStore>((set, get) => ({
         threadReplies: new Map(),
         badge: 0,
         connection: null,
+        // The dialogs are part of the signed-in session: 환경설정 used to stay
+        // open across logout and greet the next person to sign in.
+        settingsOpen: false,
+        paletteOpen: false,
+        highlightMessageId: null,
       });
     }
   },
@@ -495,8 +500,14 @@ export const useApp = create<AppStore>((set, get) => ({
     }
   },
 
-  revealMessage: async (channelId, messageId) => {
+  revealMessage: async (channelId, messageId, parentId) => {
     await get().openChannel(channelId);
+    // A thread reply lives in its thread, not the transcript — paging back
+    // would never find it. Open the thread instead.
+    if (parentId) {
+      await get().openThread(parentId);
+      return;
+    }
     // Page back until the target is loaded or history is exhausted. Capped:
     // twelve pages (~600 messages) is a search hit worth walking to; past
     // that, landing in the channel is better than a spinner marathon.
@@ -637,7 +648,13 @@ export const useApp = create<AppStore>((set, get) => ({
     const handleToId = new Map(
       [...state.people.values()].map((person) => [person.handle.toLowerCase(), person.id]),
     );
-    const canonical = canonicaliseMentions(body.trim(), handleToId);
+    // `@김앨리스` too — the name as everyone sees it. Unique names only; the
+    // server applies the same rule for clients that skip this step.
+    const canonical = canonicaliseMentions(
+      body.trim(),
+      handleToId,
+      uniqueNameMap(state.people.values()),
+    );
 
     try {
       const result = await api.sendMessage({

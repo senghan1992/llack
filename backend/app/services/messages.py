@@ -23,9 +23,12 @@ from app.models.user import User
 from app.services.text import (
     extract_handle_mentions,
     extract_mentions,
+    extract_name_mention_tokens,
     make_snippet,
+    name_prefixes,
     plain_text_preview,
     rewrite_handles_to_mentions,
+    rewrite_names_to_mentions,
 )
 
 log = get_logger(__name__)
@@ -129,6 +132,25 @@ async def _resolve_mentions(
             )
         )
         body = rewrite_handles_to_mentions(body, dict(rows.all()))
+
+    # `@김앨리스` — the name as the UI shows it. One IN-list over every prefix
+    # of every candidate token, so `@김앨리스님` finds 김앨리스 in a single query.
+    name_tokens = extract_name_mention_tokens(body)
+    if name_tokens:
+        rows = await db.execute(
+            select(func.lower(User.display_name), User.id)
+            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+            .where(
+                func.lower(User.display_name).in_(name_prefixes(name_tokens)),
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.is_active.is_(True),
+            )
+        )
+        name_to_id: dict[str, str] = {}
+        for name, user_id in rows.all():
+            # Two people with the same display name: ambiguous, mention nobody.
+            name_to_id[name] = "" if name in name_to_id else user_id
+        body = rewrite_names_to_mentions(body, {n: i for n, i in name_to_id.items() if i})
 
     mentioned, everyone = extract_mentions(body)
     return body, mentioned, everyone
@@ -236,7 +258,9 @@ async def create_message(
         channel.last_message_at = now
     channel.message_count += 1
 
-    await _bump_unread(db, message=message, channel=channel)
+    # "김앨리스 님이 참여했습니다" is context, not something to catch up on.
+    if kind != MessageKind.SYSTEM:
+        await _bump_unread(db, message=message, channel=channel)
     await db.flush()
 
     log.info(
@@ -295,11 +319,15 @@ async def _bump_unread(db: AsyncSession, *, message: Message, channel: Channel) 
     # An app-authored message has no author to exclude.
     not_author = [ChannelMember.user_id != author_id] if author_id else []
 
-    await db.execute(
-        update(ChannelMember)
-        .where(ChannelMember.channel_id == channel.id, *not_author)
-        .values(unread_count=ChannelMember.unread_count + 1)
-    )
+    # A thread reply is read inside its thread, not in the channel: it must
+    # not bold the channel for everyone. Only replies explicitly sent to the
+    # channel as well count as channel traffic. Mentions still count below.
+    if message.parent_id is None or message.also_sent_to_channel:
+        await db.execute(
+            update(ChannelMember)
+            .where(ChannelMember.channel_id == channel.id, *not_author)
+            .values(unread_count=ChannelMember.unread_count + 1)
+        )
 
     if message.mentions_everyone:
         mention_filter = [

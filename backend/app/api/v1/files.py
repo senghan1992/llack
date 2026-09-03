@@ -31,6 +31,7 @@ from app.models.workspace import WorkspaceMember
 from app.schemas.common import OkResponse
 from app.schemas.file import FileOut, RegisterUploadRequest, UploadTicket
 from app.schemas.user import UserBrief
+from app.services import files as file_service
 from app.services.storage import build_storage_key, display_filename, get_storage
 
 router = APIRouter(tags=["files"])
@@ -263,6 +264,7 @@ async def list_workspace_files(
             FileObject.workspace_id == ctx.workspace.id,
             FileObject.deleted_at.is_(None),
             FileObject.is_ready.is_(True),
+            file_service.visible_to(ctx.user.id),
         )
         .options(selectinload(FileObject.uploader))
     )

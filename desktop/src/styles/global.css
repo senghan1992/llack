@@ -5292,3 +5292,198 @@ kbd {
   color: var(--ink-muted);
   cursor: not-allowed;
 }
+
+/* ── 5인 팀 시뮬레이션 후속: 시스템 메시지 · 코드 복사 · 표/제목 · 채널 둘러보기 ── */
+
+.message-system {
+  padding: 2px 0;
+}
+.message-system .message-content {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--n7);
+  font-size: 12.5px;
+}
+.message-system time {
+  color: var(--n6);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.message-deleted .thread-summary {
+  margin-top: 4px;
+}
+
+.code-wrap {
+  position: relative;
+  margin: 6px 0;
+}
+.code-wrap .code-block {
+  margin: 0;
+}
+.code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--n4);
+  border-radius: var(--r-sm);
+  background: var(--n1);
+  color: var(--n8);
+  font: inherit;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 150ms var(--ease);
+}
+.code-wrap:hover .code-copy,
+.code-copy:focus-visible {
+  opacity: 1;
+}
+
+.md-heading {
+  margin: 8px 0 2px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+h1.md-heading { font-size: 17px; }
+h2.md-heading { font-size: 15.5px; }
+h3.md-heading,
+h4.md-heading { font-size: 14px; }
+
+ol.md-list {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+.md-task {
+  list-style: none;
+  margin-left: -18px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.md-task input {
+  margin: 0;
+  transform: translateY(1px);
+  accent-color: var(--signal);
+}
+.md-task.is-done > span {
+  color: var(--n7);
+  text-decoration: line-through;
+}
+
+.md-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.md-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 240px;
+}
+.md-table th,
+.md-table td {
+  padding: 4px 10px;
+  border: 1px solid var(--n4);
+  text-align: left;
+  vertical-align: top;
+}
+.md-table th {
+  background: var(--n2);
+  font-weight: 600;
+}
+.md-table tbody tr:nth-child(even) td {
+  background: var(--n1);
+}
+
+.message-link {
+  font-size: 12.5px;
+}
+
+.palette-label mark {
+  background: color-mix(in oklab, var(--signal) 18%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.sidebar-new-submit {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--n4);
+  border-radius: var(--r-sm);
+  background: var(--n0);
+  color: var(--n9);
+  font: inherit;
+  font-size: 12px;
+}
+.sidebar-new-submit:disabled {
+  opacity: 0.5;
+}
+
+.browse-channels {
+  width: min(520px, calc(100vw - 32px));
+}
+.browse-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.browse-intro {
+  margin: 0;
+  color: var(--n7);
+  font-size: 13px;
+}
+.browse-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.browse-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+}
+.browse-list li:hover {
+  background: var(--n1);
+}
+.browse-list li.is-joined {
+  color: var(--n7);
+}
+.browse-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.browse-text strong {
+  font-weight: 600;
+  color: var(--n9);
+}
+.browse-text span {
+  font-size: 12px;
+  color: var(--n7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-action.is-primary {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+.member-action.is-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--signal) 10%, transparent);
+}
+.settings-notify-row button {
+  border-color: var(--signal);
+  color: var(--signal);
+}
