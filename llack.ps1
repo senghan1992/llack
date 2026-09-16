@@ -177,6 +177,7 @@ function Task-Doctor {
     Write-Host ""
     if ($problems.Count -eq 0) {
         Write-Host "모두 준비되었습니다. 다음: .\llack.ps1 setup" -ForegroundColor Green
+        Write-Host "(참고) 백엔드 venv 가 없으면 dev/migrate/seed 가 자동으로 만들어 줍니다." -ForegroundColor DarkGray
     } else {
         Write-Host "다음 항목이 필요합니다:" -ForegroundColor Red
         foreach ($problem in $problems) { Write-Host "  - $problem" }
@@ -198,6 +199,29 @@ function Task-SetupBackend {
         & $Pip install -q asgi-lifespan anyio
     }
     Write-Ok "완료"
+}
+
+# 백엔드 venv 가 아직 없으면 자동으로 만들어 줍니다.
+# setup 을 안 하고 바로 dev/migrate/seed 를 부르면 venv 도구가 없어서
+# "alembic.exe 인식되지 않음" 같은 원인이 불명확한 오류가 뜨는데,
+# 이 함수가 그 전제(setup 완료)를 대신 만족시켜 줍니다.
+function Ensure-BackendVenv {
+    # 핵심 실행 파일 중 하나라도 없으면 venv 설치/재설치가 필요하다고 판단합니다.
+    $marker = Join-Path $VenvBin "python.exe"
+    if (Test-Path $marker) {
+        # venv 는 있지만 alembic 등 도구가 빠져 있으면(설치가 중단된 경우) 보충합니다.
+        foreach ($tool in @("$VenvBin\uvicorn.exe", "$VenvBin\alembic.exe", "$VenvBin\pytest.exe")) {
+            if (-not (Test-Path $tool)) {
+                Write-Host "    venv 도구가 일부 빠져 있습니다. 의존성을 다시 설치합니다." -ForegroundColor Yellow
+                Task-SetupBackend
+                return
+            }
+        }
+        return
+    }
+    Write-Host "    백엔드 venv(git 무시 대상)가 아직 없습니다. 자동으로 생성합니다 (2~3분)..." -ForegroundColor Yellow
+    Write-Host "    (생략하려면: .\llack.ps1 doctor 를 먼저 실행해 Python 이 있는지 확인)" -ForegroundColor DarkGray
+    Task-SetupBackend
 }
 
 function Task-SetupDesktop {
@@ -228,8 +252,10 @@ function Task-SetupSdk {
 }
 
 function Task-Migrate {
+    Ensure-BackendVenv
     Invoke-In $Backend {
         New-Item -ItemType Directory -Force -Path "var" | Out-Null
+        if (-not (Test-Path $Alembic)) { throw "alembic 도구가 없습니다. .\llack.ps1 setup (또는 자동 생성이 실패함) 을 확인하세요." }
         & $Alembic upgrade head
     }
 }
@@ -237,7 +263,10 @@ function Task-Migrate {
 function Task-Seed {
     Write-Step "마이그레이션 및 시드"
     Task-Migrate
-    Invoke-In $Backend { & $Py -m scripts.seed }
+    Invoke-In $Backend {
+        if (-not (Test-Path $Py)) { throw "venv 의 python.exe 가 없습니다. .\llack.ps1 setup 을 실행하세요." }
+        & $Py -m scripts.seed
+    }
 }
 
 function Task-Dev {
@@ -245,6 +274,7 @@ function Task-Dev {
     Task-Migrate
     Write-Ok "http://localhost:8000/docs  (Ctrl+C 로 종료)"
     Invoke-In $Backend {
+        if (-not (Test-Path $Uvicorn)) { throw "uvicorn 도구가 없습니다. .\llack.ps1 setup 을 실행하세요." }
         & $Uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
     }
 }
@@ -291,7 +321,11 @@ function Task-ExampleApp {
 
 function Task-Test {
     Write-Step "백엔드 테스트"
-    Invoke-In $Backend { & $Pytest -q }
+    Ensure-BackendVenv
+    Invoke-In $Backend {
+        if (-not (Test-Path $Pytest)) { throw "pytest 도구가 없습니다. .\llack.ps1 setup 을 실행하세요." }
+        & $Pytest -q
+    }
     if (Get-Command cargo -ErrorAction SilentlyContinue) {
         Write-Step "Rust 코어 테스트"
         Invoke-In $Desktop { cargo test -p llack-core }
@@ -302,7 +336,9 @@ function Task-Test {
 
 function Task-Smoke {
     Write-Step "종단 검증 (서버가 실행 중이어야 합니다)"
+    Ensure-BackendVenv
     Invoke-In $Backend {
+        if (-not (Test-Path $Py)) { throw "venv 의 python.exe 가 없습니다. .\llack.ps1 setup 을 실행하세요." }
         & $Py scripts\smoke_realtime.py
         & $Py scripts\smoke_apps.py
     }
