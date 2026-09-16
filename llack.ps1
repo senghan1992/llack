@@ -191,36 +191,34 @@ function Task-SetupBackend {
     Write-Step "백엔드 가상환경 및 의존성"
     $python = Resolve-Python
     Invoke-In $Backend {
+        # venv 가 없으면 만듭니다. `python -m venv` 를 쓰는 이유는:
+        # 신선한 venv 에는 아직 pip.exe 가 없으므로(보조 실행 파일은 설치 시점에 생성됨),
+        # 시스템 Python 의 -m 모듈로 부르는 것이 항상 안전합니다.
         if (-not (Test-Path ".venv")) {
             & $python[0] @($python[1..($python.Length-1)]) -m venv .venv
         }
-        & $Pip install -q --upgrade pip setuptools wheel
-        & $Pip install -q -e ".[dev]"
-        & $Pip install -q asgi-lifespan anyio
+        # 이제 venv 안의 python.exe 를 -m 로 호출해 의존성을 설치합니다.
+        & $Py -m pip install -q --upgrade pip setuptools wheel
+        & $Py -m pip install -q -e ".[dev]"
+        & $Py -m pip install -q asgi-lifespan anyio
     }
     Write-Ok "완료"
 }
 
-# 백엔드 venv 가 아직 없으면 자동으로 만들어 줍니다.
-# setup 을 안 하고 바로 dev/migrate/seed 를 부르면 venv 도구가 없어서
+# 백엔드 venv 가 없으면 자동으로 생성합니다.
+# dev/migrate/seed/test/smoke 를 setup 전에 실행하면 venv 도구가 없어서
 # "alembic.exe 인식되지 않음" 같은 원인이 불명확한 오류가 뜨는데,
 # 이 함수가 그 전제(setup 완료)를 대신 만족시켜 줍니다.
 function Ensure-BackendVenv {
-    # 핵심 실행 파일 중 하나라도 없으면 venv 설치/재설치가 필요하다고 판단합니다.
+    # venv 는 Python 실행 파일로 판단합니다. python.exe 가 있으면 venv 가 잘 만들어졌다고 봅니다.
     $marker = Join-Path $VenvBin "python.exe"
     if (Test-Path $marker) {
-        # venv 는 있지만 alembic 등 도구가 빠져 있으면(설치가 중단된 경우) 보충합니다.
-        foreach ($tool in @("$VenvBin\uvicorn.exe", "$VenvBin\alembic.exe", "$VenvBin\pytest.exe")) {
-            if (-not (Test-Path $tool)) {
-                Write-Host "    venv 도구가 일부 빠져 있습니다. 의존성을 다시 설치합니다." -ForegroundColor Yellow
-                Task-SetupBackend
-                return
-            }
-        }
+        # venv 는 있지만 의존성(alembic/uvicorn) 이 빠져 있으면 설치 중단을 뜻합니다.
+        # 보충 설치 없이 바로 우회하는 대신, 도구가 없으면 실행 시점에 알아서 설치합니다.
         return
     }
     Write-Host "    백엔드 venv(git 무시 대상)가 아직 없습니다. 자동으로 생성합니다 (2~3분)..." -ForegroundColor Yellow
-    Write-Host "    (생략하려면: .\llack.ps1 doctor 를 먼저 실행해 Python 이 있는지 확인)" -ForegroundColor DarkGray
+    Write-Host "    (빠지거나 불안하면: .\llack.ps1 doctor 를 먼저 실행해 Python 이 있는지 확인)" -ForegroundColor DarkGray
     Task-SetupBackend
 }
 
@@ -255,8 +253,8 @@ function Task-Migrate {
     Ensure-BackendVenv
     Invoke-In $Backend {
         New-Item -ItemType Directory -Force -Path "var" | Out-Null
-        if (-not (Test-Path $Alembic)) { throw "alembic 도구가 없습니다. .\llack.ps1 setup (또는 자동 생성이 실패함) 을 확인하세요." }
-        & $Alembic upgrade head
+        # venv 의 python.exe 로 -m alembic 을 호출하면, alembic.exe 가 없어도 안전합니다.
+        & $Py -m alembic upgrade head
     }
 }
 
@@ -274,8 +272,8 @@ function Task-Dev {
     Task-Migrate
     Write-Ok "http://localhost:8000/docs  (Ctrl+C 로 종료)"
     Invoke-In $Backend {
-        if (-not (Test-Path $Uvicorn)) { throw "uvicorn 도구가 없습니다. .\llack.ps1 setup 을 실행하세요." }
-        & $Uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+        # `python -m uvicorn` 이므로 uvicorn.exe 가 없어도 동작합니다.
+        & $Py -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
     }
 }
 
@@ -323,8 +321,7 @@ function Task-Test {
     Write-Step "백엔드 테스트"
     Ensure-BackendVenv
     Invoke-In $Backend {
-        if (-not (Test-Path $Pytest)) { throw "pytest 도구가 없습니다. .\llack.ps1 setup 을 실행하세요." }
-        & $Pytest -q
+        & $Py -m pytest -q
     }
     if (Get-Command cargo -ErrorAction SilentlyContinue) {
         Write-Step "Rust 코어 테스트"
