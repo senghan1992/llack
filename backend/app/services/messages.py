@@ -1,761 +1,531 @@
-"""Message creation, editing, threading, reactions, history and search."""
+"""Message creation, editing, threading, reactions and read state."""
 
 from __future__ import annotations
 
-import time
-from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
-from typing import Any
+from dataclasses import dataclass
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.core.enums import ChannelKind, MessageKind, NotificationLevel
-from app.core.errors import Forbidden, Gone, NotFound
-from app.core.ids import is_ulid, new_ulid
-from app.core.logging import get_logger
-from app.models.channel import Channel, ChannelMember
-from app.models.file import FileObject
-from app.models.message import Message, MessageAttachment, MessageClientKey, Reaction
+from app.core.config import get_settings
+from app.core.errors import not_found, validation_error
+from app.core.ids import MESSAGE_PREFIX, REACTION_PREFIX, READ_STATE_PREFIX, new_id
+from app.models.base import utcnow
+from app.models.channel import Channel
+from app.models.file import File
+from app.models.message import KIND_TEXT, Message, Reaction, ReadState, message_attachments
 from app.models.user import User
-from app.services.dnd import in_dnd
-from app.services.text import (
-    extract_broadcast,
-    extract_handle_mentions,
-    extract_mentions,
-    extract_name_mention_tokens,
-    make_snippet,
-    name_prefixes,
-    plain_text_preview,
-    rewrite_handles_to_mentions,
-    rewrite_names_to_mentions,
-)
+from app.schemas.message import MessageOut, ReactionOut, ReplyToOut
 
-log = get_logger(__name__)
-
-MAX_HISTORY_LIMIT = 200
+MAX_PAGE_SIZE = 100
+DEFAULT_PAGE_SIZE = 50
 
 
-# ── Loading ─────────────────────────────────────────────────────────────────
-
-
-def _with_relations() -> list[Any]:
-    return [
-        selectinload(Message.author),
-        selectinload(Message.reactions),
-        selectinload(Message.attachments).selectinload(MessageAttachment.file),
-    ]
-
-
-async def get_message(db: AsyncSession, message_id: str, *, with_relations: bool = True) -> Message:
-    stmt = select(Message).where(Message.id == message_id).limit(1)
-    if with_relations:
-        stmt = stmt.options(*_with_relations())
-    message = await db.scalar(stmt)
+async def get_message_or_404(session: AsyncSession, message_id: str) -> Message:
+    message = await session.get(Message, message_id)
     if message is None:
-        raise NotFound("Message not found.", code="message_not_found")
+        raise not_found("message not found")
     return message
-
-
-async def history(
-    db: AsyncSession,
-    *,
-    channel_id: str,
-    limit: int = 50,
-    before: str | None = None,
-    after: str | None = None,
-    include_thread_replies: bool = False,
-) -> tuple[list[Message], bool]:
-    """Keyset-paginated channel history, newest first.
-
-    `before`/`after` are message ULIDs. Thread replies are excluded by default
-    so the channel view shows roots only — the thread pane fetches them
-    separately.
-    """
-    limit = max(1, min(limit, MAX_HISTORY_LIMIT))
-    stmt = select(Message).where(Message.channel_id == channel_id).options(*_with_relations())
-
-    if not include_thread_replies:
-        # A reply the author also broadcast still belongs in the channel.
-        stmt = stmt.where(
-            or_(Message.parent_id.is_(None), Message.also_sent_to_channel.is_(True))
-        )
-    if before and is_ulid(before):
-        stmt = stmt.where(Message.id < before)
-    if after and is_ulid(after):
-        stmt = stmt.where(Message.id > after)
-
-    # Fetch one extra row to answer has_more without a second COUNT query.
-    stmt = stmt.order_by(Message.id.desc()).limit(limit + 1)
-    rows = list((await db.scalars(stmt)).all())
-    has_more = len(rows) > limit
-    return rows[:limit], has_more
-
-
-async def thread_replies(
-    db: AsyncSession, *, parent_id: str, limit: int = 100, after: str | None = None
-) -> tuple[list[Message], bool]:
-    """Thread replies, oldest first — a thread reads top to bottom."""
-    limit = max(1, min(limit, MAX_HISTORY_LIMIT))
-    stmt = (
-        select(Message)
-        .where(Message.parent_id == parent_id)
-        .options(*_with_relations())
-        .order_by(Message.id.asc())
-        .limit(limit + 1)
-    )
-    if after and is_ulid(after):
-        stmt = stmt.where(Message.id > after)
-    rows = list((await db.scalars(stmt)).all())
-    has_more = len(rows) > limit
-    return rows[:limit], has_more
-
-
-# ── Creation ────────────────────────────────────────────────────────────────
-
-
-async def _resolve_mentions(
-    db: AsyncSession, *, body: str, workspace_id: str
-) -> tuple[str, list[str], bool]:
-    """Normalise `@handle` to `<@id>` and collect mention targets."""
-    from app.models.workspace import WorkspaceMember
-
-    handles = extract_handle_mentions(body)
-    if handles:
-        rows = await db.execute(
-            select(User.handle, User.id)
-            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
-            .where(
-                User.handle.in_(handles),
-                WorkspaceMember.workspace_id == workspace_id,
-                WorkspaceMember.is_active.is_(True),
-            )
-        )
-        body = rewrite_handles_to_mentions(body, dict(rows.all()))
-
-    # `@김앨리스` — the name as the UI shows it. One IN-list over every prefix
-    # of every candidate token, so `@김앨리스님` finds 김앨리스 in a single query.
-    name_tokens = extract_name_mention_tokens(body)
-    if name_tokens:
-        rows = await db.execute(
-            select(func.lower(User.display_name), User.id)
-            .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
-            .where(
-                func.lower(User.display_name).in_(name_prefixes(name_tokens)),
-                WorkspaceMember.workspace_id == workspace_id,
-                WorkspaceMember.is_active.is_(True),
-            )
-        )
-        name_to_id: dict[str, str] = {}
-        for name, user_id in rows.all():
-            # Two people with the same display name: ambiguous, mention nobody.
-            name_to_id[name] = "" if name in name_to_id else user_id
-        body = rewrite_names_to_mentions(body, {n: i for n, i in name_to_id.items() if i})
-
-    mentioned, everyone = extract_mentions(body)
-    return body, mentioned, everyone
 
 
 async def create_message(
-    db: AsyncSession,
-    *,
+    session: AsyncSession,
     channel: Channel,
-    author: User | None,
+    author: User,
     body: str,
-    blocks: list[dict[str, Any]] | None = None,
-    client_msg_id: str | None = None,
     parent_id: str | None = None,
-    also_send_to_channel: bool = False,
-    file_ids: list[str] | None = None,
-    app_id: str | None = None,
-    kind: MessageKind = MessageKind.USER,
-) -> tuple[Message, bool]:
-    """Insert a message. Returns (message, created).
-
-    `created=False` means `client_msg_id` matched an existing row — a retried
-    send after a dropped response, which must not double-post.
-    """
-    if channel.is_archived:
-        raise Forbidden("This channel is archived.", code="channel_archived")
-
-    # Serialise writers per channel, and do it *first*. A send bumps every
-    # member's unread counter with one UPDATE and then touches the channel row;
-    # two concurrent sends into the same channel used to lock those member rows
-    # in different orders and deadlock (Postgres: "deadlock detected" under a
-    # 20-user load test). Taking the channel row lock before anything else gives
-    # every writer the same lock order. SQLite serialises writes on its own and
-    # has no row locks, so the statement is skipped there.
-    if db.bind is not None and db.bind.dialect.name == "postgresql":
-        await db.execute(
-            select(Channel.id).where(Channel.id == channel.id).with_for_update()
-        )
-
-    if client_msg_id:
-        existing = await db.scalar(
-            select(Message)
-            .where(Message.channel_id == channel.id, Message.client_msg_id == client_msg_id)
-            .options(*_with_relations())
-            .limit(1)
-        )
-        if existing is not None:
-            return existing, False
+    reply_to_id: str | None = None,
+    inline: bool = False,
+    attachment_ids: list[str] | None = None,
+) -> Message:
+    target: Message | None = None
+    if reply_to_id:
+        target = await session.get(Message, reply_to_id)
+        if target is None or target.channel_id != channel.id:
+            raise not_found("the message to reply to was not found")
+        if target.deleted_at is not None:
+            raise validation_error("a deleted message cannot be answered", "reply_to_id")
+        # Replies are one level deep: answering a reply joins the thread of
+        # the message that reply answered.
+        parent_id = target.parent_id or target.id
 
     parent: Message | None = None
     if parent_id:
-        parent = await db.scalar(select(Message).where(Message.id == parent_id).limit(1))
+        parent = await session.get(Message, parent_id)
         if parent is None or parent.channel_id != channel.id:
-            raise NotFound("The thread you replied to does not exist.", code="thread_not_found")
-        # Threads are one level deep; replying to a reply joins its root thread.
+            raise not_found("parent message not found")
         if parent.parent_id is not None:
-            parent_id = parent.parent_id
-            parent = await db.scalar(select(Message).where(Message.id == parent_id).limit(1))
+            raise validation_error("threads cannot be nested", "parent_id")
 
-    normalised_body, mentioned, everyone = await _resolve_mentions(
-        db, body=body, workspace_id=channel.workspace_id
-    )
+    clean_body = body.strip()
+    wanted = list(dict.fromkeys(attachment_ids or []))
+    if not clean_body and not wanted:
+        raise validation_error("message body is required", "body")
 
     message = Message(
-        id=new_ulid(),
+        id=new_id(MESSAGE_PREFIX),
         channel_id=channel.id,
-        user_id=author.id if author else None,
-        app_id=app_id,
-        kind=kind.value,
-        client_msg_id=client_msg_id,
-        body=normalised_body,
-        blocks=blocks,
+        user_id=author.id,
+        body=clean_body,
+        kind=KIND_TEXT,
         parent_id=parent_id,
-        also_sent_to_channel=bool(parent_id) and also_send_to_channel,
-        mentioned_user_ids=mentioned,
-        mentions_everyone=everyone,
-        broadcast=extract_broadcast(normalised_body) if everyone else None,
+        reply_to_id=target.id if target is not None else None,
+        inline=bool(inline and target is not None),
     )
-    db.add(message)
-    # The idempotency key lives in its own table (see MessageClientKey): two
-    # retries racing here collide on that primary key, not on `messages`.
-    client_key = (
-        MessageClientKey(channel_id=channel.id, client_msg_id=client_msg_id, message_id=message.id)
-        if client_msg_id
-        else None
-    )
-    if client_key is not None:
-        db.add(client_key)
+    session.add(message)
+    await session.flush()
 
-    if file_ids:
-        await _attach_files(
-            db, message=message, file_ids=file_ids, workspace_id=channel.workspace_id
+    if wanted:
+        files = list(await session.scalars(select(File).where(File.id.in_(wanted))))
+        found = {item.id for item in files}
+        missing = [item for item in wanted if item not in found]
+        if missing:
+            raise not_found(f"attachment not found: {missing[0]}")
+        not_owned = [item for item in files if item.owner_id != author.id]
+        if not_owned:
+            raise validation_error("attachment belongs to another user", "attachment_ids")
+        await session.execute(
+            message_attachments.insert(),
+            [{"message_id": message.id, "file_id": item.id} for item in files],
         )
+        await session.flush()
 
-    try:
-        # SAVEPOINT, not the outer transaction: a duplicate client_msg_id must
-        # roll back only this insert, leaving the caller's transaction usable.
-        async with db.begin_nested():
-            await db.flush()
-    except IntegrityError:
-        # Two concurrent retries of the same client_msg_id raced; the loser
-        # reads back the winner's row.
-        if not client_msg_id:
-            raise
-        db.expunge(message)
-        if client_key is not None:
-            db.expunge(client_key)
-        existing = await db.scalar(
-            select(Message)
-            .where(Message.channel_id == channel.id, Message.client_msg_id == client_msg_id)
-            .options(*_with_relations())
-            .limit(1)
-        )
-        if existing is None:
-            raise
-        return existing, False
-
-    now = datetime.now(UTC)
     if parent is not None:
-        parent.reply_count += 1
-        parent.last_reply_at = now
-        if author and author.id not in parent.reply_user_ids:
-            # Reassigned rather than mutated so SQLAlchemy sees the JSON change.
-            parent.reply_user_ids = [*parent.reply_user_ids, author.id]
-
-    # Only channel-visible messages move the sidebar's "latest activity".
-    if parent_id is None or message.also_sent_to_channel:
-        channel.last_message_id = message.id
-        channel.last_message_at = now
-    channel.message_count += 1
-
-    # "김앨리스 님이 참여했습니다" is context, not something to catch up on.
-    if kind != MessageKind.SYSTEM:
-        await _bump_unread(db, message=message, channel=channel)
-    await db.flush()
-
-    log.info(
-        "message.created",
-        message_id=message.id,
-        channel_id=channel.id,
-        user_id=author.id if author else None,
-        is_reply=parent_id is not None,
-    )
-    return message, True
+        await recompute_thread_stats(session, parent.id)
+    return message
 
 
-async def _attach_files(
-    db: AsyncSession, *, message: Message, file_ids: list[str], workspace_id: str
-) -> None:
-    files = list(
-        (
-            await db.scalars(
-                select(FileObject).where(
-                    FileObject.id.in_(set(file_ids)),
-                    FileObject.workspace_id == workspace_id,
-                    FileObject.deleted_at.is_(None),
-                    FileObject.is_ready.is_(True),
-                )
-            )
-        ).all()
-    )
-    found = {f.id for f in files}
-    missing = set(file_ids) - found
-    if missing:
-        # A quarantined file is gone on purpose; say so rather than "not found".
-        quarantined = list(
-            (
-                await db.scalars(
-                    select(FileObject.id).where(
-                        FileObject.id.in_(missing), FileObject.scan_status == "infected"
-                    )
-                )
-            ).all()
-        )
-        if quarantined:
-            raise Gone(
-                "This attachment was quarantined by the virus scanner.",
-                code="file_quarantined",
-                details={"file_ids": sorted(quarantined)},
-            )
-        raise NotFound(
-            "Some attachments could not be found or are still uploading.",
-            code="attachment_not_ready",
-            details={"file_ids": sorted(missing)},
-        )
-    infected = [f.id for f in files if f.scan_status == "infected"]
-    if infected:
-        raise Gone(
-            "This attachment was quarantined by the virus scanner.",
-            code="file_quarantined",
-            details={"file_ids": sorted(infected)},
-        )
-    # Preserve the order the client sent.
-    order = {fid: i for i, fid in enumerate(file_ids)}
-    for file in sorted(files, key=lambda f: order.get(f.id, 0)):
-        db.add(
-            MessageAttachment(
-                id=new_ulid(),
-                message_id=message.id,
-                file_id=file.id,
-                sort_order=order.get(file.id, 0),
-            )
-        )
-
-
-async def _bump_unread(db: AsyncSession, *, message: Message, channel: Channel) -> None:
-    """Increment unread/mention counters for everyone except the author.
-
-    One UPDATE for unread and one for mentions, rather than a row per member —
-    a #general with 2,000 people otherwise costs 2,000 statements per message.
-    """
-    author_id = message.user_id
-    # An app-authored message has no author to exclude.
-    not_author = [ChannelMember.user_id != author_id] if author_id else []
-
-    # A thread reply is read inside its thread, not in the channel: it must
-    # not bold the channel for everyone. Only replies explicitly sent to the
-    # channel as well count as channel traffic. Mentions still count below.
-    if message.parent_id is None or message.also_sent_to_channel:
-        await db.execute(
-            update(ChannelMember)
-            .where(ChannelMember.channel_id == channel.id, *not_author)
-            .values(unread_count=ChannelMember.unread_count + 1)
-        )
-
-    if message.mentions_everyone and message.broadcast == "here":
-        # @here is "whoever is around": only members present right now are
-        # called, so the badge does not greet someone back from holiday.
-        present = await present_member_ids(db, channel_id=channel.id)
-        targets = set(present) | set(message.mentioned_user_ids)
-        if not targets:
-            return
-        mention_filter = [
-            ChannelMember.user_id.in_(targets),
-            ChannelMember.notification_level != NotificationLevel.NOTHING.value,
-        ]
-    elif message.mentions_everyone:
-        mention_filter = [
-            ChannelMember.notification_level != NotificationLevel.NOTHING.value
-        ]
-    elif message.mentioned_user_ids:
-        mention_filter = [ChannelMember.user_id.in_(set(message.mentioned_user_ids))]
-    else:
+async def recompute_thread_stats(session: AsyncSession, root_id: str) -> None:
+    root = await session.get(Message, root_id)
+    if root is None:
         return
-
-    await db.execute(
-        update(ChannelMember)
-        .where(ChannelMember.channel_id == channel.id, *not_author, *mention_filter)
-        .values(mention_count=ChannelMember.mention_count + 1)
-    )
-
-
-# ── Editing / deletion ──────────────────────────────────────────────────────
-
-
-async def update_message(
-    db: AsyncSession,
-    *,
-    message: Message,
-    actor: User,
-    body: str,
-    blocks: list[dict[str, Any]] | None = None,
-    workspace_id: str,
-) -> Message:
-    if message.user_id != actor.id:
-        raise Forbidden("Only the author can edit a message.", code="not_message_author")
-    if message.deleted_at is not None:
-        raise Forbidden("This message was deleted.", code="message_deleted")
-
-    normalised_body, mentioned, everyone = await _resolve_mentions(
-        db, body=body, workspace_id=workspace_id
-    )
-    message.body = normalised_body
-    message.blocks = blocks
-    message.mentioned_user_ids = mentioned
-    message.mentions_everyone = everyone
-    message.broadcast = extract_broadcast(normalised_body) if everyone else None
-    message.edited_at = datetime.now(UTC)
-    message.edit_count += 1
-    await db.flush()
-    return message
-
-
-async def delete_message(
-    db: AsyncSession, *, message: Message, actor: User, is_channel_admin: bool = False
-) -> Message:
-    if message.user_id != actor.id and not is_channel_admin:
-        raise Forbidden(
-            "Only the author or a channel admin can delete a message.", code="cannot_delete_message"
+    count, last_reply_at = (
+        await session.execute(
+            select(func.count(Message.id), func.max(Message.created_at)).where(
+                Message.parent_id == root_id,
+                Message.deleted_at.is_(None),
+            )
         )
-    if message.deleted_at is not None:
-        return message
+    ).one()
+    root.reply_count = int(count or 0)
+    root.last_reply_at = last_reply_at
 
-    # Soft delete: the row stays so thread counts and read cursors hold.
-    message.deleted_at = datetime.now(UTC)
-    message.body = ""
-    message.blocks = None
-    message.mentioned_user_ids = []
-    message.mentions_everyone = False
-    message.broadcast = None
-    await db.flush()
+
+async def list_messages(
+    session: AsyncSession,
+    channel: Channel,
+    limit: int = DEFAULT_PAGE_SIZE,
+    before: str | None = None,
+) -> tuple[list[Message], bool]:
+    """Return the top-level messages of a channel, newest last.
+
+    Without a cursor the newest page is returned; ``before`` walks backwards
+    through the history. A reply written in the channel is a top-level
+    message too: it is quoted in place of the message it answers.
+    """
+    page_size = max(1, min(limit, MAX_PAGE_SIZE))
+    query = select(Message).where(
+        Message.channel_id == channel.id,
+        or_(Message.parent_id.is_(None), Message.inline.is_(True)),
+    )
+
+    if before:
+        anchor = await session.get(Message, before)
+        if anchor is None or anchor.channel_id != channel.id:
+            raise not_found("message not found")
+        query = query.where(
+            or_(
+                Message.created_at < anchor.created_at,
+                and_(Message.created_at == anchor.created_at, Message.id < anchor.id),
+            )
+        )
+
+    rows = list(
+        await session.scalars(
+            query.order_by(Message.created_at.desc(), Message.id.desc()).limit(page_size + 1)
+        )
+    )
+    has_more = len(rows) > page_size
+    messages = rows[:page_size]
+    messages.reverse()
+    return messages, has_more
+
+
+async def list_thread_replies(
+    session: AsyncSession, root: Message, limit: int = MAX_PAGE_SIZE
+) -> list[Message]:
+    """The replies of a thread root, oldest first."""
+    rows = await session.scalars(
+        select(Message)
+        .where(Message.parent_id == root.id)
+        .order_by(Message.created_at, Message.id)
+        .limit(max(1, min(limit, MAX_PAGE_SIZE)))
+    )
+    return list(rows)
+
+
+async def edit_message(session: AsyncSession, message: Message, body: str) -> Message:
+    if message.deleted_at is not None:
+        raise validation_error("message has been deleted", "body")
+    clean = body.strip()
+    if not clean:
+        raise validation_error("message body is required", "body")
+    message.body = clean
+    message.edited_at = utcnow()
+    await session.flush()
     return message
 
 
-# ── Reactions ───────────────────────────────────────────────────────────────
+async def delete_message(session: AsyncSession, message: Message) -> Message:
+    message.deleted_at = utcnow()
+    message.body = ""
+    await session.flush()
+    if message.parent_id:
+        await recompute_thread_stats(session, message.parent_id)
+    return message
 
 
-async def add_reaction(
-    db: AsyncSession, *, message: Message, user_id: str, emoji: str
-) -> tuple[Reaction, bool]:
-    existing = await db.scalar(
-        select(Reaction)
-        .where(
+async def toggle_reaction(
+    session: AsyncSession, message: Message, user_id: str, emoji: str
+) -> bool:
+    """Add the reaction, or remove it when the user already reacted with it."""
+    existing = await session.scalar(
+        select(Reaction).where(
             Reaction.message_id == message.id,
             Reaction.user_id == user_id,
             Reaction.emoji == emoji,
         )
-        .limit(1)
     )
     if existing is not None:
-        return existing, False
-
-    reaction = Reaction(id=new_ulid(), message_id=message.id, user_id=user_id, emoji=emoji)
-    db.add(reaction)
-    try:
-        async with db.begin_nested():
-            await db.flush()
-    except IntegrityError:
-        # Same emoji from the same user twice (double-click); treat as a no-op.
-        db.expunge(reaction)
-        existing = await db.scalar(
-            select(Reaction)
-            .where(
-                Reaction.message_id == message.id,
-                Reaction.user_id == user_id,
-                Reaction.emoji == emoji,
-            )
-            .limit(1)
-        )
-        if existing is None:
-            raise
-        return existing, False
-    return reaction, True
-
-
-async def remove_reaction(
-    db: AsyncSession, *, message_id: str, user_id: str, emoji: str
-) -> bool:
-    reaction = await db.scalar(
-        select(Reaction)
-        .where(
-            Reaction.message_id == message_id,
-            Reaction.user_id == user_id,
-            Reaction.emoji == emoji,
-        )
-        .limit(1)
-    )
-    if reaction is None:
+        await session.delete(existing)
+        await session.flush()
         return False
-    await db.delete(reaction)
-    await db.flush()
+    session.add(
+        Reaction(
+            id=new_id(REACTION_PREFIX),
+            message_id=message.id,
+            user_id=user_id,
+            emoji=emoji,
+        )
+    )
+    await session.flush()
     return True
 
 
-# ── Search ──────────────────────────────────────────────────────────────────
+async def remove_reaction(
+    session: AsyncSession, message: Message, user_id: str, emoji: str
+) -> None:
+    existing = await session.scalar(
+        select(Reaction).where(
+            Reaction.message_id == message.id,
+            Reaction.user_id == user_id,
+            Reaction.emoji == emoji,
+        )
+    )
+    if existing is not None:
+        await session.delete(existing)
+        await session.flush()
 
 
-async def search_messages(
-    db: AsyncSession,
-    *,
-    workspace_id: str,
-    user_id: str,
-    query: str,
-    channel_id: str | None = None,
-    from_user_id: str | None = None,
-    limit: int = 30,
-    cursor: str | None = None,
-) -> tuple[list[tuple[Message, Channel, str]], bool, int]:
-    """Search messages the user can actually see.
+async def set_pinned(session: AsyncSession, message: Message, pinned: bool) -> Message:
+    message.pinned = pinned
+    await session.flush()
+    return message
 
-    Two engines behind one function. On Postgres it is full-text search with
-    the `simple` configuration (no stemming — Korean has none to stem, and it
-    keeps `dash_v2` findable as typed) ranked by `ts_rank`, backed by the GIN
-    index the migration adds. Everywhere else it is a LIKE scan, which is
-    correct and needs nothing installed. An external index later only changes
-    this function.
+
+async def list_pinned(session: AsyncSession, channel: Channel) -> list[Message]:
+    rows = await session.scalars(
+        select(Message)
+        .where(Message.channel_id == channel.id, Message.pinned.is_(True))
+        .order_by(Message.created_at.desc(), Message.id.desc())
+    )
+    return list(rows)
+
+
+async def mark_read(
+    session: AsyncSession, channel: Channel, user_id: str, message_id: str | None = None
+) -> None:
+    anchor: Message | None = None
+    if message_id:
+        anchor = await session.get(Message, message_id)
+        if anchor is None or anchor.channel_id != channel.id:
+            raise not_found("message not found")
+    else:
+        anchor = await session.scalar(
+            select(Message)
+            .where(Message.channel_id == channel.id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+        )
+
+    state = await session.scalar(
+        select(ReadState).where(
+            ReadState.channel_id == channel.id,
+            ReadState.user_id == user_id,
+        )
+    )
+    if state is None:
+        # Two requests for the same (channel, user) can arrive together — the
+        # client marks a channel read over the socket and over REST. The
+        # second insert would break the unique constraint, so it is attempted
+        # inside a savepoint and falls back to an update when the row is
+        # already there.
+        try:
+            async with session.begin_nested():
+                session.add(
+                    ReadState(
+                        id=new_id(READ_STATE_PREFIX),
+                        channel_id=channel.id,
+                        user_id=user_id,
+                        last_read_message_id=anchor.id if anchor else None,
+                        last_read_at=utcnow(),
+                    )
+                )
+                await session.flush()
+        except IntegrityError:
+            state = await session.scalar(
+                select(ReadState).where(
+                    ReadState.channel_id == channel.id,
+                    ReadState.user_id == user_id,
+                )
+            )
+            if state is None:
+                raise
+            state.last_read_message_id = anchor.id if anchor else None
+            state.last_read_at = utcnow()
+    else:
+        state.last_read_message_id = anchor.id if anchor else None
+        state.last_read_at = utcnow()
+    await session.flush()
+
+
+async def unread_count(session: AsyncSession, channel_id: str, user_id: str) -> int:
+    counts = await unread_counts(session, [channel_id], user_id)
+    return counts.get(channel_id, 0)
+
+
+async def unread_counts(
+    session: AsyncSession, channel_ids: list[str], user_id: str
+) -> dict[str, int]:
+    """Unread counts per channel for one user.
+
+    A message counts as unread when it is newer than the caller's last read
+    message and was not written by the caller.
     """
-    started = time.perf_counter()
-    term = query.strip()
-    if not term:
-        return [], False, 0
-
-    limit = max(1, min(limit, 100))
-    stmt = search_statement(
-        workspace_id=workspace_id,
-        user_id=user_id,
-        term=term,
-        dialect=db.bind.dialect.name if db.bind is not None else "sqlite",
-        channel_id=channel_id,
-        from_user_id=from_user_id,
-        cursor=cursor,
-        limit=limit,
-    )
-    rows = (await db.execute(stmt)).all()
-    has_more = len(rows) > limit
-    trimmed = rows[:limit]
-
-    hits = [
-        (message, channel, make_snippet(message.body, term)) for message, channel in trimmed
-    ]
-    took_ms = int((time.perf_counter() - started) * 1000)
-    return hits, has_more, took_ms
-
-
-def search_statement(
-    *,
-    workspace_id: str,
-    user_id: str,
-    term: str,
-    dialect: str,
-    channel_id: str | None = None,
-    from_user_id: str | None = None,
-    cursor: str | None = None,
-    limit: int = 30,
-) -> Any:
-    """Build the search query for a dialect. Separate so the Postgres branch
-    can be compiled and inspected in tests without a Postgres server."""
-    stmt = (
-        select(Message, Channel)
-        .join(Channel, Channel.id == Message.channel_id)
-        .join(
-            ChannelMember,
-            (ChannelMember.channel_id == Channel.id) & (ChannelMember.user_id == user_id),
-        )
-        .where(Channel.workspace_id == workspace_id, Message.deleted_at.is_(None))
-        .options(*_with_relations())
-    )
-    if dialect == "postgresql":
-        vector = func.to_tsvector("simple", Message.body)
-        tsquery = func.plainto_tsquery("simple", term)
-        # Fall back to substring for a single token FTS cannot split (an id
-        # fragment, an emoji) so "nothing found" never means "not indexed".
-        stmt = stmt.where(
-            or_(vector.op("@@")(tsquery), func.lower(Message.body).like(f"%{term.lower()}%"))
-        )
-        order = (func.ts_rank(vector, tsquery).desc(), Message.id.desc())
-    else:
-        stmt = stmt.where(func.lower(Message.body).like(f"%{term.lower()}%"))
-        order = (Message.id.desc(),)
-    if channel_id:
-        stmt = stmt.where(Message.channel_id == channel_id)
-    if from_user_id:
-        stmt = stmt.where(Message.user_id == from_user_id)
-    if cursor and is_ulid(cursor):
-        stmt = stmt.where(Message.id < cursor)
-    return stmt.order_by(*order).limit(limit + 1)
-
-
-# ── Presentation helpers ────────────────────────────────────────────────────
-
-
-def reactions_summary(message: Message, *, viewer_id: str | None) -> list[dict[str, Any]]:
-    """Collapse individual reaction rows into per-emoji groups."""
-    grouped: dict[str, list[str]] = {}
-    for reaction in message.reactions:
-        grouped.setdefault(reaction.emoji, []).append(reaction.user_id)
-    return [
-        {
-            "emoji": emoji,
-            "count": len(user_ids),
-            "user_ids": user_ids,
-            "me": viewer_id in user_ids if viewer_id else False,
-        }
-        # Most-used first, then alphabetical so the order is stable.
-        for emoji, user_ids in sorted(grouped.items(), key=lambda kv: (-len(kv[1]), kv[0]))
-    ]
-
-
-async def mention_display_names(
-    db: AsyncSession, user_ids: Sequence[str]
-) -> dict[str, str]:
-    """Display names for the ids a body mentions, for readable previews."""
-    if not user_ids:
+    if not channel_ids:
         return {}
-    rows = (
-        await db.execute(
-            select(User.id, User.display_name).where(User.id.in_(set(user_ids)))
+
+    states = list(
+        await session.scalars(
+            select(ReadState).where(
+                ReadState.user_id == user_id,
+                ReadState.channel_id.in_(channel_ids),
+            )
         )
-    ).all()
-    return {row.id: row.display_name for row in rows}
+    )
+    last_read = {state.channel_id: state.last_read_message_id for state in states}
+
+    anchors: dict[str, Message] = {}
+    anchor_ids = [value for value in last_read.values() if value]
+    if anchor_ids:
+        for anchor in await session.scalars(select(Message).where(Message.id.in_(anchor_ids))):
+            anchors[anchor.id] = anchor
+
+    with_anchor = {
+        channel_id for channel_id, message_id in last_read.items() if message_id in anchors
+    }
+    without_state = {channel_id for channel_id in channel_ids if channel_id not in last_read}
+
+    counts: dict[str, int] = {}
+
+    if with_anchor:
+        anchor_table = Message.__table__.alias("anchor")
+        rows = await session.execute(
+            select(Message.channel_id, func.count(Message.id))
+            .join(
+                ReadState,
+                and_(
+                    ReadState.channel_id == Message.channel_id,
+                    ReadState.user_id == user_id,
+                ),
+            )
+            .join(anchor_table, anchor_table.c.id == ReadState.last_read_message_id)
+            .where(
+                Message.channel_id.in_(with_anchor),
+                Message.user_id != user_id,
+                Message.deleted_at.is_(None),
+                or_(
+                    Message.created_at > anchor_table.c.created_at,
+                    and_(
+                        Message.created_at == anchor_table.c.created_at,
+                        Message.id > anchor_table.c.id,
+                    ),
+                ),
+            )
+            .group_by(Message.channel_id)
+        )
+        for channel_id, count in rows.all():
+            counts[channel_id] = int(count)
+
+    if without_state:
+        rows = await session.execute(
+            select(Message.channel_id, func.count(Message.id))
+            .where(
+                Message.channel_id.in_(without_state),
+                Message.user_id != user_id,
+                Message.deleted_at.is_(None),
+            )
+            .group_by(Message.channel_id)
+        )
+        for channel_id, count in rows.all():
+            counts[channel_id] = int(count)
+
+    return counts
 
 
-def notification_preview(
-    message: Message,
-    *,
-    channel: Channel,
-    author_name: str,
-    names: Mapping[str, str] | None = None,
-) -> dict[str, Any]:
-    """Payload for an OS-level desktop notification."""
-    if channel.kind_enum.is_conversation:
-        title = author_name
-    else:
-        title = f"#{channel.name or channel.slug or ''} · {author_name}"
+def _file_out(item: File, api_prefix: str) -> dict[str, object]:
     return {
-        "title": title,
-        "body": plain_text_preview(message.body, names=names) or "새 메시지",
-        "channel_id": channel.id,
-        "message_id": message.id,
-        "thread_id": message.parent_id,
-        "is_dm": channel.kind_enum.is_conversation,
+        "id": item.id,
+        "name": item.name,
+        "url": f"{api_prefix}/files/{item.id}",
+        "mime": item.mime,
+        "size": item.size,
     }
 
 
-async def notifiable_user_ids(
-    db: AsyncSession, *, message: Message, channel: Channel
-) -> list[str]:
-    """Who should get a desktop notification for this message.
+@dataclass
+class MessageBundle:
+    """Everything needed to render messages, loaded once for many viewers."""
 
-    Honours each member's notification level: `all` gets everything, `mentions`
-    only gets mentions (DMs always count as a mention), `nothing` gets none.
-    """
-    rows = await db.execute(
-        select(
-            ChannelMember.user_id,
-            ChannelMember.notification_level,
-            ChannelMember.is_muted,
-            User.dnd_start,
-            User.dnd_end,
-            User.dnd_days,
-            User.notify_paused_until,
-            User.timezone,
+    authors: dict[str, User]
+    reactions: dict[str, list[tuple[str, list[str]]]]
+    attachments: dict[str, list[File]]
+    reply_targets: dict[str, Message]
+
+
+async def load_message_bundle(session: AsyncSession, messages: list[Message]) -> MessageBundle:
+    """Load authors, reactions and attachments for a batch of messages."""
+    if not messages:
+        return MessageBundle(authors={}, reactions={}, attachments={}, reply_targets={})
+
+    message_ids = [message.id for message in messages]
+
+    # The messages these ones answer, so a quote can be drawn without a
+    # second round trip.
+    reply_ids = {message.reply_to_id for message in messages if message.reply_to_id}
+    targets: dict[str, Message] = {}
+    if reply_ids:
+        targets = {
+            target.id: target
+            for target in await session.scalars(select(Message).where(Message.id.in_(reply_ids)))
+        }
+
+    author_ids = {message.user_id for message in messages} | {
+        target.user_id for target in targets.values()
+    }
+    authors = {
+        user.id: user for user in await session.scalars(select(User).where(User.id.in_(author_ids)))
+    }
+
+    reaction_rows = list(
+        await session.scalars(
+            select(Reaction)
+            .where(Reaction.message_id.in_(message_ids))
+            .order_by(Reaction.created_at, Reaction.id)
         )
-        .join(User, User.id == ChannelMember.user_id)
-        .where(ChannelMember.channel_id == channel.id)
     )
-    is_dm = channel.kind_enum.is_conversation
-    mentioned = set(message.mentioned_user_ids)
-    # @here calls only the people present; @channel calls everyone.
-    here_only = message.mentions_everyone and message.broadcast == "here"
-    present = set(await present_member_ids(db, channel_id=channel.id)) if here_only else set()
-    targets: list[str] = []
+    reactions: dict[str, list[tuple[str, list[str]]]] = {}
+    for row in reaction_rows:
+        groups = reactions.setdefault(row.message_id, [])
+        for emoji, user_ids in groups:
+            if emoji == row.emoji:
+                user_ids.append(row.user_id)
+                break
+        else:
+            groups.append((row.emoji, [row.user_id]))
 
-    for user_id, level, is_muted, dnd_start, dnd_end, dnd_days, paused, tz in rows.all():
-        if user_id == message.user_id or is_muted:
-            continue
-        if level == NotificationLevel.NOTHING.value:
-            continue
-        # 방해 금지: quiet hours and pauses silence *every* notification, DMs
-        # included — the badge still counts, the toast waits for morning.
-        if in_dnd(
-            dnd_start=dnd_start,
-            dnd_end=dnd_end,
-            dnd_days=dnd_days,
-            paused_until=paused,
-            timezone=tz,
-        ):
-            continue
-        broadcast_hit = message.mentions_everyone and (
-            not here_only or user_id in present
-        )
-        if level == NotificationLevel.MENTIONS.value:
-            if is_dm or user_id in mentioned or broadcast_hit:
-                targets.append(user_id)
-            continue
-        targets.append(user_id)
-    return targets
+    attachments: dict[str, list[File]] = {}
+    rows = await session.execute(
+        select(message_attachments.c.message_id, File)
+        .join(File, File.id == message_attachments.c.file_id)
+        .where(message_attachments.c.message_id.in_(message_ids))
+        .order_by(File.created_at, File.id)
+    )
+    for message_id, item in rows.all():
+        attachments.setdefault(message_id, []).append(item)
+
+    return MessageBundle(
+        authors=authors,
+        reactions=reactions,
+        attachments=attachments,
+        reply_targets=targets,
+    )
 
 
-async def present_member_ids(db: AsyncSession, *, channel_id: str) -> list[str]:
-    """Channel members whose presence is `active` right now (@here's crowd)."""
-    from app.core.enums import PresenceState
-    from app.realtime.presence import get_presence_store
+def build_message_out(
+    message: Message, bundle: MessageBundle, viewer_id: str, api_prefix: str
+) -> MessageOut | None:
+    """Render one message for one viewer."""
+    author = bundle.authors.get(message.user_id)
+    if author is None:
+        return None
+    reactions = [
+        ReactionOut(emoji=emoji, count=len(user_ids), user_ids=user_ids, me=viewer_id in user_ids)
+        for emoji, user_ids in bundle.reactions.get(message.id, [])
+    ]
+    reply_to: ReplyToOut | None = None
+    if message.reply_to_id:
+        target = bundle.reply_targets.get(message.reply_to_id)
+        if target is not None:
+            target_author = bundle.authors.get(target.user_id)
+            gone = target.deleted_at is not None
+            reply_to = ReplyToOut(
+                id=target.id,
+                author_name=target_author.name if target_author else "",
+                body="" if gone else target.body,
+                deleted=gone,
+            )
+    return MessageOut(
+        id=message.id,
+        channel_id=message.channel_id,
+        user_id=message.user_id,
+        author=author,
+        body=message.body,
+        kind=message.kind,
+        parent_id=message.parent_id,
+        reply_to_id=message.reply_to_id,
+        reply_to=reply_to,
+        inline=bool(message.inline),
+        created_at=message.created_at,
+        edited_at=message.edited_at,
+        deleted_at=message.deleted_at,
+        reply_count=message.reply_count,
+        last_reply_at=message.last_reply_at,
+        pinned=message.pinned,
+        reactions=reactions,
+        attachments=[
+            _file_out(item, api_prefix) for item in bundle.attachments.get(message.id, [])
+        ],
+    )
 
-    member_ids = await channel_member_ids(db, channel_id)
-    if not member_ids:
+
+async def serialize_messages(
+    session: AsyncSession, messages: list[Message], viewer_id: str
+) -> list[MessageOut]:
+    """Build the API representation of a batch of messages for one viewer."""
+    if not messages:
         return []
-    states = await get_presence_store().get_many(member_ids)
-    return [uid for uid, state in states.items() if state == PresenceState.ACTIVE]
+    api_prefix = get_settings().api_prefix
+    bundle = await load_message_bundle(session, messages)
+    out: list[MessageOut] = []
+    for message in messages:
+        rendered = build_message_out(message, bundle, viewer_id, api_prefix)
+        if rendered is not None:
+            out.append(rendered)
+    return out
 
 
-async def saved_ids_for(
-    db: AsyncSession, *, viewer_id: str | None, message_ids: Sequence[str]
-) -> set[str]:
-    """Which of these messages the viewer has kept for later — one query per page."""
-    if not viewer_id or not message_ids:
-        return set()
-    from app.models.saved import SavedItem
-
-    rows = await db.scalars(
-        select(SavedItem.message_id).where(
-            SavedItem.user_id == viewer_id, SavedItem.message_id.in_(list(message_ids))
-        )
-    )
-    return set(rows.all())
-
-
-async def channel_member_ids(db: AsyncSession, channel_id: str) -> list[str]:
-    rows = await db.scalars(
-        select(ChannelMember.user_id).where(ChannelMember.channel_id == channel_id)
-    )
-    return list(rows.all())
-
-
-def is_public(channel: Channel) -> bool:
-    return channel.kind == ChannelKind.PUBLIC.value
+async def serialize_message(session: AsyncSession, message: Message, viewer_id: str) -> MessageOut:
+    result = await serialize_messages(session, [message], viewer_id)
+    return result[0]

@@ -1,137 +1,139 @@
-"""Typed application errors that render as a stable JSON error envelope.
+"""The error envelope used by every failing endpoint.
 
-Every non-2xx response from the API has the same shape, so the desktop client
-has exactly one error path to implement:
+Every error response looks like::
 
-    {"error": {"code": "channel_not_found", "message": "...", "details": {...}}}
+    {"error": {"code": "not_found", "message": "channel not found", "field": null}}
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger("llack.errors")
+
+UNAUTHORIZED = "unauthorized"
+FORBIDDEN = "forbidden"
+NOT_FOUND = "not_found"
+CONFLICT = "conflict"
+VALIDATION_ERROR = "validation_error"
+RATE_LIMITED = "rate_limited"
+INTERNAL = "internal"
+
+_STATUS_CODES = {
+    400: VALIDATION_ERROR,
+    401: UNAUTHORIZED,
+    403: FORBIDDEN,
+    404: NOT_FOUND,
+    409: CONFLICT,
+    413: VALIDATION_ERROR,
+    415: VALIDATION_ERROR,
+    422: VALIDATION_ERROR,
+    429: RATE_LIMITED,
+}
+
+
+class ErrorBody(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+
+
+class ErrorEnvelope(BaseModel):
+    error: ErrorBody
 
 
 class AppError(Exception):
-    """Base class for errors the API deliberately exposes to clients."""
-
-    status_code: int = status.HTTP_400_BAD_REQUEST
-    code: str = "bad_request"
-    message: str = "Request could not be processed."
+    """An error that maps directly onto the documented error envelope."""
 
     def __init__(
         self,
-        message: str | None = None,
-        *,
-        code: str | None = None,
-        details: dict[str, Any] | None = None,
-        status_code: int | None = None,
+        code: str,
+        message: str,
+        status_code: int,
+        field: str | None = None,
     ) -> None:
-        self.message = message or self.message
-        self.code = code or self.code
-        self.details = details or {}
-        if status_code is not None:
-            self.status_code = status_code
-        super().__init__(self.message)
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        self.field = field
 
-    def to_payload(self) -> dict[str, Any]:
-        body: dict[str, Any] = {"code": self.code, "message": self.message}
-        if self.details:
-            body["details"] = self.details
-        return {"error": body}
-
-
-class NotFound(AppError):
-    status_code = status.HTTP_404_NOT_FOUND
-    code = "not_found"
-    message = "Resource not found."
+    def to_response(self) -> JSONResponse:
+        return JSONResponse(
+            status_code=self.status_code,
+            content=ErrorEnvelope(
+                error=ErrorBody(code=self.code, message=self.message, field=self.field)
+            ).model_dump(),
+        )
 
 
-class Conflict(AppError):
-    status_code = status.HTTP_409_CONFLICT
-    code = "conflict"
-    message = "Resource already exists."
+def unauthorized(message: str = "authentication required") -> AppError:
+    return AppError(UNAUTHORIZED, message, 401)
 
 
-class Unauthorized(AppError):
-    status_code = status.HTTP_401_UNAUTHORIZED
-    code = "unauthorized"
-    message = "Authentication required."
+def forbidden(message: str = "you do not have access to this resource") -> AppError:
+    return AppError(FORBIDDEN, message, 403)
 
 
-class Forbidden(AppError):
-    status_code = status.HTTP_403_FORBIDDEN
-    code = "forbidden"
-    message = "You do not have access to this resource."
+def not_found(message: str = "resource not found") -> AppError:
+    return AppError(NOT_FOUND, message, 404)
 
 
-class ValidationFailed(AppError):
-    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    code = "validation_failed"
-    message = "Request payload is invalid."
+def conflict(message: str) -> AppError:
+    return AppError(CONFLICT, message, 409)
 
 
-class RateLimited(AppError):
-    status_code = status.HTTP_429_TOO_MANY_REQUESTS
-    code = "rate_limited"
-    message = "Too many requests."
+def validation_error(message: str, field: str | None = None) -> AppError:
+    return AppError(VALIDATION_ERROR, message, 422, field)
 
 
-class Gone(AppError):
-    """The resource existed and was removed on purpose (quarantine, retention)."""
-
-    status_code = status.HTTP_410_GONE
-    code = "gone"
-    message = "This resource is no longer available."
+def rate_limited(message: str = "too many requests") -> AppError:
+    return AppError(RATE_LIMITED, message, 429)
 
 
-class PayloadTooLarge(AppError):
-    status_code = status.HTTP_413_CONTENT_TOO_LARGE
-    code = "payload_too_large"
-    message = "Upload exceeds the maximum allowed size."
+def internal(message: str = "internal server error") -> AppError:
+    return AppError(INTERNAL, message, 500)
 
 
-# ── Handlers ────────────────────────────────────────────────────────────────
+def _envelope(code: str, message: str, field: str | None = None) -> dict[str, Any]:
+    return {"error": {"code": code, "message": message, "field": field}}
 
 
-async def app_error_handler(_: Request, exc: Exception) -> JSONResponse:
-    assert isinstance(exc, AppError)
-    return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
+def register_exception_handlers(app: FastAPI) -> None:
+    """Attach the handlers that turn any exception into the error envelope."""
 
+    @app.exception_handler(AppError)
+    async def _app_error_handler(_: Request, exc: AppError) -> JSONResponse:
+        return exc.to_response()
 
-async def http_exception_handler(_: Request, exc: Exception) -> JSONResponse:
-    assert isinstance(exc, HTTPException)
-    detail = exc.detail
-    message = detail if isinstance(detail, str) else "Request failed."
-    code = {401: "unauthorized", 403: "forbidden", 404: "not_found"}.get(
-        exc.status_code, "http_error"
-    )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": {"code": code, "message": message}},
-        headers=getattr(exc, "headers", None),
-    )
+    @app.exception_handler(RequestValidationError)
+    async def _validation_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        first = exc.errors()[0] if exc.errors() else None
+        location = (
+            ".".join(str(part) for part in first.get("loc", ()) if part != "body")
+            if first
+            else None
+        )
+        message = first.get("msg", "invalid request body") if first else "invalid request body"
+        return JSONResponse(
+            status_code=422,
+            content=_envelope(VALIDATION_ERROR, message, location),
+        )
 
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        code = _STATUS_CODES.get(exc.status_code, INTERNAL)
+        detail = exc.detail if isinstance(exc.detail, str) else "request failed"
+        return JSONResponse(status_code=exc.status_code, content=_envelope(code, detail))
 
-async def validation_exception_handler(_: Request, exc: Exception) -> JSONResponse:
-    assert isinstance(exc, RequestValidationError)
-    fields = [
-        {
-            "field": ".".join(str(p) for p in err["loc"][1:]) or str(err["loc"][0]),
-            "reason": err["msg"],
-        }
-        for err in exc.errors()
-    ]
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        content={
-            "error": {
-                "code": "validation_failed",
-                "message": "Request payload is invalid.",
-                "details": {"fields": fields},
-            }
-        },
-    )
+    @app.exception_handler(Exception)
+    async def _unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content=_envelope(INTERNAL, "internal server error"))

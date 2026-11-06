@@ -1,105 +1,72 @@
-"""Message payloads."""
+"""Message schemas."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field
 
-from app.core.enums import MessageKind
-from app.schemas.common import Emoji, Payload, Schema
+from app.schemas.common import ORMModel
 from app.schemas.file import FileOut
-from app.schemas.user import UserBrief
+from app.schemas.user import UserOut
+
+KIND_TEXT = "text"
+KIND_SYSTEM = "system"
 
 
-class ReactionOut(Schema):
+class ReactionOut(BaseModel):
     emoji: str
     count: int
-    user_ids: list[str] = Field(default_factory=list)
-    me: bool = False
+    user_ids: list[str]
+    me: bool
 
 
-class MessageCore(Schema):
-    """The fields that map straight off the ORM row.
-
-    Kept separate from `MessageOut` because the remaining fields are *derived*
-    and viewer-dependent — reactions are grouped per emoji with a `me` flag,
-    attachments carry signed URLs. Validating those directly from the ORM
-    would try to coerce raw `Reaction` rows into `ReactionOut`, which is not
-    the same shape.
-    """
+class ReplyToOut(BaseModel):
+    """The message a reply answers, in the small form a quote needs."""
 
     id: str
-    channel_id: str
-    kind: MessageKind = MessageKind.USER
+    author_name: str
     body: str = ""
-    blocks: list[dict[str, Any]] | None = None
-    client_msg_id: str | None = None
-    app_id: str | None = None
+    deleted: bool = False
 
+
+class MessageOut(ORMModel):
+    id: str
+    channel_id: str
+    user_id: str
+    author: UserOut
+    body: str = ""
+    kind: str = KIND_TEXT
     parent_id: str | None = None
-    reply_count: int = 0
-    last_reply_at: datetime | None = None
-    also_sent_to_channel: bool = False
-
-    mentioned_user_ids: list[str] = Field(default_factory=list)
-    mentions_everyone: bool = False
-    # "channel" reached everyone, "here" only those present. Null otherwise.
-    broadcast: str | None = None
-
-    is_pinned: bool = False
+    reply_to_id: str | None = None
+    reply_to: ReplyToOut | None = None
+    inline: bool = False
+    created_at: datetime
     edited_at: datetime | None = None
     deleted_at: datetime | None = None
-    created_at: datetime
+    reply_count: int = 0
+    last_reply_at: datetime | None = None
+    pinned: bool = False
+    reactions: list[ReactionOut] = []
+    attachments: list[FileOut] = []
 
 
-class MessageOut(MessageCore):
-    author: UserBrief | None = None
-    reply_users: list[UserBrief] = Field(default_factory=list)
-    attachments: list[FileOut] = Field(default_factory=list)
-    reactions: list[ReactionOut] = Field(default_factory=list)
-    # Kept for later by the viewer (saved_items). Viewer-dependent like `me`.
-    is_saved: bool = False
+class MessagePage(BaseModel):
+    messages: list[MessageOut]
+    has_more: bool
 
 
-class CreateMessageRequest(Payload):
-    body: str = Field(default="", max_length=40_000)
-    blocks: list[dict[str, Any]] | None = None
-    # Client-generated ULID; makes retries idempotent and lets the optimistic
-    # message in the UI be reconciled with the server's copy.
-    client_msg_id: str | None = Field(default=None, max_length=64)
+class MessageCreate(BaseModel):
+    body: str = Field(default="", max_length=4000)
     parent_id: str | None = None
-    also_send_to_channel: bool = False
-    file_ids: list[str] = Field(default_factory=list, max_length=20)
-
-    @model_validator(mode="after")
-    def _require_content(self) -> CreateMessageRequest:
-        if not self.body.strip() and not self.blocks and not self.file_ids:
-            raise ValueError("a message needs a body, blocks or at least one file")
-        return self
+    reply_to_id: str | None = None
+    inline: bool = False
+    attachment_ids: list[str] = Field(default_factory=list)
 
 
-class UpdateMessageRequest(Payload):
-    body: str = Field(min_length=1, max_length=40_000)
-    blocks: list[dict[str, Any]] | None = None
+class MessageUpdate(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
 
 
-class ReactionRequest(Payload):
-    emoji: Emoji
-
-
-class SearchHit(Schema):
-    message: MessageOut
-    channel_id: str
-    channel_name: str | None = None
-    # Body with the matched terms wrapped in <mark>…</mark>.
-    highlight: str | None = None
-    score: float = 0.0
-
-
-class SearchResponse(Schema):
-    query: str
-    hits: list[SearchHit] = Field(default_factory=list)
-    total: int = 0
-    took_ms: int = 0
+class ReactionCreate(BaseModel):
+    emoji: str = Field(min_length=1, max_length=32)

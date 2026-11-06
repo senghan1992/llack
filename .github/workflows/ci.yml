@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   backend:
-    name: 백엔드 (lint + 테스트)
+    name: 백엔드 (린트 + 테스트)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,63 +20,34 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: backend/pyproject.toml
 
       - name: 의존성 설치
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]" asgi-lifespan anyio
+          pip install -e ".[dev]"
 
-      - name: ruff
+      - name: ruff check
         working-directory: backend
         run: ruff check app tests scripts
 
+      # 스키마를 관리하는 도구가 따로 없습니다 — 서버가 기동할 때 메타데이터로
+      # 테이블을 만듭니다. 그래서 포맷 검사는 코드가 리포지토리에 맞춰져 있는
+      #지만 확인하는 자리로 씁니다.
+      - name: ruff format
+        working-directory: backend
+        run: ruff format --check .
+
       - name: pytest
         working-directory: backend
+        env:
+          SECRET_KEY: ci-secret-value-not-used-in-production
+          DATABASE_URL: sqlite+aiosqlite:///./var/ci.db
         run: pytest -q
 
-      - name: 마이그레이션이 모델과 일치하는지 확인
-        working-directory: backend
-        env:
-          LLACK_DATABASE_URL: sqlite+aiosqlite:///./var/ci.db
-          LLACK_SECRET_KEY: ci-secret-value-not-used-in-production
-        run: |
-          mkdir -p var
-          alembic upgrade head
-          # An empty autogenerate diff proves no model change was left without
-          # a migration — the most common cause of a broken deploy.
-          alembic check
-
-  rust-core:
-    name: Rust 코어 (clippy + 테스트)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop
-
-      # `llack-core` has no webview dependency on purpose, so it needs no
-      # system libraries here.
-      - name: clippy
-        working-directory: desktop
-        run: cargo clippy -p llack-core --all-targets -- -D warnings
-
-      - name: rustfmt
-        working-directory: desktop
-        run: cargo fmt -p llack-core -- --check
-
-      - name: cargo test
-        working-directory: desktop
-        run: cargo test -p llack-core
-
   frontend:
-    name: 프론트엔드 (타입 + 빌드)
+    name: 프런트엔드 (타입 검사 + 번들)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,65 +56,62 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: |
-            desktop/package-lock.json
-            packages/llack-app-sdk/package-lock.json
+          cache-dependency-path: desktop/package-lock.json
 
-      - name: SDK 빌드
-        working-directory: packages/llack-app-sdk
-        run: npm ci && npm run build
-
-      - name: 데스크톱 UI 타입 검사 및 빌드
+      - name: 의존성 설치
         working-directory: desktop
-        run: npm ci && npm run build
+        run: npm ci
 
-  smoke:
-    name: 종단 검증 (실시간 + 미니앱)
+      - name: 타입 검사
+        working-directory: desktop
+        run: npm run typecheck
+
+      - name: 테스트
+        working-directory: desktop
+        run: npm run test
+
+      - name: 빌드
+        working-directory: desktop
+        run: npm run build
+
+  rust:
+    name: Rust 셸 (clippy + fmt + 테스트)
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping" --health-interval 5s
-          --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.12"
-          cache: pip
+          components: clippy, rustfmt
 
-      - name: 의존성 설치
-        working-directory: backend
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      # src-tauri 는 워크스페이스가 아니라 독립형 cargo 패키지입니다 — 루트에
+      # Cargo.toml 이 없고, 캐시 경로도 그쪽을 가리켜야 합니다.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
 
-      - name: 서버 실행 후 종단 검증
-        working-directory: backend
-        env:
-          # Redis is exercised here, so the multi-worker event path is covered.
-          LLACK_DATABASE_URL: sqlite+aiosqlite:///./var/smoke.db
-          LLACK_REDIS_URL: redis://localhost:6379/0
-          LLACK_SECRET_KEY: ci-secret-value-not-used-in-production
-        run: |
-          mkdir -p var
-          alembic upgrade head
-          python -m scripts.seed
-          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
-          for i in $(seq 1 40); do
-            curl -sf http://127.0.0.1:8000/health && break
-            sleep 1
-          done
-          python scripts/smoke_realtime.py
-          python scripts/smoke_apps.py
+      # tauri-build 가 frontendDist(../dist) 의 존재를 확인합니다. 셸만 빌드하
+      # 는 이 잡에서는 번들이 없으므로, 먼저 프런트엔드 번들을 만들어 둡니다.
+      - name: 프런트엔드 번들 준비
+        working-directory: desktop
+        run: npm ci && npm run build
+
+      - name: clippy
+        working-directory: desktop/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: rustfmt
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: cargo test
+        working-directory: desktop/src-tauri
+        run: cargo test
 
   desktop-shell:
     name: 데스크톱 셸 빌드 (${{ matrix.os }})
-    # The Tauri shell needs platform webview libraries, so it is built on the
-    # platforms it ships to rather than in the generic Linux job above.
+    # Tauri 셸은 플랫폼 webview 라이브러리가 필요해서, 배포하는 플랫폼에서
+    # 직접 빌드합니다. 리눅스에서만 webview 패키지를 설치합니다.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -160,7 +128,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop
+          workspaces: desktop/src-tauri
 
       - name: Linux webview 의존성
         if: matrix.os == 'ubuntu-22.04'
@@ -170,8 +138,11 @@ jobs:
             libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev \
             libdbus-1-dev build-essential curl wget file patchelf
 
+      # --no-bundle: 이 잡은 셸이 컴파일되는지까지만 봅니다. 설치본은
+      # release-windows.yml 이 굽습니다.
       - name: 빌드
         working-directory: desktop
         run: |
           npm ci
+          npm run build
           npm run tauri build -- --no-bundle

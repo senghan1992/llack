@@ -5,52 +5,39 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llack-backend"
 version = "0.1.0"
-description = "Llack — internal collaboration OS backend (FastAPI)"
-requires-python = ">=3.11"
+description = "Llack — internal messenger backend (FastAPI)"
+requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "pydantic>=2.9",
   "pydantic-settings>=2.6",
   "sqlalchemy[asyncio]>=2.0.36",
-  "alembic>=1.14",
-  "asyncpg>=0.30",
   "aiosqlite>=0.20",
+  "asyncpg>=0.30",
   "greenlet>=3.1",
-  "redis>=5.2",
-  "argon2-cffi>=23.1",
+  "pwdlib[argon2]>=0.2",
   "pyjwt>=2.10",
   "python-multipart>=0.0.17",
   "email-validator>=2.2",
-  "httpx>=0.28",
-  "aioboto3>=13.2",
-  "structlog>=24.4",
-  "orjson>=3.10",
-  "prometheus-client>=0.21",
-  "pillow>=10.4",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
-  # tests/conftest.py drives the app's lifespan through the test client.
   "asgi-lifespan>=2.1",
+  "httpx>=0.28",
+  "websockets>=13.0",
   "ruff>=0.8",
-  "mypy>=1.13",
-  # Redis-backed rate limiting is exercised against an in-memory fake.
-  "fakeredis[lua]>=2.26",
 ]
 
-# Without this, setuptools' flat-layout auto-discovery sees `app`, `alembic`
-# and `var` as candidate top-level packages and refuses to build at all —
-# which breaks `pip install -e .` on a fresh clone.
 [tool.setuptools.packages.find]
 include = ["app*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "C4", "SIM"]
@@ -58,9 +45,6 @@ ignore = ["B008"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-
-[tool.mypy]
-python_version = "3.11"
-plugins = ["pydantic.mypy"]
-ignore_missing_imports = true
+filterwarnings = ["ignore::DeprecationWarning"]

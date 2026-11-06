@@ -1,8 +1,11 @@
-# Local production-shaped stack: Postgres + Redis + MinIO + the API.
+# Postgres + API 두 개뿐인 로컬 운영 스택.
 #
-# The API also runs with zero dependencies (SQLite, in-process pub/sub, local
-# files) — see `make dev`. This compose file is for exercising the same code
-# paths the real deployment uses.
+# API 는 외부 의존성 없이도 뜹니다 — SQLite 한 파일, 프로세스 안의 실시간 허브,
+# 로컬 디스크의 첨부 파일. `make dev` 가 그 경로입니다. 이 compose 는 같은
+# 코드를 Postgres 위에서 돌려 보는 자리입니다.
+#
+# Redis · MinIO · S3 · Celery 가 없습니다. 실시간은 프로세스 안의 허브가 처리하고,
+# 파일은 UPLOAD_DIR(볼륨)에 저장됩니다.
 
 name: llack
 
@@ -13,8 +16,8 @@ services:
       POSTGRES_USER: llack
       POSTGRES_PASSWORD: llack
       POSTGRES_DB: llack
-      # Korean text sorts correctly with the C collation plus ICU at query
-      # time; the default here keeps initdb deterministic.
+      # 한국어 정렬을 initdb 시점에 고정해 두어 DB 를 새로 만들어도 결과가
+      # 같게 합니다.
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     ports:
       - "5432:5432"
@@ -26,47 +29,6 @@ services:
       timeout: 3s
       retries: 20
 
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "no", "--save", ""]
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  # S3-compatible storage, so the S3 code path is exercised locally.
-  minio:
-    image: minio/minio:latest
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      MINIO_ROOT_USER: llackminio
-      MINIO_ROOT_PASSWORD: llackminio-secret
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio-data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 llackminio llackminio-secret &&
-      mc mb --ignore-existing local/llack-files &&
-      echo 'bucket ready'
-      "
-
   api:
     build:
       context: ./backend
@@ -74,32 +36,37 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment:
-      LLACK_ENV: production
-      # 필수: .env 에 32자 이상의 무작위 값을 넣으세요. 개발 기본값이면
-      # 서버가 기동을 거부합니다 (validate_production_settings).
-      #   python -c "import secrets; print(secrets.token_urlsafe(48))"
-      LLACK_SECRET_KEY: ${LLACK_SECRET_KEY:?LLACK_SECRET_KEY 를 .env 에 설정하세요}
-      LLACK_DATABASE_URL: postgresql+asyncpg://llack:llack@postgres:5432/llack
-      LLACK_REDIS_URL: redis://redis:6379/0
-      LLACK_STORAGE_BACKEND: s3
-      LLACK_S3_BUCKET: llack-files
-      LLACK_S3_ENDPOINT_URL: http://minio:9000
-      LLACK_S3_REGION: ap-northeast-2
-      AWS_ACCESS_KEY_ID: llackminio
-      AWS_SECRET_ACCESS_KEY: llackminio-secret
-      # 웹은 nginx 가 같은 오리진으로 프록시하므로 CORS 에 들어갈 것은
-      # 데스크톱 앱의 오리진뿐입니다.
-      LLACK_CORS_ORIGINS: "tauri://localhost"
-      # 프로덕션 기본: 초대 없이는 가입 불가. 첫 부팅 시나리오는
-      # docs/DEPLOY.md 를 보세요.
-      LLACK_REQUIRE_INVITE: ${LLACK_REQUIRE_INVITE:-true}
-    # 포트를 공개하지 않습니다: 바깥세상은 web(nginx)만 봅니다. API 에
-    # 직접 붙어야 하면(디버깅) 임시로 ports 를 열어 쓰세요.
-    expose:
+      # Postgres 는 컨테이너 안에서만 씁니다 — 안에서 쓰는 드라이버는
+      # asyncpg 하나입니다.
+      DATABASE_URL: postgresql+asyncpg://llack:llack@postgres:5432/llack
+      # 필수: 배포 전에 반드시 덮어쓰세요. 이 값으로 모든 토큰이 서명됩니다.
+      #   python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+      SECRET_KEY: ${SECRET_KEY:-llack-dev-secret-key-change-me-before-production}
+      # 첨부 파일은 컨테이너 안에 두지 않고 볼륨으로 받습니다.
+      UPLOAD_DIR: /app/var/uploads
+      # 데스크톱 앱은 파일:// 오리진으로 접속하므로 기본값(*)을 유지합니다.
+      # 좁히려면 배포 주소로 바꿉니다: CORS_ORIGINS=https://llack.example.com
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-1800}
+      REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-2592000}
+    # 실시간 허브가 프로세스 안에 있습니다. 워커를 둘 이상 띄우면 서로의
+    # 소켓에 이벤트가 전달되지 않으므로 프로세스 하나로 유지합니다.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
       - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - "*"
+    ports:
+      - "8000:8000"
+    volumes:
+      # 첨부 파일과 그 밖의 상태 파일이 들어갑니다.
+      - api-var:/app/var
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)\""]
       interval: 10s
@@ -107,17 +74,6 @@ services:
       retries: 10
       start_period: 20s
 
-  # 웹 UI: 정적 번들 + API/WS 프록시 (deploy/nginx.conf).
-  web:
-    build:
-      context: .
-      dockerfile: desktop/Dockerfile.web
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - "${LLACK_WEB_PUBLISH:-80}:80"
-
 volumes:
   postgres-data:
-  minio-data:
+  api-var:

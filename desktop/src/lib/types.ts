@@ -1,541 +1,417 @@
-/**
- * Types mirroring the Rust command surface in `src-tauri/src/commands.rs`.
- *
- * Hand-maintained rather than generated, so the compile error when the Rust
- * side changes shape lands here rather than at runtime in the UI.
- */
+export type Presence = "online" | "busy" | "dnd" | "away" | "brb" | "offline";
+export type Role = "owner" | "admin" | "member";
+export type ChannelKind = "channel" | "dm";
 
-export type Id = string;
-
-export type Presence = "active" | "away" | "dnd" | "offline";
-export type ChannelKind = "public" | "private" | "dm" | "group_dm";
-export type NotificationLevel = "all" | "mentions" | "nothing";
-export type MessageKind = "user" | "system" | "app";
-export type WorkspaceRole = "owner" | "admin" | "member" | "guest";
-
-export interface UserBrief {
-  id: Id;
-  handle: string;
-  display_name: string;
-  avatar_url?: string | null;
-  is_bot?: boolean;
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  title: string | null;
+  avatar_color: string | null;
+  avatar_url: string | null;
+  presence: Presence;
+  last_seen_at: string | null;
+  created_at: string;
 }
 
-export interface User extends UserBrief {
-  is_service_admin?: boolean;
-  email: string;
-  title?: string | null;
-  timezone: string;
-  locale: string;
-  status_emoji?: string | null;
-  status_text?: string | null;
-  presence: Presence;
-  is_active: boolean;
-  /** 방해 금지: "22:00"–"08:00" on `dnd_days` (0 = Monday), plus a one-off pause. */
-  dnd_start?: string | null;
-  dnd_end?: string | null;
-  dnd_days?: number[];
-  notify_paused_until?: string | null;
-  /** Server-computed: are notifications suppressed right now? */
-  in_dnd?: boolean;
+export interface Member {
+  user: User;
+  role: Role;
+  joined_at: string;
 }
 
 export interface Workspace {
-  id: Id;
+  id: string;
+  name: string;
   slug: string;
-  name: string;
-  description?: string | null;
-  icon_url?: string | null;
-  my_role?: WorkspaceRole | null;
-  member_count: number;
-  retention_days_messages?: number | null;
-  retention_days_files?: number | null;
-}
-
-export interface RetentionSettings {
-  retention_days_messages: number | null;
-  retention_days_files: number | null;
-}
-
-/** One line of the admin audit trail. */
-export interface AuditEvent {
-  id: string;
-  action: string;
-  actor?: UserBrief | null;
-  target_type: string;
-  target_id?: string | null;
-  target_label?: string | null;
-  details?: Record<string, unknown> | null;
-  ip?: string | null;
   created_at: string;
-}
-
-/** A message kept for later, optionally with a reminder. */
-export interface SavedItem {
-  id: string;
-  note?: string | null;
-  remind_at?: string | null;
-  reminded_at?: string | null;
-  done_at?: string | null;
-  created_at: string;
-  message: Message;
-  channel: ChannelRef;
-}
-
-/** Short-lived URL an `<img>`/`<video>` can load without a bearer header. */
-export interface MediaToken {
-  url: string;
-  expires_at: string;
-}
-
-export interface SlashCommand {
-  command: string;
-  description?: string | null;
-  usage?: string | null;
-  app?: { id: Id; name: string; icon_url?: string | null } | null;
-  builtin: boolean;
-}
-
-export interface CommandResult {
-  handled: boolean;
-  response?: { text: string; ephemeral: boolean; blocks?: MessageBlock[] | null } | null;
-}
-
-export interface ActionResult {
-  handled: boolean;
-  ephemeral?: { text: string } | null;
-}
-
-/** Rich content a message may carry beside its Markdown body. */
-export type MessageBlock =
-  | {
-      type: "unfurl";
-      url: string;
-      title?: string | null;
-      description?: string | null;
-      image_url?: string | null;
-      site_name?: string | null;
-    }
-  | { type: "section"; text: string }
-  | { type: "context"; text: string }
-  | {
-      type: "actions";
-      elements: Array<
-        | {
-            type: "button";
-            text: string;
-            action_id: string;
-            value?: string | null;
-            style?: "primary" | "danger" | null;
-          }
-        | {
-            type: "select";
-            action_id: string;
-            placeholder?: string | null;
-            options: Array<{ text: string; value: string }>;
-          }
-      >;
-    };
-
-/** An app as its author sees it in the developer console. */
-export interface DeveloperApp extends AppSummary {
-  status: "draft" | "pending_review" | "published" | "rejected" | "disabled";
-  version?: string | null;
-  description?: string | null;
-  review_note?: string | null;
-  command_url?: string | null;
-  interaction_url?: string | null;
-  home_url?: string | null;
-  event_webhook_url?: string | null;
-  event_subscriptions?: string[];
-  slash_commands?: Array<{ command: string; description?: string | null; usage?: string | null }>;
-  owner_workspace_id?: Id | null;
-  created_at?: string;
-}
-
-export interface WebhookDelivery {
-  id: string;
-  event: string;
-  status: "pending" | "ok" | "failed";
-  attempts: number;
-  last_status_code?: number | null;
-  last_error?: string | null;
-  next_attempt_at?: string | null;
-  created_at: string;
-}
-
-export interface AppToken {
-  id: string;
-  name: string;
-  token_prefix: string;
-  expires_at?: string | null;
-  created_at?: string;
-  last_used_at?: string | null;
-  /** Only present on the create response. */
-  token?: string;
-}
-
-export interface ChannelMembership {
-  /** "admin" or "member". Decides which channel-settings controls to show;
-   *  the server re-checks every privileged change. */
-  role?: "admin" | "member" | null;
-  last_read_message_id?: Id | null;
-  unread_count: number;
-  mention_count: number;
-  notification_level?: NotificationLevel | null;
-  is_muted: boolean;
-  is_starred: boolean;
-  section?: string | null;
-  sort_order: number;
-}
-
-export interface Channel {
-  id: Id;
-  workspace_id: Id;
-  kind: ChannelKind;
-  slug?: string | null;
-  name?: string | null;
-  topic?: string | null;
-  purpose?: string | null;
-  is_archived: boolean;
-  /** Channel override for message retention; null = workspace default. */
-  retention_days?: number | null;
-  last_message_at?: string | null;
-  message_count: number;
-  member_count: number;
-  peers: UserBrief[];
-  membership?: ChannelMembership | null;
 }
 
 export interface Reaction {
   emoji: string;
   count: number;
-  user_ids: Id[];
+  user_ids: string[];
   me: boolean;
 }
 
-/** One issued invitation. `invite_url` is shown once and never stored. */
-export interface InviteOut {
-  id?: string;
-  email: string;
-  role?: string | null;
-  expires_at?: string | null;
-  accepted_at?: string | null;
-  invite_url?: string | null;
-  /** True when the server mailed the link itself. */
-  emailed?: boolean;
-}
-
-/** The server's SMTP relay as the admin UI sees it — password never echoes. */
-export interface SmtpSettings {
-  source: "database" | "env" | "none";
-  host: string;
-  port: number;
-  username: string;
-  starttls: boolean;
-  mail_from: string;
-  password_set: boolean;
-}
-
-/** What the admin form submits. `password: null` keeps the stored secret. */
-export interface SmtpSettingsInput {
-  host: string;
-  port: number;
-  username: string;
-  password: string | null;
-  starttls: boolean;
-  mail_from: string;
-}
-
-/** A file as the workspace file browser lists it: where it was shared. */
-export interface WorkspaceFile extends FileRef {
-  created_at?: string | null;
-  is_ready?: boolean;
-  /** The newest live message the viewer can see that carries this file. */
-  shared_in?: {
-    channel_id: Id;
-    channel_name?: string | null;
-    channel_kind: string;
-    message_id: Id;
-  } | null;
-}
-
-/** A channel as activity/mention lists name it. */
-export interface ChannelRef {
-  id: Id;
-  name?: string | null;
-  kind: string;
-  peers: UserBrief[];
-}
-
-/** A thread I take part in, newest reply first. */
-export interface ThreadActivity {
-  root: Message;
-  channel: ChannelRef;
-  last_reply?: Message | null;
-  participants: UserBrief[];
-  unread_replies: number;
-}
-
-export interface MentionActivity {
-  message: Message;
-  channel: ChannelRef;
-}
-
-export interface ActivityPage<T> {
-  items: T[];
-  has_more: boolean;
-  /** Pass back as `before` for the next page. */
-  next_before?: string | null;
-}
-
-/** One signed-in device. `is_current` marks the one making the request. */
-export interface SessionInfo {
-  id: string;
-  device_name?: string | null;
-  platform?: string | null;
-  app_version?: string | null;
-  ip_address?: string | null;
-  created_at: string;
-  last_used_at?: string | null;
-  expires_at: string;
-  is_current: boolean;
-}
-
-export interface WorkspaceMember {
-  id: string;
-  user: UserBrief;
-  role: WorkspaceRole;
-  joined_at?: string | null;
-  is_active: boolean;
-}
-
-/** What the server learned by fetching a link-app URL once. */
-export interface LinkProbe {
-  embeddable: boolean | null;
-  reason?: "x_frame_options" | "csp_frame_ancestors" | "unreachable" | null;
-  final_url?: string | null;
-  title?: string | null;
-}
-
-/** One row of the channel member list. */
-export interface ChannelMemberEntry {
-  id: Id;
-  user: UserBrief;
-  role?: "admin" | "member" | null;
-  joined_at?: string | null;
-}
-
 export interface FileRef {
-  id: Id;
-  filename: string;
-  mime_type: string;
-  size_bytes: number;
-  download_url?: string | null;
-  thumbnail_url?: string | null;
-  uploader?: UserBrief | null;
-  /** Virus scan: pending | clean | infected | skipped | error. Absent on old servers. */
-  scan_status?: string | null;
+  id: string;
+  name: string;
+  url: string;
+  mime: string;
+  size: number;
+}
+
+export interface ReplyTo {
+  id: string;
+  author_name: string;
+  body: string;
+  deleted: boolean;
 }
 
 export interface Message {
-  id: Id;
-  channel_id: Id;
-  kind: MessageKind;
-  body: string;
-  blocks?: MessageBlock[] | null;
-  client_msg_id?: string | null;
-  author?: UserBrief | null;
-  app_id?: Id | null;
-  parent_id?: Id | null;
-  reply_count: number;
-  last_reply_at?: string | null;
-  also_sent_to_channel: boolean;
-  mentioned_user_ids: Id[];
-  mentions_everyone: boolean;
-  /** "channel" (everyone) or "here" (only people present); absent otherwise. */
-  broadcast?: "channel" | "here" | null;
-  attachments: FileRef[];
-  reactions: Reaction[];
-  is_pinned: boolean;
-  /** Kept for later by the viewer. */
-  is_saved?: boolean;
-  edited_at?: string | null;
-  deleted_at?: string | null;
-  created_at: string;
-}
-
-/** A message that exists only locally until the server confirms it. */
-export interface PendingMessage {
   id: string;
-  channel_id: Id;
-  client_msg_id: string;
-  payload: {
-    body: string;
-    parent_id?: Id | null;
-    also_send_to_channel?: boolean;
-    file_ids?: Id[];
-  };
-  state: "pending" | "sending" | "failed";
-  attempts: number;
-  last_error?: string | null;
-  created_at_ms: number;
+  channel_id: string;
+  user_id: string;
+  author: User;
+  body: string;
+  kind: "text" | "system";
+  parent_id: string | null;
+  /** The message this one answers. */
+  reply_to_id: string | null;
+  /** That message, in the small form a quote needs. */
+  reply_to: ReplyTo | null;
+  /** True when the reply was written in the channel, so it shows there too. */
+  inline: boolean;
+  created_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
+  reply_count: number;
+  last_reply_at: string | null;
+  pinned: boolean;
+  reactions: Reaction[];
+  attachments: FileRef[];
 }
 
-export interface AppSummary {
-  id: Id;
-  slug: string;
+export interface Channel {
+  id: string;
+  workspace_id: string;
   name: string;
-  /** "link" is an external site the main pane embeds as-is — no bridge,
-   *  no token. Absent on servers older than the link-app release. */
-  kind?: "panel" | "bot" | "both" | "link" | null;
-  tagline?: string | null;
-  icon_url?: string | null;
-  accent_color?: string | null;
-  panel_url?: string | null;
-  sidebar_url?: string | null;
-  /** A channel-independent screen the app offers (앱 홈). */
-  home_url?: string | null;
-  default_width: number;
-  requested_scopes: string[];
+  topic: string | null;
+  purpose: string | null;
+  kind: ChannelKind;
+  is_private: boolean;
+  created_by: string;
+  created_at: string;
+  member_count: number;
+  unread_count: number;
+  last_message_at: string | null;
+  dm_user: User | null;
+  members: User[] | null;
+  /** Whether the viewer is in this channel. A public channel stays in the
+      workspace's directory after you leave it, so the rail needs to know. */
+  is_member: boolean;
 }
 
-export interface AppInstallation {
-  id: Id;
-  workspace_id: Id;
-  app: AppSummary;
-  granted_scopes: string[];
-  config: Record<string, unknown>;
-  bot_user_id?: Id | null;
-  is_enabled: boolean;
-  is_pinned: boolean;
-  sort_order: number;
-  /** Who added it; they may rename/remove a link app without being admin. */
-  installed_by?: Id | null;
+/* ── organization ──────────────────────────────────────────────────────── */
+
+/** A unit of the organization — a department, a team, a squad. */
+export interface OrgUnit {
+  id: string;
+  workspace_id: string;
+  /** The unit above this one; null for a root. */
+  parent_id: string | null;
+  name: string;
+  /** A free label for what the unit is — 부서, 팀, … */
+  kind: string;
+  description: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+  member_count: number;
+  child_count: number;
+  /** 0 for a root; every level deeper adds one. */
+  depth: number;
+  /** The people in this unit. */
+  members: User[];
+  /** The people appointed as the managers of this unit. */
+  managers: User[];
+  /** Whether I manage this unit or one of its ancestors. */
+  is_manager: boolean;
+  /** Whether I may rename, move and delete it and change its roster. */
+  can_manage: boolean;
+  /** Whether I may appoint managers for it. */
+  can_appoint_managers: boolean;
 }
 
-export interface PanelSession {
-  installation_id: Id;
-  app_id: Id;
-  panel_url: string;
-  bridge_token: string;
+/** The organization of a workspace, as the server sees it. */
+export interface OrgOverview {
+  /** A flat list — the tree is `parent_id` -> `id`. */
+  units: OrgUnit[];
+  /** The owners and admins of the workspace. */
+  admins: Member[];
+  /** My own role in this workspace. */
+  my_role: Role;
+  /** Whether I may appoint and remove workspace admins. */
+  can_manage_admins: boolean;
+  /** The units I manage. */
+  managed_unit_ids: string[];
+}
+
+/** What the bootstrap says about the organization — enough to show the rail. */
+export interface OrgSummary {
+  unit_count: number;
+  managed_unit_ids: string[];
+}
+
+/** The fields a unit is created or changed with. */
+export interface OrgUnitInput {
+  name: string;
+  parent_id?: string | null;
+  kind?: string;
+  description?: string;
+}
+
+export interface Bootstrap {
+  workspace: Workspace;
+  channels: Channel[];
+  dms: Channel[];
+  members: Member[];
+  me: User;
+  org: OrgSummary;
+}
+
+export interface Invite {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: Role;
+  token: string;
+  created_by: string;
+  created_at: string;
   expires_at: string;
-  granted_scopes: string[];
-  config: Record<string, unknown>;
-  context: Record<string, unknown>;
 }
 
-export interface SendResult {
-  message: Message | null;
-  client_msg_id: string;
-  queued: boolean;
-  error?: string | null;
-  /** Why it queued ("rate_limited", "network_error", "queued_in_order").
-   *  Set by the web adapter; the desktop shell's Rust outbox omits it. */
-  error_code?: string | null;
+export type RsvpResponse = "accepted" | "declined" | "tentative";
+export type EventResponse = RsvpResponse | "pending";
+
+export interface ScheduleAttendee {
+  user: User;
+  response: EventResponse;
 }
 
-export interface BootstrapResult {
-  server_url: string | null;
-  user: User | null;
-  resumed: boolean;
+export interface ScheduleEvent {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string;
+  location: string;
+  starts_at: string;
+  ends_at: string;
+  all_day: boolean;
+  is_private: boolean;
+  created_by: string;
+  channel_id: string | null;
+  created_at: string;
+  updated_at: string;
+  attendees: ScheduleAttendee[];
+  my_response: EventResponse | null;
 }
 
-export interface DrainReport {
-  sent: number;
-  still_pending: number;
-  failed: number;
+export interface EventInput {
+  title: string;
+  description?: string;
+  location?: string;
+  starts_at: string;
+  ends_at: string;
+  all_day?: boolean;
+  is_private?: boolean;
+  channel_id?: string | null;
+  attendee_ids?: string[];
 }
 
 export interface SearchResult {
-  query: string;
-  took_ms?: number;
-  channels: Array<{
-    id: Id;
-    name: string;
-    slug?: string | null;
-    kind: ChannelKind;
-    topic?: string | null;
-    member_count: number;
-  }>;
-  people: Array<{
-    id: Id;
-    display_name: string;
-    handle: string;
-    title?: string | null;
-    avatar_url?: string | null;
-    is_bot: boolean;
-  }>;
-  apps: Array<{
-    installation_id: Id;
-    app_id: Id;
-    name: string;
-    tagline?: string | null;
-    icon_url?: string | null;
-    has_panel: boolean;
-  }>;
-  messages: Array<{
-    message: Message;
-    channel_id: Id;
-    channel_name?: string | null;
-    highlight?: string | null;
-  }>;
-  /** Absent on servers older than the files-in-search release. */
-  files?: Array<{
-    id: Id;
-    filename: string;
-    mime_type?: string | null;
-    size_bytes: number;
-    created_at?: string | null;
-    uploader_name?: string | null;
-  }>;
+  message: Message;
+  channel: Channel;
 }
 
-/** The error shape every failed command rejects with. */
-export interface CommandError {
-  code: string;
-  message: string;
-  status?: number | null;
-  requires_reauth: boolean;
-  /** Server-side specifics (e.g. `max_upload_bytes` on payload_too_large).
-   *  Only the browser adapter fills this in. */
-  details?: Record<string, unknown> | null;
+/* ── projects and their board ──────────────────────────────────────────── */
+
+export type TaskStatus = "request" | "todo" | "in-progress" | "done";
+
+export interface Project {
+  id: string;
+  workspace_id: string;
+  name: string;
+  /** What this project is about — the one line the board shows. */
+  description: string;
+  purpose: string;
+  deliverables: string;
+  /** The room where this project is talked about. */
+  channel_id: string | null;
+  created_by: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+  /** The people on the project — the ones who look after it. */
+  members: User[];
+  /** Whether I am on that roster. */
+  is_member: boolean;
+  /** How many cards are not finished yet, and how many of them are mine. */
+  open_tasks: number;
+  my_open_tasks: number;
+  /** Every card on the project, and how many of them are done. */
+  total_tasks: number;
+  done_tasks: number;
+  /** The period the project occupies — the first thing due to the last. */
+  start_at: string | null;
+  end_at: string | null;
 }
 
-// ── Realtime events emitted by the shell ────────────────────────────────────
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  author: User;
+  body: string;
+  created_at: string;
+}
 
-export type ConnectionStatus =
-  | { status: "connected"; session_id: string; workspace_ids: Id[] }
-  | { status: "disconnected"; reason: string; will_retry_in_ms: number | null }
-  | { status: "resyncing"; expected: number; received: number };
+export interface Task {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  /** The roadmap this task belongs to, when it belongs to one. */
+  roadmap_id: string | null;
+  roadmap_name: string | null;
+  /** The milestone this task belongs to, when it belongs to one. A card may
+      carry a milestone: it says when the work is due. */
+  milestone_id: string | null;
+  milestone_name: string | null;
+  milestone_color: string | null;
+  assignee_id: string | null;
+  assignee: User | null;
+  created_by: string;
+  start_at: string | null;
+  due_at: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+  comments: TaskComment[];
+  comment_count: number;
+}
 
-export type SyncEffect =
-  | { kind: "channel_changed"; channel_id: Id }
-  | { kind: "thread_changed"; channel_id: Id; parent_id: Id }
-  | { kind: "sidebar_changed" }
-  /** An app was installed, removed or renamed: reload the dock. */
-  | { kind: "apps_changed" }
-  /** Someone's name or avatar changed: reload the directory. */
-  | { kind: "directory_changed"; user_id?: Id | null }
-  | {
-      kind: "notify";
-      title: string;
-      body: string;
-      channel_id?: Id | null;
-      message_id?: Id | null;
-      /** "reminder" | "quarantine" | "review" — absent for ordinary messages. */
-      notice_kind?: string | null;
-      /** For a reminder on a thread reply: the thread to open. */
-      thread_id?: Id | null;
-    }
-  | { kind: "typing"; channel_id: Id; user_id: Id }
-  | { kind: "presence"; user_id: Id; presence: Presence }
-  | { kind: "ignored" };
+export interface ProjectInput {
+  name: string;
+  description?: string;
+  purpose?: string;
+  deliverables?: string;
+  channel_id?: string | null;
+  member_ids?: string[];
+}
 
-export interface ServerFrame {
-  type: string;
-  seq?: number | null;
-  ts?: string | null;
-  workspace_id?: Id | null;
-  data: Record<string, unknown>;
+/** A lane of work inside a project — the tabs above the board. */
+export interface Roadmap {
+  id: string;
+  project_id: string;
+  name: string;
+  position: number;
+  created_by: string;
+  created_at: string;
+  /** How many tasks hang on this roadmap. */
+  task_count: number;
+}
+
+export interface TaskInput {
+  title: string;
+  description?: string;
+  status?: TaskStatus;
+  assignee_id?: string | null;
+  start_at?: string | null;
+  due_at?: string | null;
+  roadmap_id?: string | null;
+  /** The milestone this task hangs on — null clears it. */
+  milestone_id?: string | null;
+}
+
+/* ── milestones ─────────────────────────────────────────────────────────── */
+
+/**
+ * A time-boxed deliverable marker. It is not a lane and not a column: a
+ * card may carry a roadmap AND a milestone.
+ */
+export interface Milestone {
+  id: string;
+  project_id: string;
+  title: string;
+  /** ISO datetime — the day the milestone opens. */
+  start_at: string;
+  /** ISO datetime — the day the milestone closes. */
+  end_at: string;
+  /** The colour the company chose — a hex, theirs to pick. */
+  color: string;
+  /** The progress in force: the cards' when they are linked, else the
+      slider's. */
+  progress: number;
+  /** What the slider holds. */
+  manual_progress: number;
+  description: string;
+  /** How many cards hang on this milestone. */
+  task_count: number;
+  /** How many of them are done. */
+  done_count: number;
+  /** True when the progress comes from the linked cards. */
+  auto_progress: boolean;
+  /** The linked card ids. */
+  task_ids: string[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The fields a milestone is created or changed with. */
+export interface MilestoneInput {
+  title: string;
+  start_at: string;
+  end_at: string;
+  color?: string;
+  progress?: number;
+  description?: string;
+  task_ids?: string[];
+}
+
+export interface Tokens {
+  access_token: string;
+  refresh_token: string;
+}
+
+export interface Session extends Tokens {
+  user: User;
+  workspace: Workspace;
+}
+
+export interface WsEvent {
+  type:
+    | "hello"
+    | "message.created"
+    | "message.updated"
+    | "message.deleted"
+    | "reaction.updated"
+    | "typing"
+    | "presence"
+    | "user.updated"
+    | "channel.created"
+    | "channel.updated"
+    | "members.changed"
+    | "unread"
+    | "event.created"
+    | "event.updated"
+    | "event.deleted"
+    | "project.created"
+    | "project.updated"
+    | "project.deleted"
+    | "task.created"
+    | "task.updated"
+    | "task.deleted"
+    | "org.changed"
+    | "pong";
+  message?: Message;
+  message_id?: string;
+  channel_id?: string;
+  channel?: Channel;
+  user_id?: string;
+  user?: User;
+  name?: string;
+  on?: boolean;
+  presence?: Presence;
+  members?: User[];
+  count?: number;
+  event?: ScheduleEvent;
+  event_id?: string;
+  project?: Project;
+  project_id?: string;
+  task?: Task;
+  task_id?: string;
 }

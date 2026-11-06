@@ -1,17 +1,23 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 
-import { App } from "@/app/App";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
-import "@/styles/global.css";
+import "@fontsource/schibsted-grotesk/700.css";
+import "@fontsource/instrument-sans/400.css";
+import "@fontsource/instrument-sans/500.css";
+import "@fontsource/instrument-sans/600.css";
+import "@fontsource/dm-mono/400.css";
+import "@fontsource/dm-mono/500.css";
 
-const root = document.getElementById("root");
-if (!root) throw new Error("#root is missing from index.html");
+import "./styles/app.css";
+import App from "./App";
 
-ReactDOM.createRoot(root).render(
+document.documentElement.classList.add("js");
+
+const container = document.getElementById("root");
+if (!container) throw new Error("#root is missing from index.html");
+
+ReactDOM.createRoot(container).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
+    <App />
   </React.StrictMode>,
 );

@@ -32,8 +32,6 @@ COPY pyproject.toml ./
 RUN pip install --no-index --find-links=/wheels . \
     && rm -rf /wheels
 
-COPY --chown=llack:llack alembic.ini ./
-COPY --chown=llack:llack alembic ./alembic
 COPY --chown=llack:llack app ./app
 COPY --chown=llack:llack docker-entrypoint.sh ./
 
@@ -44,7 +42,12 @@ USER llack
 EXPOSE 8000
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# One worker, on purpose. The realtime hub (app/realtime/hub.py) keeps the open
+# sockets in this process's memory, so with several workers a message posted
+# to one worker would never reach a client connected to another. Scale out
+# with a broker behind the hub before raising --workers.
+#
 # --proxy-headers so client_ip() can trust X-Forwarded-For behind a reverse
 # proxy; --forwarded-allow-ips must be narrowed to the proxy in production.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "4", "--proxy-headers", "--forwarded-allow-ips", "*"]
+     "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

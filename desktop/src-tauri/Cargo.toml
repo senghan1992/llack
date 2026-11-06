@@ -1,10 +1,19 @@
+# Llack 데스크톱 셸.
+#
+# 이 패키지는 독립형(standalone)이다 — 워크스페이스가 아니다.
+# 프론트엔드(React)가 화면을 그리는데, 이 셸은 그 밑에서 다음만 담당한다.
+#   · 네이티브 창(사이즈/위치 기억 포함)
+#   · OS 알림(네이티브 알림 → OS 포커스 설정을 그대로 따른다)
+#   · 외부 브라우저로 링크 열기
+#   · 셸이 직접 API 를 부를 때 쓰는 HTTP 클라이언트
+# 에이전트 · 스크린캡처 · 키체인 · 딥링크 · 트레이 · 미니앱 패널은 없다.
 [package]
 name = "llack"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-description = "Llack — 사내 협업 OS 데스크톱 클라이언트"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.77"
+license = "Proprietary"
+description = "Llack — 사내 메신저 데스크톱 셸"
 default-run = "llack"
 
 [lib]
@@ -15,41 +24,37 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-llack-core = { path = "../core" }
+tauri = { version = "2.12", features = ["protocol-asset"] }
+tauri-plugin-notification = "2.8"
+tauri-plugin-dialog = "2.7"
+tauri-plugin-opener = "2.7"
+tauri-plugin-os = "2.4"
 
-tauri = { version = "2", features = ["tray-icon", "image-png", "protocol-asset"] }
-tauri-plugin-opener = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-os = "2"
-tauri-plugin-process = "2"
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-deep-link = "2"
+# 셸 자신의 HTTP 클라이언트(api.rs). 웹뷰에 노출하지 않는 요청(알림에 붙일
+# 채널 이름 확인 등)에만 쓴다. 네이티브 TLS 를 쓰지 않아 openssl 없이 빌드된다.
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "http2",
+    "rustls-tls",
+] }
 
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
-anyhow.workspace = true
-tokio.workspace = true
-async-trait.workspace = true
-base64 = "0.22"
-parking_lot.workspace = true
-tracing.workspace = true
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
-url.workspace = true
-
-# Screen capture and input synthesis, compiled in only under the
-# `screen-control` feature. Optional so a normal build carries neither the code
-# nor these crates, and the three host tools are absent from the catalog.
-xcap = { version = "0.0.14", optional = true }
-enigo = { version = "0.2", optional = true }
-image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
 
 [features]
+# release 빌드에서 프론트엔드 번들(dist)을 커스텀 프로토콜로 서빙한다.
+# tauri build --features custom-protocol 이 기본값이라서, 여기서 정의한다.
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-# Off by default: turning it on lets the agent see the screen and drive the
-# mouse and keyboard. High-blast-radius, so it is a deliberate build choice.
-screen-control = ["dep:xcap", "dep:enigo", "dep:image"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

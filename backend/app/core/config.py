@@ -1,187 +1,63 @@
-"""Application settings, loaded from environment / .env with the LLACK_ prefix."""
+"""Application settings, read from the environment (or a local ``.env``)."""
 
 from __future__ import annotations
 
-import secrets
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="LLACK_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    # ── Core ────────────────────────────────────────────────────────────
-    env: Literal["development", "staging", "production"] = "development"
-    secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
-    api_prefix: str = "/api/v1"
-
-    # ── Database ────────────────────────────────────────────────────────
-    database_url: str = "sqlite+aiosqlite:///./llack.db"
-    db_echo: bool = False
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
-
-    # ── Redis ───────────────────────────────────────────────────────────
-    # Empty means "single-node in-process fan-out" — fine for dev, not for
-    # more than one uvicorn worker.
-    redis_url: str = ""
-
-    # ── Tokens ──────────────────────────────────────────────────────────
-    access_token_ttl_seconds: int = 900          # 15 min
-    refresh_token_ttl_seconds: int = 2_592_000   # 30 days
-    jwt_algorithm: str = "HS256"
-
-    # ── Storage ─────────────────────────────────────────────────────────
-    storage_backend: Literal["local", "s3"] = "local"
-    storage_local_dir: Path = Path("./var/uploads")
-    s3_bucket: str = ""
-    s3_endpoint_url: str = ""
-    s3_region: str = "ap-northeast-2"
-    max_upload_bytes: int = 104_857_600  # 100 MiB
-
-    # ── Mail ────────────────────────────────────────────────────────────
-    # Empty host = console backend: the mail body is logged instead of sent.
-    # Fine for dev; in production set the SMTP relay so reset codes actually
-    # reach people.
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_starttls: bool = True
-    mail_from: str = "llack@localhost"
-
-    # ── Public web address ──────────────────────────────────────────────
-    # Where people open Llack in a browser (https://llack.example.com). Used
-    # to build the link inside invitation e-mails. Empty → the request's
-    # Origin header is used; no Origin → the invite is not mailed.
-    public_web_url: str = ""
-
-    # ── Link unfurls ────────────────────────────────────────────────────
-    # A message's first http(s) link gets a title/description/image card,
-    # fetched by the server through the same SSRF guard as link-app probes.
-    unfurl_enabled: bool = True
-
-    # ── Sign-up policy ──────────────────────────────────────────────────
-    # True locks /auth/register behind a valid invite token — the production
-    # posture for custom email/password auth until SSO lands. False (the dev
-    # default) keeps sign-up open; a token, when present, is still honoured.
-    require_invite: bool = False
-
-    # ── Rate limits ─────────────────────────────────────────────────────
-    # Token-bucket capacities (burst size == sustained rate over the window).
-    # 0 disables a limit. In-process: with N workers the effective limit is
-    # N× these numbers — see app/core/ratelimit.py.
-    rate_limit_login_per_minute: int = 10        # per email+IP
-    rate_limit_register_per_hour: int = 30       # per IP
-    rate_limit_messages_per_10s: int = 30        # per user
-    rate_limit_search_per_minute: int = 60       # per user
-    rate_limit_forgot_per_hour: int = 5          # per email+IP (reset mails/redeems)
-
-    # ── Realtime ────────────────────────────────────────────────────────
-    ws_heartbeat_seconds: int = 25
-    presence_ttl_seconds: int = 60
-
-    # ── Attachment scanning (ClamAV) ────────────────────────────────────
-    # Empty host = no scanning; files are stored with scan_status="skipped".
-    # Point at a clamd (INSTREAM over TCP) and every upload is scanned in the
-    # background; infected files are quarantined and the uploader is told.
-    clamav_host: str = ""
-    clamav_port: int = 3310
-    clamav_timeout_seconds: float = 30.0
-
-    # ── Metrics ─────────────────────────────────────────────────────────
-    # `GET /metrics` (Prometheus text format). With a token set the endpoint
-    # requires `Authorization: Bearer <token>`; without one it is open in
-    # development and absent (404) in production — an unauthenticated metrics
-    # page leaks request paths and user counts.
-    metrics_token: str = ""
-
-    # ── Background workers ─────────────────────────────────────────────
-    # Retention sweeps, unread recounts, presence cleanup. Off in tests; on
-    # for every server process — with Redis configured only one node runs
-    # each job at a time (leader lock), without Redis every node runs them
-    # (harmless for a single node, which is the only Redis-less deployment).
-    run_workers: bool = True
-
-    # ── Media tokens ────────────────────────────────────────────────────
-    # A short-lived HMAC that lets `<video src>` / `<img src>` fetch a file
-    # without a bearer header (browsers cannot attach one to media elements).
-    media_token_ttl_seconds: int = 600
-
-    # ── CORS ────────────────────────────────────────────────────────────
-    # A mini-app panel runs on its own origin and calls `/api/v1/app-bridge`
-    # from there, so every host that serves a panel belongs here too — not
-    # just the desktop shell. 5180 is the bundled example app's dev port.
-    cors_origins: list[str] = [
-        "http://localhost:1420",
-        "http://127.0.0.1:1420",
-        "http://localhost:5173",
-        "http://localhost:5180",
-        "http://127.0.0.1:5180",
-        "tauri://localhost",
-    ]
-
-    # ── Mini-app platform ───────────────────────────────────────────────
-    # Mini-app iframes get their own CSP; these are the hosts they may be
-    # loaded from. "*" allows any (development only).
-    app_allowed_hosts: list[str] = ["*"]
-
-    @field_validator("cors_origins", "app_allowed_hosts", mode="before")
-    @classmethod
-    def _split_csv(cls, v: object) -> object:
-        if isinstance(v, str):
-            return [item.strip() for item in v.split(",") if item.strip()]
-        return v
-
-    @property
-    def is_sqlite(self) -> bool:
-        return self.database_url.startswith("sqlite")
-
-    @property
-    def is_production(self) -> bool:
-        return self.env == "production"
-
-
-def validate_production_settings(s: Settings) -> None:
-    """Refuse to boot a production server on development defaults.
-
-    A guessable `LLACK_SECRET_KEY` means anyone can mint valid tokens — this
-    is the one misconfiguration that silently voids every other control, so
-    it fails loudly at startup instead of surfacing in an incident. Only
-    enforced when `LLACK_ENV=production`; dev stays frictionless.
-    """
-    if not s.is_production:
-        return
-    insecure = (
-        s.secret_key.startswith("dev-secret")
-        or s.secret_key.startswith("change-me")
-        or len(s.secret_key) < 32
+    secret_key: str = Field(
+        default="llack-dev-secret-key-change-me-before-production",
+        validation_alias=AliasChoices("SECRET_KEY", "LLACK_SECRET_KEY"),
     )
-    if insecure:
-        raise RuntimeError(
-            "LLACK_SECRET_KEY 가 개발 기본값이거나 너무 짧습니다. "
-            "프로덕션에서는 32자 이상의 무작위 값을 설정해야 합니다 "
-            "(예: python -c \"import secrets; print(secrets.token_urlsafe(48))\")."
-        )
-    if s.database_url.startswith("sqlite"):
-        raise RuntimeError(
-            "프로덕션에서 SQLite 를 쓰고 있습니다. 동시 쓰기에서 무너집니다 — "
-            "LLACK_DATABASE_URL 을 Postgres 로 설정하세요."
-        )
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./llack.db",
+        validation_alias=AliasChoices("DATABASE_URL", "LLACK_DATABASE_URL"),
+    )
+    api_prefix: str = "/api/v1"
+    access_token_ttl_seconds: int = 1800  # 30 minutes
+    refresh_token_ttl_seconds: int = 2_592_000  # 30 days
+    jwt_algorithm: str = "HS256"
+    cors_origins: str = "*"
+    upload_dir: Path = Field(
+        default_factory=lambda: BACKEND_ROOT / "var" / "uploads",
+        validation_alias=AliasChoices("UPLOAD_DIR", "LLACK_UPLOAD_DIR"),
+    )
+    # Room for real office documents. Raise it with MAX_UPLOAD_BYTES.
+    max_upload_bytes: int = 50 * 1024 * 1024
+    # How much a workspace may keep in files. Five gigabytes of documents is
+    # a lot for one team; the rule is here so it can be argued about in one
+    # place.
+    workspace_quota_bytes: int = 5 * 1024 * 1024 * 1024
+    # An upload that never reaches a message is taken away after this many
+    # hours. Zero keeps everything.
+    orphan_file_hours: int = 24
+    max_name_length: int = 120
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        raw = self.cors_origins.strip()
+        if not raw or raw == "*":
+            return ["*"]
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def upload_root(self) -> Path:
+        return self.upload_dir if self.upload_dir.is_absolute() else BACKEND_ROOT / self.upload_dir
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-
-
-settings = get_settings()

@@ -1,412 +1,371 @@
-"""Channel lifecycle, membership, DM resolution and read state."""
+"""Channel creation, visibility, membership and serialisation."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import ChannelKind, ChannelRole, WorkspaceRole
-from app.core.errors import Conflict, Forbidden, NotFound
-from app.core.ids import new_ulid
-from app.core.logging import get_logger
-from app.models.channel import Channel, ChannelMember
+from app.core.errors import conflict, not_found, validation_error
+from app.core.ids import CHANNEL_MEMBER_PREFIX, CHANNEL_PREFIX, new_id
+from app.models.channel import KIND_CHANNEL, KIND_DM, Channel, ChannelMember
+from app.models.message import Message, Reaction, ReadState, message_attachments
+from app.models.project import Project
+from app.models.schedule import ScheduleEvent
 from app.models.user import User
-from app.models.workspace import WorkspaceMember
-from app.services.workspaces import ensure_unique_channel_slug, require_membership
-
-log = get_logger(__name__)
-
-
-def build_dm_key(user_ids: list[str]) -> str:
-    """Deterministic identity for a DM, independent of who opened it."""
-    return ":".join(sorted(set(user_ids)))
+from app.models.workspace import Workspace, WorkspaceMembership
+from app.schemas.channel import ChannelOut
+from app.schemas.user import MemberOut
+from app.services.messages import unread_counts
 
 
-async def get_channel(db: AsyncSession, channel_id: str) -> Channel:
-    channel = await db.get(Channel, channel_id)
+async def get_channel_or_404(session: AsyncSession, channel_id: str) -> Channel:
+    channel = await session.get(Channel, channel_id)
     if channel is None:
-        raise NotFound("Channel not found.", code="channel_not_found")
+        raise not_found("channel not found")
     return channel
 
 
-async def get_channel_member(
-    db: AsyncSession, *, channel_id: str, user_id: str
-) -> ChannelMember | None:
-    return await db.scalar(
-        select(ChannelMember)
-        .where(ChannelMember.channel_id == channel_id, ChannelMember.user_id == user_id)
-        .limit(1)
+async def list_channels(session: AsyncSession, workspace_id: str, viewer_id: str) -> list[Channel]:
+    """Public channels plus the private ones the viewer belongs to."""
+    member_channels = select(ChannelMember.channel_id).where(ChannelMember.user_id == viewer_id)
+    rows = await session.scalars(
+        select(Channel)
+        .where(
+            Channel.workspace_id == workspace_id,
+            Channel.kind == KIND_CHANNEL,
+            (Channel.is_private.is_(False)) | (Channel.id.in_(member_channels)),
+        )
+        .order_by(Channel.created_at, Channel.id)
     )
+    return list(rows)
 
 
-async def resolve_access(
-    db: AsyncSession, *, channel_id: str, user_id: str, require_member: bool = True
-) -> tuple[Channel, ChannelMember | None]:
-    """Load a channel the user is allowed to see, plus their membership.
-
-    Public channels in a workspace the user belongs to are readable without
-    joining — that is what makes "browse channels" work. Private channels and
-    DMs require membership.
-    """
-    channel = await get_channel(db, channel_id)
-    membership = await get_channel_member(db, channel_id=channel_id, user_id=user_id)
-
-    if membership is None:
-        if channel.kind != ChannelKind.PUBLIC.value:
-            raise NotFound("Channel not found.", code="channel_not_found")
-        # Confirms the user is at least in the workspace.
-        await require_membership(db, workspace_id=channel.workspace_id, user_id=user_id)
-        if require_member:
-            raise Forbidden("Join this channel first.", code="not_channel_member")
-
-    return channel, membership
+async def list_dms(session: AsyncSession, workspace_id: str, viewer_id: str) -> list[Channel]:
+    rows = await session.scalars(
+        select(Channel)
+        .join(ChannelMember, ChannelMember.channel_id == Channel.id)
+        .where(
+            Channel.workspace_id == workspace_id,
+            Channel.kind == KIND_DM,
+            ChannelMember.user_id == viewer_id,
+        )
+        .order_by(Channel.created_at, Channel.id)
+    )
+    return list(rows)
 
 
 async def create_channel(
-    db: AsyncSession,
-    *,
-    workspace_id: str,
+    session: AsyncSession,
+    workspace: Workspace,
     creator: User,
     name: str,
-    slug: str | None,
-    kind: ChannelKind,
     topic: str | None = None,
-    purpose: str | None = None,
+    is_private: bool = False,
     member_ids: list[str] | None = None,
 ) -> Channel:
-    await require_membership(
-        db, workspace_id=workspace_id, user_id=creator.id, minimum_role=WorkspaceRole.MEMBER
-    )
-
-    if slug:
-        taken = await db.scalar(
-            select(Channel.id)
-            .where(Channel.workspace_id == workspace_id, Channel.slug == slug)
-            .limit(1)
+    clean_name = name.strip()
+    if not clean_name:
+        raise validation_error("channel name is required", "name")
+    duplicate = await session.scalar(
+        select(Channel.id).where(
+            Channel.workspace_id == workspace.id,
+            Channel.kind == KIND_CHANNEL,
+            Channel.name == clean_name,
         )
-        if taken is not None:
-            raise Conflict("A channel with this name already exists.", code="channel_slug_taken")
-        final_slug = slug
-    else:
-        final_slug = await ensure_unique_channel_slug(db, workspace_id=workspace_id, name=name)
+    )
+    if duplicate is not None:
+        raise conflict(f"a channel named {clean_name} already exists")
 
     channel = Channel(
-        id=new_ulid(),
-        workspace_id=workspace_id,
-        kind=kind.value,
-        slug=final_slug,
-        name=name.strip(),
-        topic=topic,
-        purpose=purpose,
+        id=new_id(CHANNEL_PREFIX),
+        workspace_id=workspace.id,
+        name=clean_name,
+        topic=(topic or "").strip(),
+        purpose="",
+        kind=KIND_CHANNEL,
+        is_private=is_private,
         created_by=creator.id,
     )
-    db.add(channel)
-
-    invitees = {creator.id, *(member_ids or [])}
-    # Only people already in the workspace can be added.
-    valid_ids = set(
-        (
-            await db.scalars(
-                select(WorkspaceMember.user_id).where(
-                    WorkspaceMember.workspace_id == workspace_id,
-                    WorkspaceMember.user_id.in_(invitees),
-                    WorkspaceMember.is_active.is_(True),
-                )
-            )
-        ).all()
+    session.add(channel)
+    session.add(
+        ChannelMember(
+            id=new_id(CHANNEL_MEMBER_PREFIX),
+            channel_id=channel.id,
+            user_id=creator.id,
+        )
     )
-    for user_id in valid_ids:
-        db.add(
+    # The room can be made with people already in it. The creator is in the
+    # room already, so they are not added twice.
+    for user_id in dict.fromkeys(member_ids or []):
+        if user_id == creator.id:
+            continue
+        session.add(
             ChannelMember(
-                id=new_ulid(),
+                id=new_id(CHANNEL_MEMBER_PREFIX),
                 channel_id=channel.id,
                 user_id=user_id,
-                role=ChannelRole.ADMIN.value if user_id == creator.id else ChannelRole.MEMBER.value,
             )
         )
-    channel.member_count = len(valid_ids)
-
-    await db.flush()
-    log.info("channel.created", channel_id=channel.id, kind=kind.value, workspace_id=workspace_id)
+    await session.flush()
     return channel
 
 
-async def open_dm(
-    db: AsyncSession, *, workspace_id: str, opener: User, user_ids: list[str]
-) -> tuple[Channel, bool]:
-    """Get-or-create a DM. Returns (channel, created)."""
-    await require_membership(db, workspace_id=workspace_id, user_id=opener.id)
+def dm_key(workspace_id: str, first_user_id: str, second_user_id: str) -> str:
+    low, high = sorted([first_user_id, second_user_id])
+    return f"{workspace_id}:{low}:{high}"
 
-    participants = sorted({opener.id, *user_ids})
-    if len(participants) < 2:
-        raise Conflict("A direct message needs at least one other person.", code="dm_needs_peer")
 
-    valid_ids = set(
-        (
-            await db.scalars(
-                select(WorkspaceMember.user_id).where(
-                    WorkspaceMember.workspace_id == workspace_id,
-                    WorkspaceMember.user_id.in_(participants),
-                    WorkspaceMember.is_active.is_(True),
-                )
-            )
-        ).all()
+async def create_dm(
+    session: AsyncSession, workspace: Workspace, caller: User, target: User
+) -> Channel:
+    """Return the DM between two users, creating it the first time."""
+    if caller.id == target.id:
+        raise validation_error("you cannot open a DM with yourself", "user_id")
+
+    key = dm_key(workspace.id, caller.id, target.id)
+    existing = await session.scalar(select(Channel).where(Channel.dm_key == key))
+    if existing is not None:
+        return existing
+
+    channel = Channel(
+        id=new_id(CHANNEL_PREFIX),
+        workspace_id=workspace.id,
+        name=target.name,
+        topic="",
+        purpose="",
+        kind=KIND_DM,
+        is_private=True,
+        created_by=caller.id,
+        dm_key=key,
     )
-    missing = set(participants) - valid_ids
-    if missing:
-        raise NotFound(
-            "Some of these people are not in this workspace.",
-            code="user_not_in_workspace",
-            details={"user_ids": sorted(missing)},
+    session.add(channel)
+    for participant in (caller, target):
+        session.add(
+            ChannelMember(
+                id=new_id(CHANNEL_MEMBER_PREFIX),
+                channel_id=channel.id,
+                user_id=participant.id,
+            )
         )
+    await session.flush()
+    return channel
 
-    dm_key = build_dm_key(participants)
-    existing = await db.scalar(
-        select(Channel)
-        .where(Channel.workspace_id == workspace_id, Channel.dm_key == dm_key)
-        .limit(1)
+
+async def add_channel_member(session: AsyncSession, channel: Channel, user_id: str) -> None:
+    existing = await session.scalar(
+        select(ChannelMember.id).where(
+            ChannelMember.channel_id == channel.id,
+            ChannelMember.user_id == user_id,
+        )
     )
     if existing is not None:
-        # Un-hide it for everyone involved: a new message should resurface a
-        # conversation someone previously closed.
-        await db.execute(
-            update(ChannelMember)
-            .where(ChannelMember.channel_id == existing.id)
-            .values(hidden_at=None)
+        return
+    session.add(
+        ChannelMember(
+            id=new_id(CHANNEL_MEMBER_PREFIX),
+            channel_id=channel.id,
+            user_id=user_id,
         )
-        await db.flush()
-        return existing, False
-
-    kind = ChannelKind.DM if len(participants) == 2 else ChannelKind.GROUP_DM
-    channel = Channel(
-        id=new_ulid(),
-        workspace_id=workspace_id,
-        kind=kind.value,
-        dm_key=dm_key,
-        created_by=opener.id,
-        member_count=len(participants),
     )
-    db.add(channel)
-    for user_id in participants:
-        db.add(ChannelMember(id=new_ulid(), channel_id=channel.id, user_id=user_id))
-    await db.flush()
-    return channel, True
+    await session.flush()
 
 
-async def open_self_dm(db: AsyncSession, *, workspace_id: str, user: User) -> Channel:
-    """The note-to-self conversation: a DM whose only member is you.
+async def remove_channel_member(session: AsyncSession, channel: Channel, user_id: str) -> None:
+    row = await session.scalar(
+        select(ChannelMember).where(
+            ChannelMember.channel_id == channel.id,
+            ChannelMember.user_id == user_id,
+        )
+    )
+    if row is None:
+        return
+    await session.delete(row)
+    await session.flush()
 
-    `/remind me …` without a message to point at needs somewhere private to
-    keep the note; posting it into the current channel would leak it. The
-    sidebar already knows how to label a peer-less DM ("(나)").
+
+async def delete_channel(session: AsyncSession, channel: Channel) -> None:
+    """Delete a channel together with everything inside it.
+
+    SQLite does not enforce foreign keys in this project, so the child
+    rows are removed by hand: the attachments of the messages, their
+    reactions, the read state of the channel, the roster, the messages
+    themselves and the links that pointed at the room.
     """
-    await require_membership(db, workspace_id=workspace_id, user_id=user.id)
-    dm_key = build_dm_key([user.id])
-    existing = await db.scalar(
-        select(Channel)
-        .where(Channel.workspace_id == workspace_id, Channel.dm_key == dm_key)
-        .limit(1)
+    message_ids = list(
+        await session.scalars(select(Message.id).where(Message.channel_id == channel.id))
     )
-    if existing is not None:
-        return existing
-    channel = Channel(
-        id=new_ulid(),
-        workspace_id=workspace_id,
-        kind=ChannelKind.DM.value,
-        dm_key=dm_key,
-        created_by=user.id,
-        member_count=1,
-    )
-    db.add(channel)
-    db.add(ChannelMember(id=new_ulid(), channel_id=channel.id, user_id=user.id))
-    await db.flush()
-    return channel
-
-
-async def join_channel(db: AsyncSession, *, channel: Channel, user_id: str) -> ChannelMember:
-    if channel.kind_enum.is_conversation:
-        raise Forbidden("Direct messages cannot be joined.", code="cannot_join_dm")
-    if channel.is_archived:
-        raise Forbidden("This channel is archived.", code="channel_archived")
-    if channel.kind == ChannelKind.PRIVATE.value:
-        raise Forbidden("Private channels are invite-only.", code="channel_private")
-
-    await require_membership(db, workspace_id=channel.workspace_id, user_id=user_id)
-
-    existing = await get_channel_member(db, channel_id=channel.id, user_id=user_id)
-    if existing is not None:
-        return existing
-
-    membership = ChannelMember(id=new_ulid(), channel_id=channel.id, user_id=user_id)
-    db.add(membership)
-    channel.member_count += 1
-    await db.flush()
-    return membership
-
-
-async def leave_channel(db: AsyncSession, *, channel: Channel, user_id: str) -> None:
-    if channel.kind_enum.is_conversation:
-        # Leaving a DM hides it instead of removing membership, so history is
-        # preserved and a new message can bring it back.
-        await db.execute(
-            update(ChannelMember)
-            .where(ChannelMember.channel_id == channel.id, ChannelMember.user_id == user_id)
-            .values(hidden_at=datetime.now(UTC))
+    if message_ids:
+        await session.execute(
+            delete(message_attachments).where(message_attachments.c.message_id.in_(message_ids))
         )
-        await db.flush()
-        return
+        await session.execute(delete(Reaction).where(Reaction.message_id.in_(message_ids)))
+    await session.execute(delete(Message).where(Message.channel_id == channel.id))
+    await session.execute(delete(ReadState).where(ReadState.channel_id == channel.id))
 
-    membership = await get_channel_member(db, channel_id=channel.id, user_id=user_id)
-    if membership is None:
-        return
-    await db.delete(membership)
-    channel.member_count = max(0, channel.member_count - 1)
-    await db.flush()
+    # A project or a schedule that pointed at this room keeps its work and
+    # loses the room.
+    await session.execute(
+        update(Project).where(Project.channel_id == channel.id).values(channel_id=None)
+    )
+    await session.execute(
+        update(ScheduleEvent).where(ScheduleEvent.channel_id == channel.id).values(channel_id=None)
+    )
+
+    roster = list(
+        await session.scalars(select(ChannelMember).where(ChannelMember.channel_id == channel.id))
+    )
+    for member in roster:
+        await session.delete(member)
+
+    await session.delete(channel)
+    await session.flush()
 
 
-async def add_members(
-    db: AsyncSession, *, channel: Channel, user_ids: list[str], actor_id: str
-) -> list[str]:
-    """Add workspace members to a channel. Returns the ids actually added."""
-    if channel.kind_enum.is_conversation:
-        raise Forbidden(
-            "Add people by opening a new group message instead.", code="cannot_add_to_dm"
+async def list_public_channels(session: AsyncSession, workspace_id: str) -> list[Channel]:
+    """Every public channel of the workspace."""
+    rows = await session.scalars(
+        select(Channel).where(
+            Channel.workspace_id == workspace_id,
+            Channel.kind == KIND_CHANNEL,
+            Channel.is_private.is_(False),
         )
-    await require_membership(db, workspace_id=channel.workspace_id, user_id=actor_id)
-
-    eligible = set(
-        (
-            await db.scalars(
-                select(WorkspaceMember.user_id).where(
-                    WorkspaceMember.workspace_id == channel.workspace_id,
-                    WorkspaceMember.user_id.in_(set(user_ids)),
-                    WorkspaceMember.is_active.is_(True),
-                )
-            )
-        ).all()
     )
-    already = set(
-        (
-            await db.scalars(
-                select(ChannelMember.user_id).where(
-                    ChannelMember.channel_id == channel.id,
-                    ChannelMember.user_id.in_(eligible),
-                )
-            )
-        ).all()
-    )
-    to_add = sorted(eligible - already)
-    for user_id in to_add:
-        db.add(ChannelMember(id=new_ulid(), channel_id=channel.id, user_id=user_id))
-    channel.member_count += len(to_add)
-    await db.flush()
-    return to_add
+    return list(rows)
 
 
-async def list_my_channels(
-    db: AsyncSession, *, workspace_id: str, user_id: str, include_archived: bool = False
-) -> list[tuple[Channel, ChannelMember]]:
-    conditions = [
-        Channel.workspace_id == workspace_id,
-        ChannelMember.user_id == user_id,
-        # A hidden DM stays out of the sidebar until it has new activity.
-        or_(
-            ChannelMember.hidden_at.is_(None),
+async def join_public_channels(session: AsyncSession, workspace_id: str, user_id: str) -> None:
+    for channel in await list_public_channels(session, workspace_id):
+        await add_channel_member(session, channel, user_id)
+
+
+async def list_channel_members(session: AsyncSession, channel: Channel) -> list[MemberOut]:
+    """The channel roster, carrying each user's workspace role."""
+    rows = await session.execute(
+        select(ChannelMember, User, WorkspaceMembership.role)
+        .join(User, User.id == ChannelMember.user_id)
+        .outerjoin(
+            WorkspaceMembership,
             and_(
-                Channel.last_message_at.isnot(None),
-                Channel.last_message_at > ChannelMember.hidden_at,
+                WorkspaceMembership.workspace_id == channel.workspace_id,
+                WorkspaceMembership.user_id == ChannelMember.user_id,
             ),
-        ),
+        )
+        .where(ChannelMember.channel_id == channel.id)
+        .order_by(ChannelMember.joined_at, ChannelMember.id)
+    )
+    return [
+        MemberOut(user=user, role=role or "member", joined_at=membership.joined_at)
+        for membership, user, role in rows.all()
     ]
-    if not include_archived:
-        conditions.append(Channel.is_archived.is_(False))
-
-    rows = await db.execute(
-        select(Channel, ChannelMember)
-        .join(ChannelMember, ChannelMember.channel_id == Channel.id)
-        .where(*conditions)
-        .order_by(
-            ChannelMember.is_starred.desc(),
-            ChannelMember.sort_order,
-            Channel.last_message_at.desc().nullslast(),
-            Channel.name,
-        )
-    )
-    return [(c, m) for c, m in rows.all()]
 
 
-async def browse_channels(
-    db: AsyncSession,
+async def serialize_channels(
+    session: AsyncSession,
+    channels: list[Channel],
+    viewer_id: str,
     *,
-    workspace_id: str,
-    user_id: str,
-    query: str | None = None,
-    limit: int = 50,
-) -> list[Channel]:
-    """Public channels in the workspace, joined or not."""
-    await require_membership(db, workspace_id=workspace_id, user_id=user_id)
-    stmt = select(Channel).where(
-        Channel.workspace_id == workspace_id,
-        Channel.kind == ChannelKind.PUBLIC.value,
-        Channel.is_archived.is_(False),
+    include_members: bool = False,
+) -> list[ChannelOut]:
+    """Serialise a batch of channels for one viewer."""
+    if not channels:
+        return []
+
+    channel_ids = [channel.id for channel in channels]
+    counts = await unread_counts(session, channel_ids, viewer_id)
+
+    member_counts = dict(
+        (
+            await session.execute(
+                select(ChannelMember.channel_id, func.count(ChannelMember.id))
+                .where(ChannelMember.channel_id.in_(channel_ids))
+                .group_by(ChannelMember.channel_id)
+            )
+        ).all()
     )
-    if query:
-        pattern = f"%{query.strip().lower()}%"
-        stmt = stmt.where(
-            or_(func.lower(Channel.name).like(pattern), func.lower(Channel.slug).like(pattern))
-        )
-    stmt = stmt.order_by(Channel.member_count.desc(), Channel.name).limit(limit)
-    return list((await db.scalars(stmt)).all())
 
-
-async def dm_peers(db: AsyncSession, *, channel_id: str, exclude_user_id: str) -> list[User]:
-    rows = await db.scalars(
-        select(User)
-        .join(ChannelMember, ChannelMember.user_id == User.id)
-        .where(ChannelMember.channel_id == channel_id, User.id != exclude_user_id)
-        .order_by(User.display_name)
+    last_messages = dict(
+        (
+            await session.execute(
+                select(Message.channel_id, func.max(Message.created_at))
+                .where(
+                    Message.channel_id.in_(channel_ids),
+                    Message.deleted_at.is_(None),
+                )
+                .group_by(Message.channel_id)
+            )
+        ).all()
     )
-    return list(rows.all())
 
-
-async def mark_read(
-    db: AsyncSession, *, membership: ChannelMember, message_id: str | None, channel: Channel
-) -> ChannelMember:
-    target = message_id or channel.last_message_id
-    # Never move the read marker backwards; ULIDs make that a string compare.
-    if target and (
-        membership.last_read_message_id is None or target > membership.last_read_message_id
-    ):
-        membership.last_read_message_id = target
-        membership.unread_count = 0
-        membership.mention_count = 0
-        await db.flush()
-    return membership
-
-
-async def recompute_unread(
-    db: AsyncSession, *, membership: ChannelMember
-) -> tuple[int, int]:
-    """Recount unread/mentions from `messages`. Used on reconnect and repair."""
-    from app.models.message import Message
-
-    cursor = membership.last_read_message_id or ""
-    total = (
-        await db.scalar(
-            select(func.count())
-            .select_from(Message)
+    dm_channels = [channel.id for channel in channels if channel.kind == KIND_DM]
+    dm_partner: dict[str, User] = {}
+    if dm_channels:
+        rows = await session.execute(
+            select(ChannelMember.channel_id, User)
+            .join(User, User.id == ChannelMember.user_id)
             .where(
-                Message.channel_id == membership.channel_id,
-                Message.id > cursor,
-                Message.deleted_at.is_(None),
-                Message.user_id != membership.user_id,
-                # Same rule as the live counter: thread replies stay in threads.
-                or_(Message.parent_id.is_(None), Message.also_sent_to_channel.is_(True)),
+                ChannelMember.channel_id.in_(dm_channels),
+                ChannelMember.user_id != viewer_id,
             )
         )
-    ) or 0
-    membership.unread_count = total
-    await db.flush()
-    return total, membership.mention_count
+        for channel_id, user in rows.all():
+            dm_partner.setdefault(channel_id, user)
+
+    # Which of these the viewer is actually in. A public channel stays in the
+    # workspace's directory after you leave it, so the rail needs to know.
+    joined = set(
+        await session.scalars(
+            select(ChannelMember.channel_id).where(
+                ChannelMember.user_id == viewer_id,
+                ChannelMember.channel_id.in_(channel_ids),
+            )
+        )
+    )
+
+    members_by_channel: dict[str, list[User]] = {}
+    if include_members:
+        rows = await session.execute(
+            select(ChannelMember.channel_id, User)
+            .join(User, User.id == ChannelMember.user_id)
+            .where(ChannelMember.channel_id.in_(channel_ids))
+            .order_by(ChannelMember.joined_at, ChannelMember.id)
+        )
+        for channel_id, user in rows.all():
+            members_by_channel.setdefault(channel_id, []).append(user)
+
+    out: list[ChannelOut] = []
+    for channel in channels:
+        partner = dm_partner.get(channel.id)
+        members = members_by_channel.get(channel.id) if include_members else None
+        out.append(
+            ChannelOut(
+                id=channel.id,
+                workspace_id=channel.workspace_id,
+                name=partner.name if partner is not None else channel.name,
+                topic=channel.topic,
+                purpose=channel.purpose,
+                kind=channel.kind,
+                is_private=channel.is_private,
+                created_by=channel.created_by,
+                created_at=channel.created_at,
+                member_count=int(member_counts.get(channel.id, 0)),
+                unread_count=int(counts.get(channel.id, 0)),
+                last_message_at=last_messages.get(channel.id),
+                dm_user=partner,
+                members=members,
+                is_member=channel.id in joined,
+            )
+        )
+    return out
+
+
+async def serialize_channel(
+    session: AsyncSession,
+    channel: Channel,
+    viewer_id: str,
+    *,
+    include_members: bool = False,
+) -> ChannelOut:
+    result = await serialize_channels(
+        session, [channel], viewer_id, include_members=include_members
+    )
+    return result[0]

@@ -1,92 +1,46 @@
-"""Workspaces (tenants), their members and invitations."""
+"""Workspaces and their memberships."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.enums import WorkspaceRole
-from app.models.base import ULID, Base, Timestamps, ULIDPrimaryKey, UTCDateTime
+from app.models.base import Base, UTCDateTime, utcnow
 
-if TYPE_CHECKING:
-    from app.models.channel import Channel
-    from app.models.user import User
+ROLE_OWNER = "owner"
+ROLE_ADMIN = "admin"
+ROLE_MEMBER = "member"
+ROLES = (ROLE_OWNER, ROLE_ADMIN, ROLE_MEMBER)
 
 
-class Workspace(Base, ULIDPrimaryKey, Timestamps):
+class Workspace(Base):
     __tablename__ = "workspaces"
 
-    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(160), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, default=None)
-    icon_url: Mapped[str | None] = mapped_column(Text, default=None)
-    created_by: Mapped[str | None] = mapped_column(
-        ULID, ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
-    # Email domains that may self-serve join (["example.com"]).
-    allowed_email_domains: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    # Free-form policy knobs: who may install apps, etc.
-    settings: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    # Retention: NULL = keep forever. Messages older than N days are
-    # soft-deleted (body cleared, attachments unlinked); files older than N
-    # days are removed from storage. A channel may override the message value.
-    retention_days_messages: Mapped[int | None] = mapped_column(Integer, default=None)
-    retention_days_files: Mapped[int | None] = mapped_column(Integer, default=None)
-
-    members: Mapped[list[WorkspaceMember]] = relationship(
-        back_populates="workspace", cascade="all, delete-orphan", lazy="raise_on_sql"
-    )
-    channels: Mapped[list[Channel]] = relationship(
-        back_populates="workspace", cascade="all, delete-orphan", lazy="raise_on_sql"
+    memberships: Mapped[list[WorkspaceMembership]] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan"
     )
 
 
-class WorkspaceMember(Base, ULIDPrimaryKey, Timestamps):
-    __tablename__ = "workspace_members"
-    __table_args__ = (
-        Index("uq_workspace_members_workspace_id_user_id", "workspace_id", "user_id", unique=True),
-    )
+class WorkspaceMembership(Base):
+    __tablename__ = "workspace_memberships"
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),)
 
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+        String(40), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     user_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        String(40), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    role: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=WorkspaceRole.MEMBER.value
-    )
-    # Order of the workspace rail in the desktop client.
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    role: Mapped[str] = mapped_column(String(16), default=ROLE_MEMBER)
+    joined_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
-    workspace: Mapped[Workspace] = relationship(back_populates="members", lazy="raise_on_sql")
-    user: Mapped[User] = relationship(back_populates="memberships", lazy="raise_on_sql")
-
-    @property
-    def role_enum(self) -> WorkspaceRole:
-        return WorkspaceRole(self.role)
-
-
-class WorkspaceInvite(Base, ULIDPrimaryKey, Timestamps):
-    __tablename__ = "workspace_invites"
-
-    workspace_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
-    role: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=WorkspaceRole.MEMBER.value
-    )
-    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    invited_by: Mapped[str | None] = mapped_column(
-        ULID, ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
-    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
-    accepted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
-    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    workspace: Mapped[Workspace] = relationship(back_populates="memberships")
+    user: Mapped[User] = relationship(back_populates="memberships")  # noqa: F821

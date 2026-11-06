@@ -1,104 +1,57 @@
-"""Channel payloads."""
+"""Channel schemas."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field
 
-from app.core.enums import ChannelKind, ChannelRole, NotificationLevel
-from app.schemas.common import Payload, Schema, Slug
-from app.schemas.user import UserBrief
+from app.schemas.common import ORMModel
+from app.schemas.user import UserOut
 
-
-class ChannelMembershipOut(Schema):
-    """The requesting user's own state in a channel."""
-
-    role: ChannelRole = ChannelRole.MEMBER
-    last_read_message_id: str | None = None
-    unread_count: int = 0
-    mention_count: int = 0
-    notification_level: NotificationLevel = NotificationLevel.ALL
-    is_muted: bool = False
-    is_starred: bool = False
-    section: str | None = None
-    sort_order: int = 0
+KIND_CHANNEL = "channel"
+KIND_DM = "dm"
 
 
-class ChannelOut(Schema):
+class ChannelOut(ORMModel):
     id: str
     workspace_id: str
-    kind: ChannelKind
-    slug: str | None = None
-    name: str | None = None
-    topic: str | None = None
-    purpose: str | None = None
-    is_archived: bool = False
-    is_default: bool = False
-    # Message retention override in days; None defers to the workspace.
-    retention_days: int | None = None
+    name: str
+    topic: str = ""
+    purpose: str = ""
+    kind: str = KIND_CHANNEL
+    is_private: bool = False
+    created_by: str
     created_at: datetime
-    last_message_at: datetime | None = None
-    message_count: int = 0
     member_count: int = 0
+    unread_count: int = 0
+    last_message_at: datetime | None = None
+    dm_user: UserOut | None = None
+    members: list[UserOut] | None = None
+    is_member: bool = False
 
-    # Populated for DMs so the client can render the other person.
-    peers: list[UserBrief] = Field(default_factory=list)
-    membership: ChannelMembershipOut | None = None
 
-
-class CreateChannelRequest(Payload):
+class ChannelCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    slug: Slug | None = None
-    kind: ChannelKind = ChannelKind.PUBLIC
-    topic: str | None = Field(default=None, max_length=400)
-    purpose: str | None = Field(default=None, max_length=4000)
-    member_ids: list[str] = Field(default_factory=list, max_length=500)
-
-    @model_validator(mode="after")
-    def _reject_dm_kinds(self) -> CreateChannelRequest:
-        if ChannelKind(self.kind).is_conversation:
-            raise ValueError("use POST /channels/dm to open a direct message")
-        return self
+    topic: str | None = Field(default=None, max_length=300)
+    is_private: bool = False
+    # The people who are in the room from the start.
+    member_ids: list[str] = Field(default_factory=list, max_length=100)
 
 
-class UpdateChannelRequest(Payload):
+class ChannelUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    topic: str | None = Field(default=None, max_length=400)
-    purpose: str | None = Field(default=None, max_length=4000)
-    is_archived: bool | None = None
-    # Channel-admin only. Explicit null = follow the workspace policy.
-    retention_days: int | None = Field(default=None, ge=1, le=3650)
+    topic: str | None = Field(default=None, max_length=300)
+    purpose: str | None = Field(default=None, max_length=300)
 
 
-class OpenDmRequest(Payload):
-    """Idempotent: opening a DM with the same people returns the same channel."""
-
-    user_ids: list[str] = Field(min_length=1, max_length=8)
+class ChannelMemberAdd(BaseModel):
+    user_id: str = Field(min_length=1)
 
 
-class AddMembersRequest(Payload):
-    user_ids: list[str] = Field(min_length=1, max_length=500)
+class DmCreate(BaseModel):
+    user_id: str = Field(min_length=1)
 
 
-class ChannelMemberOut(Schema):
-    id: str
-    user: UserBrief
-    role: ChannelRole
-    joined_at: datetime = Field(validation_alias="created_at")
-
-
-class UpdateMemberRoleRequest(Payload):
-    role: ChannelRole
-
-
-class UpdateMembershipRequest(Payload):
-    notification_level: NotificationLevel | None = None
-    is_muted: bool | None = None
-    is_starred: bool | None = None
-    section: str | None = Field(default=None, max_length=80)
-    sort_order: int | None = None
-
-
-class MarkReadRequest(Payload):
-    message_id: str | None = None  # None = mark everything read
+class ReadUpdate(BaseModel):
+    message_id: str | None = None

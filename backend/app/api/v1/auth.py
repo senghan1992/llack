@@ -1,244 +1,108 @@
-"""Authentication endpoints."""
+"""Sign-up, sign-in and token refresh."""
 
 from __future__ import annotations
 
-from typing import Annotated
+import random
 
-from fastapi import APIRouter, Header, Request, status
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import ClientIp, CurrentUser, DbSession
-from app.core.config import settings
-from app.core.errors import Forbidden
-from app.core.ratelimit import limiter
-from app.core.security import decode_access_token
-from app.schemas.auth import (
-    AuthResponse,
-    ChangePasswordRequest,
-    ForgotPasswordRequest,
-    LoginRequest,
-    RefreshRequest,
-    RegisterRequest,
-    ResetPasswordRequest,
-    SessionOut,
-    TokenPair,
+from app.core.db import get_session
+from app.core.errors import conflict, unauthorized
+from app.core.ids import USER_PREFIX, new_id
+from app.core.security import (
+    REFRESH_TOKEN,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
 )
-from app.schemas.common import OkResponse
-from app.schemas.user import UserOut
-from app.services import auth as auth_service
-from app.services import workspaces as workspace_service
+from app.models.base import utcnow
+from app.models.user import User
+from app.models.workspace import Workspace
+from app.schemas.auth import LoginRequest, RefreshRequest, Session, SignupRequest, Tokens
+from app.services.workspaces import create_workspace, primary_workspace
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+AVATAR_COLORS = (
+    "#3f6f52",
+    "#7a5c3e",
+    "#4a5b8c",
+    "#8c4a5b",
+    "#5b8c7a",
+    "#8c7a4a",
+    "#6b4a8c",
+    "#4a8c6b",
+)
 
-def _user_agent(request: Request) -> str | None:
-    value = request.headers.get("user-agent")
-    return value[:512] if value else None
+
+def _tokens(user: User) -> tuple[str, str]:
+    return create_access_token(user.id), create_refresh_token(user.id)
 
 
-@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(
-    payload: RegisterRequest, db: DbSession, request: Request, ip: ClientIp
-) -> AuthResponse:
-    """Create an account.
-
-    Open by default (dev). With `LLACK_REQUIRE_INVITE` the token is mandatory
-    and is validated *before* the account exists, so a bad invite cannot leave
-    an orphan user behind. A valid token also joins its workspace in the same
-    transaction — sign-up and onboarding are one step.
-    """
-    limiter.check(
-        "register", ip, capacity=settings.rate_limit_register_per_hour, per_seconds=3_600
+def _session(user: User, workspace: Workspace) -> Session:
+    access_token, refresh_token = _tokens(user)
+    return Session(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=user,
+        workspace=workspace,
     )
 
-    invite_token = payload.invite_token
-    if invite_token:
-        invite = await workspace_service.peek_invite(db, token=invite_token)
-        if invite.email != payload.email.strip().lower():
-            raise Forbidden(
-                "This invitation was issued to a different email address.",
-                code="invite_email_mismatch",
-            )
-    elif settings.require_invite:
-        raise Forbidden(
-            "Signing up on this server requires an invitation.",
-            code="invite_required",
-        )
 
-    user = await auth_service.register_user(
-        db,
-        email=payload.email,
-        password=payload.password,
-        display_name=payload.display_name,
-        handle=payload.handle,
+@router.post("/signup", response_model=Session)
+async def signup(payload: SignupRequest, session: AsyncSession = Depends(get_session)) -> Session:
+    email = payload.email.strip().lower()
+    existing = await session.scalar(select(User).where(User.email == email))
+    if existing is not None:
+        raise conflict("email is already registered")
+
+    now = utcnow()
+    user = User(
+        id=new_id(USER_PREFIX),
+        email=email,
+        password_hash=hash_password(payload.password),
+        name=payload.name.strip(),
+        title=None,
+        avatar_color=random.choice(AVATAR_COLORS),
+        presence="offline",
+        last_seen_at=now,
+        created_at=now,
     )
-    if invite_token:
-        await workspace_service.accept_invite(db, token=invite_token, user=user)
-    tokens = await auth_service.issue_tokens(
-        db, user, device=payload.device, ip_address=ip, user_agent=_user_agent(request)
-    )
-    await db.commit()
-    return AuthResponse(user=UserOut.model_validate(user), tokens=tokens)
+    session.add(user)
+    await session.flush()
+
+    workspace = await create_workspace(session, user, payload.workspace_name)
+    await session.commit()
+    return _session(user, workspace)
 
 
-@router.post("/login", response_model=AuthResponse)
-async def login(
-    payload: LoginRequest, db: DbSession, request: Request, ip: ClientIp
-) -> AuthResponse:
-    # Keyed by email *and* address, and checked before the password: the
-    # bucket must fill on failures, or it does not slow a guesser down.
-    limiter.check(
-        "login",
-        f"{payload.email.lower()}|{ip or '-'}",
-        capacity=settings.rate_limit_login_per_minute,
-        per_seconds=60,
-    )
-    user = await auth_service.authenticate(db, email=payload.email, password=payload.password)
-    tokens = await auth_service.issue_tokens(
-        db, user, device=payload.device, ip_address=ip, user_agent=_user_agent(request)
-    )
-    await db.commit()
-    return AuthResponse(user=UserOut.model_validate(user), tokens=tokens)
+@router.post("/login", response_model=Session)
+async def login(payload: LoginRequest, session: AsyncSession = Depends(get_session)) -> Session:
+    email = payload.email.strip().lower()
+    user = await session.scalar(select(User).where(User.email == email))
+    if user is None or not verify_password(payload.password, user.password_hash):
+        raise unauthorized("invalid email or password")
+
+    workspace = await primary_workspace(session, user.id)
+    if workspace is None:
+        raise unauthorized("this account has no workspace")
+    return _session(user, workspace)
 
 
-@router.post("/forgot-password", response_model=OkResponse)
-async def forgot_password(
-    payload: ForgotPasswordRequest, db: DbSession, ip: ClientIp
-) -> OkResponse:
-    """Mail a reset code to the address — and say the same thing either way.
+@router.post("/refresh", response_model=Tokens)
+async def refresh(payload: RefreshRequest, session: AsyncSession = Depends(get_session)) -> Tokens:
+    try:
+        user_id = decode_token(payload.refresh_token, REFRESH_TOKEN)
+    except Exception as exc:
+        raise unauthorized("invalid or expired refresh token") from exc
 
-    The response never reveals whether an account exists; that answer is
-    worth more to an attacker enumerating emails than to the person who just
-    mistyped theirs.
-    """
-    limiter.check(
-        "forgot",
-        f"{payload.email.lower()}|{ip or '-'}",
-        capacity=settings.rate_limit_forgot_per_hour,
-        per_seconds=3_600,
-    )
-    await auth_service.issue_password_reset(db, email=payload.email)
-    await db.commit()
-    return OkResponse()
+    user = await session.get(User, user_id)
+    if user is None:
+        raise unauthorized("unknown user")
 
-
-@router.post("/reset-password", response_model=OkResponse)
-async def reset_password(
-    payload: ResetPasswordRequest, db: DbSession, ip: ClientIp
-) -> OkResponse:
-    """Redeem a mailed code for a new password. Every session is revoked."""
-    limiter.check(
-        "forgot",
-        f"{payload.email.lower()}|{ip or '-'}",
-        capacity=settings.rate_limit_forgot_per_hour,
-        per_seconds=3_600,
-    )
-    await auth_service.redeem_password_reset(
-        db, email=payload.email, code=payload.code, new_password=payload.new_password
-    )
-    await db.commit()
-    return OkResponse()
-
-
-@router.post("/refresh", response_model=TokenPair)
-async def refresh(payload: RefreshRequest, db: DbSession) -> TokenPair:
-    """Exchange a refresh token for a new pair. The old one stops working."""
-    _, tokens = await auth_service.rotate_tokens(db, refresh_token=payload.refresh_token)
-    await db.commit()
-    return tokens
-
-
-@router.post("/logout", response_model=OkResponse)
-async def logout(
-    db: DbSession,
-    user: CurrentUser,
-    authorization: Annotated[str | None, Header()] = None,
-) -> OkResponse:
-    """Revoke the session this access token belongs to."""
-    if authorization:
-        token = authorization.partition(" ")[2].strip()
-        payload = decode_access_token(token)
-        session_id = payload.get("sid")
-        if session_id:
-            await auth_service.revoke_session(db, user_id=user.id, session_id=session_id)
-    await db.commit()
-    return OkResponse()
-
-
-@router.get("/sessions", response_model=list[SessionOut])
-async def list_sessions(
-    db: DbSession,
-    user: CurrentUser,
-    authorization: Annotated[str | None, Header()] = None,
-) -> list[SessionOut]:
-    current_session_id: str | None = None
-    if authorization:
-        token = authorization.partition(" ")[2].strip()
-        current_session_id = decode_access_token(token).get("sid")
-
-    rows = await auth_service.list_sessions(db, user_id=user.id)
-    await db.commit()
-    return [
-        SessionOut(
-            **SessionOut.model_validate(row).model_dump(exclude={"is_current"}),
-            is_current=row.id == current_session_id,
-        )
-        for row in rows
-    ]
-
-
-@router.delete("/sessions/{session_id}", response_model=OkResponse)
-async def revoke_session(session_id: str, db: DbSession, user: CurrentUser) -> OkResponse:
-    await auth_service.revoke_session(db, user_id=user.id, session_id=session_id)
-    await db.commit()
-    return OkResponse()
-
-
-@router.post("/sessions/revoke-others", response_model=OkResponse)
-async def revoke_other_sessions(
-    db: DbSession,
-    user: CurrentUser,
-    authorization: Annotated[str | None, Header()] = None,
-) -> OkResponse:
-    keep: str | None = None
-    if authorization:
-        keep = decode_access_token(authorization.partition(" ")[2].strip()).get("sid")
-    await auth_service.revoke_all_sessions(db, user_id=user.id, except_session_id=keep)
-    await db.commit()
-    return OkResponse()
-
-
-@router.post("/password", response_model=OkResponse)
-async def change_password(
-    payload: ChangePasswordRequest,
-    db: DbSession,
-    user: CurrentUser,
-    authorization: Annotated[str | None, Header()] = None,
-) -> OkResponse:
-    """Change the password and sign every other device out."""
-    await auth_service.change_password(
-        db,
-        user,
-        current_password=payload.current_password,
-        new_password=payload.new_password,
-    )
-    keep: str | None = None
-    if authorization:
-        keep = decode_access_token(authorization.partition(" ")[2].strip()).get("sid")
-    await auth_service.revoke_all_sessions(db, user_id=user.id, except_session_id=keep)
-    await db.commit()
-    return OkResponse()
-
-
-@router.get("/config", response_model=dict)
-async def public_config() -> dict:
-    """Unauthenticated bootstrap info the desktop client reads at launch."""
-    return {
-        "api_prefix": settings.api_prefix,
-        "access_token_ttl_seconds": settings.access_token_ttl_seconds,
-        "ws_heartbeat_seconds": settings.ws_heartbeat_seconds,
-        "max_upload_bytes": settings.max_upload_bytes,
-        "realtime_protocol_version": 1,
-        # The sign-in screen reads this to say "invite only" up front instead
-        # of letting someone fill the whole form first.
-        "require_invite": settings.require_invite,
-    }
+    access_token, refresh_token = _tokens(user)
+    return Tokens(access_token=access_token, refresh_token=refresh_token)

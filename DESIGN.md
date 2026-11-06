@@ -1,487 +1,448 @@
----
-name: Llack
-description: 하루 종일 켜두는 사내 협업 도구 — 옅게 물든 바탕 위에 흰 카드가 다이컷 모서리로 떠오르고, 단 하나의 색을 아끼는 밝은 업무 표면.
-colors:
-  n0: "#ffffff"
-  n1: "#fcfafb"
-  n2: "#f8f6f7"
-  n3: "#f3eff1"
-  n4: "#ece8ea"
-  n5: "#e1dbdd"
-  n6: "#cbc0c5"
-  n7: "#94838a"
-  n8: "#73656b"
-  n9: "#5b5054"
-  n10: "#1d181a"
-  ground: "#f3eff1"
-  card: "#ffffff"
-  hover: "rgba(29, 24, 26, 0.04)"
-  ink: "#1d181a"
-  ink-secondary: "#5b5054"
-  ink-muted: "#73656b"
-  ink-inverse: "#ffffff"
-  edge: "#ece8ea"
-  rule: "#ece8ea"
-  rule-strong: "#94838a"
-  signal: "#a50034"
-  signal-press: "#86002a"
-  signal-wash: "#faf0f3"
-  signal-edge: "rgba(165, 0, 52, 0.15)"
-  signal-select: "rgba(165, 0, 52, 0.13)"
-  signal-ring: "rgba(165, 0, 52, 0.18)"
-  tint-a: "#f3eff1"
-  tint-b: "#ece8ea"
-  tint-c: "#e1dbdd"
-  tint-d: "#cbc0c5"
-typography:
-  display:
-    fontFamily: "Pretendard, -apple-system, BlinkMacSystemFont, \"Apple SD Gothic Neo\", \"Segoe UI\", \"Noto Sans KR\", \"Malgun Gothic\", sans-serif"
-    fontSize: "23px"
-    fontWeight: 700
-    lineHeight: 1.6
-    letterSpacing: "-0.035em"
-  headline:
-    fontFamily: "Pretendard, -apple-system, BlinkMacSystemFont, \"Apple SD Gothic Neo\", \"Segoe UI\", \"Noto Sans KR\", \"Malgun Gothic\", sans-serif"
-    fontSize: "16.5px"
-    fontWeight: 650
-    lineHeight: 1.6
-    letterSpacing: "-0.02em"
-  title:
-    fontSize: "13.5px"
-    fontWeight: 650
-    lineHeight: 1.6
-    letterSpacing: "-0.014em"
-  body:
-    fontFamily: "Pretendard, -apple-system, BlinkMacSystemFont, \"Apple SD Gothic Neo\", \"Segoe UI\", \"Noto Sans KR\", \"Malgun Gothic\", sans-serif"
-    fontSize: "13.5px"
-    fontWeight: 400
-    lineHeight: 1.6
-    letterSpacing: "-0.006em"
-    fontFeature: "tabular-nums"
-  label:
-    fontSize: "12px"
-    fontWeight: 600
-    lineHeight: 1.6
-    letterSpacing: "-0.008em"
-  meta:
-    fontSize: "11px"
-    fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: "-0.004em"
-  figure:
-    fontFamily: "ui-monospace, \"SF Mono\", \"JetBrains Mono\", D2Coding, Menlo, Consolas, monospace"
-    fontSize: "10px"
-    fontWeight: 600
-    lineHeight: 1.5
-    letterSpacing: "-0.01em"
-    fontFeature: "tabular-nums"
-rounded:
-  xs: "7px"
-  sm: "9px"
-  md: "12px"
-  lg: "15px"
-  xl: "20px"
-  full: "999px"
-spacing:
-  lift: "8px"
-  card-inset: "12px"
-  header-pad: "16px"
-  transcript-inset: "18px"
-  gutter: "44px"
-  count-column: "46px"
-  rail-tail: "20px"
-components:
-  button-primary:
-    backgroundColor: "{colors.signal}"
-    textColor: "{colors.ink-inverse}"
-    typography: "{typography.label}"
-    rounded: "{rounded.lg}"
-    padding: "0 12px"
-    height: "28px"
-  button-primary-hover:
-    backgroundColor: "{colors.signal-press}"
-    textColor: "{colors.ink-inverse}"
-  button-primary-disabled:
-    backgroundColor: "{colors.n4}"
-    textColor: "{colors.ink-muted}"
-  button-submit:
-    backgroundColor: "{colors.signal}"
-    textColor: "{colors.ink-inverse}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    height: "42px"
-  button-icon:
-    textColor: "{colors.ink-muted}"
-    rounded: "{rounded.sm}"
-    size: "28px"
-  button-icon-hover:
-    backgroundColor: "{colors.hover}"
-    textColor: "{colors.ink}"
-  button-equal:
-    backgroundColor: "{colors.n2}"
-    textColor: "{colors.ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.md}"
-    padding: "9px 0"
-  input-well:
-    backgroundColor: "{colors.n2}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: "0 11px"
-  input-well-focus:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-  field-container:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.xl}"
-    padding: "5px 5px 5px 12px"
-  card-sheet:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.xl}"
-  card-modal:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.xl}"
-    width: "min(620px, 92vw)"
-  row-rail:
-    textColor: "{colors.ink-secondary}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: "0 10px"
-    height: "32px"
-  row-rail-active:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-    typography: "{typography.title}"
-  dock-tile:
-    backgroundColor: "{colors.n4}"
-    textColor: "{colors.ink-secondary}"
-    rounded: "{rounded.lg}"
-    size: "36px"
-  dock-tile-active:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-  badge-count:
-    backgroundColor: "{colors.n4}"
-    textColor: "{colors.ink-secondary}"
-    typography: "{typography.figure}"
-    rounded: "{rounded.xs}"
-    padding: "0 5px"
-  badge-mention:
-    backgroundColor: "{colors.signal}"
-    textColor: "{colors.ink-inverse}"
-  chip-recess:
-    backgroundColor: "{colors.n2}"
-    textColor: "{colors.ink-secondary}"
-    typography: "{typography.label}"
-    rounded: "{rounded.sm}"
-    padding: "4px 8px"
-  chip-recess-hover:
-    backgroundColor: "{colors.n3}"
-    textColor: "{colors.ink}"
-  plate-mention:
-    backgroundColor: "{colors.signal-wash}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: "5px 11px"
-  avatar-plate:
-    backgroundColor: "{colors.tint-b}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    size: "20px"
-  banner-error:
-    backgroundColor: "{colors.signal-wash}"
-    textColor: "{colors.signal}"
-    typography: "{typography.label}"
-    padding: "6px 10px 6px 14px"
-  banner-info:
-    backgroundColor: "{colors.n2}"
-    textColor: "{colors.ink-secondary}"
-  notice:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.lg}"
-    padding: "10px 5px 11px 13px"
-    width: "328px"
----
+# Design: Llack
 
-# Design System: Llack
+The locked system. Every build of Llack reads this first. Change it on purpose; the
+file is the rule.
 
-## Overview
+## System
 
-**Creative North Star: "승차권(The Ticket)"**
+- Genre: modern-minimal
+- Shape: app screen (three-pane shell, thread pane on the right)
+- Theme: Dose (warm paper, one pharmacy green, moulded plastic, DM Mono labels)
+- Axes: light / grotesk-sans / chromatic-green · posture: restrained
+- Signature: the message label — a mono timestamp set like a pharmacy label, beside a
+  sans body, on a paper canvas
 
-안내판은 어디로 갈지 알려주었고, 승차권은 손에 쥐는 물건입니다. 이 앱에서 읽는 모든 면은 옅게 물든 바탕 위에 다이컷 모서리로 떠오른 흰 카드입니다 — 전사록, 스레드, 미니앱 패널, 에이전트 패널, 팔레트, 컴포저, 로그인 판, 크래시 판이 모두 같은 한 장의 레시피입니다. 이것이 재질 체계의 전부이고, 이전 빌드가 들고 있던 무광 각진 판과 罫線만의 구획을 대체합니다. 대신 열 고정 논리는 그대로 살아남았습니다: 레일의 행은 여전히 [표식][이름][수치] 라는 고정된 칸이고, 채널 이름이 길어져도 수치 칸은 움직이지 않습니다.
+## Tokens
 
-들림(lift)은 아주 작습니다. 카드(`--card`, 순백)와 바탕(`--ground`, `--n3`)의 대비는 측정값 1.14:1 — 그 자체로는 눈에 보이지 않는 차이입니다. 그래서 헤어라인(`--edge`)과 두 겹 그림자는 장식이 아니라 필수입니다. 블러는 정확한 경계선을 그리지 못하고, 헤어라인은 바로 그 한 픽셀에서 일합니다. 그림자는 항상 쌍입니다 — 밀착 그림자 하나와 넓고 부드러운 것 하나. 한 겹은 드롭섀도로 읽히고, 두 겹은 표면 위에 놓인 물체로 읽힙니다. 알파는 낮게 잡혀 있습니다: 처음 볼 때 눈에 띄는 그림자는 오후가 되면 잡음으로 읽힙니다.
+`desktop/src/styles/tokens.css` is the source of truth. Every colour, font, size and
+duration in the app resolves from that one `:root` block; nothing literal appears
+anywhere else in the stylesheet.
 
-톤은 11단 램프 하나뿐이고, 그 램프는 hue 336 — 강조색 자신의 색상 — 쪽으로 아주 조금 기울어 있습니다. 크림슨 강조색을 노란 회색 바탕에 올리면 팔레트가 두 개가 되기 때문입니다. 밝은 단계의 채도는 2% 미만으로, 서로 동의할 만큼만이고 색조로 읽힐 만큼은 아닙니다. 그 위에 LG Red(`--signal`) 한 색이 오직 "나를 향한 것"과 "내가 지금 있는 곳"에만 나타납니다. 밝은 사무실에서 다른 밝은 사내 도구 옆에 두고 종일 쓰는 장면을 기준으로 light-first 로 만들었습니다. 다크 테마는 이 빌드에 **없습니다** — 램프가 반전 가능한 형태로 authored 되어 있어 컴포넌트 규칙을 건드리지 않고 도입할 수 있지만, 구현된 기능이 아니라 지켜야 할 경계로 기록합니다.
+```css
+:root {
+  --color-paper: oklch(97.4% 0.008 88);   /* warm paper */
+  --color-ink: oklch(21% 0.025 170);      /* green-black ink */
+  --color-ink-2: oklch(31% 0.02 170);
+  --color-muted: oklch(45% 0.024 165);    /* 7.1:1 on the canvas */
+  --color-rule: oklch(87.5% 0.02 140);
+  --color-accent: oklch(47% 0.13 160);    /* the one signal */
+  --color-accent-lift: oklch(52% 0.12 158); /* the lit top of a green key */
+  --color-accent-deep: oklch(38% 0.105 162);
+  --color-accent-soft: oklch(91% 0.055 160);
+  --color-accent-ink: oklch(99% 0.006 160);
+  --color-focus: oklch(45% 0.14 160);
+  --font-display: "Schibsted Grotesk", "Pretendard Variable", ui-sans-serif, sans-serif;
+  --font-body: "Instrument Sans", "Pretendard Variable", ui-sans-serif, sans-serif;
+  --font-outlier: "DM Mono", ui-monospace, monospace;
+  --radius-input: 10px; --radius-card: 14px; --radius-panel: 16px; --radius-pill: 999px;
+  --control-h: 34px; --rail-w: 264px; --thread-w: 400px; --header-h: 60px;
+  --text-measure: 920px; /* where a line of message text ends */
+  --agenda-measure: 720px; /* a day of events is a block, not a table row */
+  --text-inset: 68px;      /* the conversation's frame: where the text starts, and where it ends */
+  --composer-inset: 56px; /* the composer's card edge; its text lands on the message text */
+  --bubble-mine: oklch(42% 0.115 161); /* your own message: the signal, as a surface */
+  --bubble-mine-ink: oklch(98.5% 0.008 160);
+  --edge-field: oklch(58% 0.022 165); /* a field edge clears 3:1, and stays light */
+}
+```
 
-**Key Characteristics:**
-- 읽는 면은 모두 흰 카드, 카드는 모두 옅게 물든 바탕 위에 8px 간격으로 뜹니다.
-- 톤은 11단 램프(`--n0`…`--n10`)가 전부. 램프에 없는 값은 버그입니다.
-- 반경 다섯 단계, 전부 하나의 동심 규칙(`안쪽 = 바깥쪽 − 안여백`)에서 파생됩니다.
-- 그림자는 쌍으로, 항상 헤어라인과 함께. 칩과 입력만 반대로 파입니다.
-- 신호색은 하나, 의미는 두 상태("나를 향한 것" · "내가 있는 곳")뿐입니다.
-- 타입은 여섯 단계(23 / 16.5 / 13.5 / 12 / 11 / 10). 사이 값은 없습니다.
-- 세는 숫자는 전부 mono + tabular. 숫자가 바뀌어도 행이 밀리지 않습니다.
-- 상태는 형태를 동반합니다: 프레즌스는 채움/테두리/막힘, 도구 상태는 점과 취소선.
-- 시트는 덮지 않고 음수 margin 으로 전사록을 실제로 밀어냅니다(220ms).
+## Material
 
-## Colors
+Surfaces climb one ladder and never skip a rung: `--surface-frame` → `--surface-rail`
+→ `--surface-canvas` → `--surface-raise`, with `--surface-well` for inputs,
+`--surface-groove` for a field cut into the rail, and `--surface-ink` for the ink
+band.
 
-무채색이 아닌 무채색입니다 — 계산된 11단 램프가 강조색의 색상(336°) 쪽으로 2% 미만 기울어 있어, 크림슨과 회색들이 한 팔레트로 읽힙니다.
+A rung is told apart from the next by **elevation**, not by a hairline alone:
 
-### Primary
-- **LG Red** (`--signal`): 이 표면의 유일한 강조색입니다. 카드 위 7.93:1, 바탕 위 6.96:1. 나타나는 자리는 정해져 있습니다 — 멘션 배지와 멘션 판, 내 이름이 언급된 잉크, 선택된 채널 행의 `#`/자물쇠 표식, 활성 도크 타일 밑의 위치 표시자, 안 읽음 구분선, 캐럿, 포커스 링, 오류, 고위험 승인, 그리고 유일한 primary 버튼들(보내기·로그인·설치·대화 시작).
-- **Signal Press** (`--signal-press`): primary 버튼의 hover/press 상태와 강조색 그림자의 색원(`--e-signal`).
-- **Signal Wash** (`--signal-wash`): 카드 위 6% 농도의 신호색. 멘션 판, 안 읽음 구분선의 칩, 팔레트의 키보드 커서 행, 새 대화에서 고른 사람 행, 에이전트 배너와 오류 상자의 바탕입니다. 이 워시 위에서도 `--ink-muted` 가 4.95:1 을 유지합니다.
-- **Signal Edge / Ring / Select** (`--signal-edge` · `--signal-ring` · `--signal-select`): 워시가 깔린 자리의 1px 링, 필드 포커스의 3px 부드러운 링, 텍스트 선택 하이라이트.
+- A **raised** surface — composer, menus, dialogs, cards — wears one soft
+  shadow (`--shadow-e1` … `--shadow-e3`). A floating surface carries a shadow
+  **or** a hairline, never both: an edge and an elevation stacked on each other
+  read as two edges.
+- A **plastic** surface — the primary key, your own bubble, the brand tile —
+  wears `--sheen` on its top edge and `--rim` on its bottom. Light falls on it.
+- A **recessed** surface — inputs, the search groove — wears `--recess`, so light
+  leaves its top edge.
+- The canvas and the rail carry a fine **paper tooth** (`--tooth`). The paper is
+  a material, not a flat fill.
 
-### Neutral
-- **Paper** (`--card`, `--n0`): 읽는 모든 면. 순백은 의도입니다 — 사람이 글을 읽는 면에는 아무 색도 섞지 않습니다.
-- **Ground** (`--ground`, `--n3`): 카드가 떠 있는 바탕. 도크·레일·거터·로그인·크래시 화면이 공유합니다. 도크와 레일을 톤으로 갈라놓는 안을 시도했다가 되돌렸습니다: 레일을 `--n2` 로 올리면 선택된 행의 흰 카드가 1.06:1 만 남아 더 이상 떠 있는 것으로 읽히지 않습니다. 프레임의 톤 계조보다 행의 상태가 비쌉니다.
-- **Recess** (`--n2`, `--n3`): 파이는 것들 — 입력 웰, 칩, 반응, 태그, 코드 블록, 에이전트 도구 행, 사용자 발화 판.
-- **Ink** (`--ink` `--ink-secondary` `--ink-muted` `--ink-inverse`): 본문·부차·메타·반전. 세 바탕(카드/레일/바탕) 전부에 대해 모든 잉크 단계가 AA 4.5:1 을 넘습니다.
-- **Hairlines** (`--edge` · `--rule` · `--rule-strong`): `--edge`는 카드가 자기 경계에서 항상 갖는 접촉선이고, `--rule`은 카드 *안에서* 구역을 나누고, `--rule-strong`(`--n7`)은 "이건 조작할 수 있다"를 뜻하는 유일한 경계로 세 바탕 모두에서 3:1 을 통과하는 단계입니다. `--edge`는 원래 `--n5`였지만 지금은 `--rule`과 같은 `--n4`를 씁니다 — 넓어진 그림자 블러가 분리를 더 맡게 되면서 윤곽선은 속삭여도 되고, `--n5` 윤곽은 제도된 물건처럼 딱딱하게 읽혔습니다. 두 토큰은 값이 같아도 역할이 달라 분리해 둡니다(하나를 다시 조이는 날이 옵니다).
-- **Avatar tints** (`--tint-a`…`--tint-d`): 램프의 네 단계(`--n3`…`--n6`)이며 색상(hue)은 절대 쓰지 않습니다. CSS 가 아니라 TypeScript 에서 소비됩니다 — `lib/format.ts` 의 `colorForId` 가 id 를 해시해 네 이름 중 하나를 돌려주므로, 스타일시트에서 `var(--tint-a)` 를 grep 해도 나오지 않습니다. 죽은 토큰이 아닙니다.
-
-### Named Rules
-
-**한 색, 두 상태 규칙 (The One Colour, Two States Rule).** `--signal` 은 "당신을 향한 신호"와 "당신이 지금 있는 곳", 두 뜻만 갖습니다. 그 외에는 나타나지 않습니다. 평범한 안 읽음은 색이 아니라 굵기이고, 아바타·프레즌스·태그·상태는 램프를 씁니다. 내가 누른 반응도 신호색을 받지 못합니다 — 나를 향한 것도, 내가 있는 곳도 아니기 때문입니다. `.dock-tile.is-active`(위치, 신호 밑줄을 받음)와 `.dock-tile.is-open`(패널이 열림, 카드 들림만 받음)이 갈라진 이유가 정확히 이것입니다. 한 클래스를 공유하던 동안 에이전트 패널을 열면 첫 화면에 붉은 위치 표시자가 두 개 생겼습니다.
-
-**열한 단계, 사이는 없다 규칙 (The Eleven Steps Rule).** 모든 톤은 `--n0`…`--n10` 에서 나옵니다. 램프에 없는 값은 버그입니다. `--n1` 은 현재 소비처가 없지만 남깁니다 — 램프는 스케일이고, 구멍 난 스케일은 여분 한 칸이 있는 스케일보다 나쁩니다.
-
-**색만으로 말하지 않는 규칙 (The Never-Colour-Alone Rule).** 색으로 전하는 상태는 형태·굵기·숫자·글자 중 하나를 반드시 동반합니다. 멘션 판은 워시와 함께 1px 링을 갖고(표면의 다른 어떤 행도 테두리가 없으므로 색각 없이도 살아남습니다), 프레즌스는 채움/테두리/막힘이며, 거부된 도구 호출은 취소선을 얻고, 오류 배너는 2px inset 왼쪽 경계를 갖습니다.
-
-## Typography
-
-**단일 서체:** Pretendard (variable woff2, 자체 호스팅). 오프라인 Tauri 창에서 CDN 링크는 해석되지 않고, 플랫폼 sans 로 떨어지면 OS 마다 다른 서체가 됩니다 — 그것은 "단일 서체"가 아닙니다. 가변 파일 하나가 표면이 쓰는 모든 굵기(400/500/600/650/700)를 한 요청에 담습니다.
-
-**Figure 서체:** 시스템 mono 스택(`ui-monospace`, SF Mono, JetBrains Mono, D2Coding …). 세는 숫자와 토큰(시각, 카운트, 모델 이름, API 키, argv)만 여기로 갑니다.
-
-두 스택 모두 이모지 패밀리를 **마지막에** 둡니다. Pretendard 에는 이모지 글리프가 없어 브라우저가 코드포인트 단위로 폴백하는데, 사람이 실제로 쓴 🙏 는 Pretendard 의 .notdef 상자가 아니라 이모지로 렌더되어야 합니다.
-
-**Character:** 조밀하고 담백합니다. 본문 자간은 −0.006em 이고 큰 글자로 갈수록 더 조입니다(16.5px 은 −0.02em, 워드마크는 −0.035em). 행간 1.6 은 한글 본문의 줄바꿈을 전제로 잡혔습니다.
-
-### Hierarchy
-- **Display** (700, 23px, −0.035em): 워드마크. 로그인 화면 한 곳에만 있습니다. 자간이 이만큼 조여지는 유일한 자리이며, 이유는 이것이 흐르는 문장이 아니라 워드마크이기 때문입니다.
-- **Headline** (650, 16.5px, −0.02em): 표면에서 가장 큰 것 — 채널 이름, ⌘K 팔레트의 입력 필드, 크래시 화면의 제목. 이전 빌드의 셸에는 14px 위가 아무것도 없어 모든 화면이 하나의 크기 등급으로 읽혔습니다("너무 투박해"가 서술하는 것의 대부분이 이것입니다). 지금 당신이 있는 채널이 페이지에서 가장 큰 글자일 자격을 얻습니다.
-- **Title** (650, 13.5px, −0.014em): 발화자 이름, 에이전트 빈 상태의 제목. 본문과 같은 크기에서 굵기와 자간만으로 올라섭니다.
-- **Body** (400, 13.5px, 1.6, −0.006em, tabular): 본문, 라벨, 팔레트 결과, 로그인 입력. 밀도가 한 단 느슨해지면서 반 단 올랐습니다 — 한 단이 아니라 반 단인 이유는 측정폭이 72ch 로 잡혀 있어서입니다. 14px 이면 같은 픽셀 폭에서 줄이 66ch 로 좁아지고 한글 문장이 더 일찍 끊깁니다.
-- **Label** (600, 12px, −0.008em): 시트 헤더, 버튼 라벨, 도움말, 배너, 승인 카드의 제목.
-- **Meta** (400/600, 11px, −0.004em): 인원수, 토픽, 힌트, 프레즌스, 섹션 머리, 승인 카드의 사실 목록.
-- **Figure** (600, 10px, mono, tabular): 세는 숫자와 칸 이름 — 배지, 타임스탬프, 도크 배지, 모델 이름, 앱 패널 푸터.
-
-### Named Rules
-
-**여섯 단계 규칙 (The Six Steps Rule).** 23 / 16.5 / 13.5 / 12 / 11 / 10. 아래쪽에서 간격이 좁아지는 것은 1px 이 11px 의 9% 이고 23px 의 4% 이기 때문입니다. 이전 패스에는 열한 단계가 있었고 그중 여섯이 2.5px 대역 안에 몰려 있었습니다 — 그것은 스케일이 아니라 주석이 붙은 드리프트입니다. 사이 값은 없고, 가장 가까운 단계가 항상 정답입니다.
-
-**한글 마이크로라벨 금지 규칙 (The No-Micro-Label Rule).** 10px 대문자 +0.07em 마이크로라벨은 폐기되었습니다. `text-transform: uppercase` 는 채널 이나 다이렉트 메시지 에 아무 일도 하지 않고, +0.07em 은 본문의 −0.006em 과 싸우며 음절 블록을 뜯어냅니다 — 라틴 디자인 시스템에서 빌려온 장치를 이 앱이 쓰인 바로 그 문자로 결제한 것입니다. 위계는 크기·굵기·톤이 집니다. 같은 이유로 레일의 칸 이름은 9px/+0.06em/`--n7`(3.32:1, AA 미달, 앱의 유일한 9px)에서 10px/500/`--ink-muted` 로 바뀌었습니다. 이웃보다 아래에 놓이기 위해 읽을 수 없을 만큼 작고 동시에 읽을 수 없을 만큼 흐려져야 하는 라벨은, 애초에 틀린 위계였습니다.
-
-**세는 숫자는 mono 규칙 (The Counted Figure Rule).** 세는 숫자는 전부 mono + `tabular-nums` 입니다. `body` 가 전역으로 tabular 를 켜고, 배지·타임스탬프·수치 칸은 mono 로 넘어갑니다. 타임스탬프는 전사록에서 가장 반복되는 숫자이면서 비례 sans 에 남아 있던 마지막 수치 필드였고, 그래서 시각의 열이 세로로 정렬되지 않았습니다.
-
-**문단은 자기 리듬을 들고 오지 않는다 규칙.** `renderMessage` 는 모든 줄을 `<p>` 로 감싸고, UA 의 1em 상하 마진은 명시적으로 0 입니다. 그 마진은 오랫동안 보이지 않았습니다 — `.message-body` 와 `.message-content` 어느 쪽에도 패딩이 없어 그대로 빠져나가 행 사이 간격으로 읽혔고, "전사록의 여유로운 간격"으로 착각되었습니다. 멘션 판이 패딩을 얻는 순간 마진 27px 이 안에 갇혀 80px 판이 44px 의 글을 들고 있게 되었습니다. 전사록은 자기 리듬을 스스로 정합니다(새 발화자 8px, 이어지는 발화 0, 멘션 판 앞뒤 10px). 여러 줄 문단 사이에는 0.55em 의 진짜 간격이 있습니다.
 
 ## Layout
 
-셸은 세 개의 고정 열입니다: 56px 도크 · 264px 채널 레일 · 나머지 전부인 작업 영역. 도크와 레일은 바탕이고, 작업 영역은 카드들입니다. 작업 영역의 안여백과 카드 사이 간격은 같은 값(`--lift`, 8px)이며, 그것이 셸 자신의 패딩이기도 합니다.
+- The conversation **fills its pane**. The rows, the hover wash, the date rules,
+  the header and the composer all reach the pane's edge, so the chat occupies
+  the window instead of sitting in a ribbon with a dead band beside it.
+- The column is **left-anchored**. A centred column re-centres every time the
+  thread pane opens and the page shifts under the reader.
+- **Your own message is the one exception**: it travels in a bubble against the
+  right of the pane, so the conversation reads as two columns — theirs on the
+  paper at the left, yours in the signal green at the right. The bubble is the
+  only surface in the app that wears the signal colour (`--bubble-mine`), and
+  its ink, its dim timestamp and the link colour inside it are one set
+  (`--bubble-mine-ink`, `--bubble-mine-dim`, `--bubble-mine-link`). Your name is
+  not repeated over your own words; the timestamp rides inside the bubble at its
+  bottom-right. A mention inside the bubble inverts. The bubble stops growing at
+  560px and wraps from there.
+- **The conversation has one frame, and it is symmetric.** The left line is
+  `--text-inset` — the row's padding, the avatar gutter and the gap, so the
+  message text starts there. The right line is the same distance: their text,
+  your bubble, the composer's text and its send key all stop on it. A
+  conversation with one tight margin and one loose one reads unfinished; the
+  row's wash and the date rules still reach the pane's edges, so the spread
+  itself is unbroken.
+- A line of message text ends where a line should end (`--text-measure`), but
+  the row around it keeps going: a wide window reads as one spread
+  conversation, not a column with a margin beside it.
+- Everything that starts a block of text starts on the same line: the message
+  text, the thread's reply count and the composer all sit on `--text-inset`, so
+  nothing is left stranded in the avatar gutter.
+- The **thread pane is 400px** — too narrow for an avatar column of its own. There
+  the avatar sits beside the author name instead, and the pane's text, its reply
+  count and its composer land on one line near the pane's edge. The pane fills
+  its width; nothing is stranded in a corner. It is a sheet over the
+  conversation: it carries a shadow of its own.
+- The channel header bar spans the pane and its actions sit at the pane's edge;
+  the channel name sits above the messages it names. Its tools sit in a groove
+  cut into the bar.
+- A message's **tools** — the emoji, reply and more buttons — belong to that
+  message, so they stand against it rather than at the far edge of the row:
+  just past the last word for someone else's message, just before the bubble
+  for your own. Where the words end is measured, not guessed, so the tools
+  follow the message whatever its length. Only when the pane is too narrow
+  to hold them there do they float above the row.
+- The composer's text column is the message text column, not the row's edge, and
+  the composer ends exactly where the text column ends. The card is inset by the
+  same distance on both sides, and what it holds lands on the conversation's
+  frame — the text on the left line, the send key on the right one. A hairline
+  rules the compose band across the whole pane, so the window is framed at the
+  foot the way the header frames it at the top.
+- Below 52rem the rail becomes an overlay behind the header's menu button; below
+  60rem the thread pane overlays the conversation instead of taking a column.
+- **Two panes, only when the window is wide.** From 72rem the conversation stays
+  on the left and the board (calendar, work) opens beside it on the right; the
+  board's own header moves it between that side pane and the whole main pane.
+  Below 72rem there is room for one surface only, so the board takes the
+  conversation's place instead of sitting beside it.
+- **The rail's 일정 and 프로젝트 are switches.** They put the board beside the
+  conversation, and pressed again while the screen is split they take the
+  split away — the conversation fills the main pane again. From a split, the
+  rail never moves the view to a full-width tab.
+- **Whether the screen is split at all is this device's own.** The width of the
+  window is the app's answer; the reader's setting is the other half, and it
+  lives in 외관. With the split turned off, the board always takes the
+  conversation's place, whatever the window is.
+- **One selection at a time.** The rail paints the surface that was picked last
+  with the selected wash — never two at once. A room that stays open beside the
+  board keeps the app's own marks without the wash: its glyph wears the signal
+  colour and its name is written in full ink, so it is still there without
+  pretending to be the selection.
+- **The rail's foot holds two things.** The profile, which is the last thing in
+  the rail, and the settings gear beside it — the settings are one click away,
+  without a menu. The profile keeps its own menu, and the gear opens the
+  settings sheet where it stands.
+- **The screen can be cleared.** A key in the channel header's tools groove
+  empties the workspace: the rail stays, the pane shows an empty state, and
+  nothing is selected at all — no room, no board, no thread. Picking a room in
+  the rail brings the conversation back. The empty state is the app's own
+  empty state: a mark, a title and a sentence, never a blank page.
+- **A room window is one conversation.** A room opened on its own has no rail:
+  the header, the messages and the composer, and nothing else. The window's
+  title is the room's name.
 
-밀도는 이전 빌드보다 한 단 느슨합니다. 둥근 모서리는 양옆에 여유가 있어야 모서리로 읽히고 챔퍼로 읽히지 않으며, 32px 행이 12px 반경과 부딪히지 않는 최소 높이입니다. 비용은 화면당 채널 두 개쯤이고, 사용자가 그것을 쓰기로 했습니다. 주요 치수: 헤더 48px · 레일 행 32px · 도크 타일 36px · 전사록 거터 44px · 스레드 344px · 패널 384px · 수치 칸 46px · 후행 트랙 20px.
+## Type
 
-컴포넌트 내부 패딩은 엄격한 스케일이 아닙니다 — 동심 규칙이 지배하기 때문에 값은 자기가 앉은 반경에서 파생됩니다. 토큰화된 리듬은 위 목록이 전부이며, 새 컴포넌트는 스케일에서 값을 고르는 대신 반경 규칙에서 값을 계산해야 합니다.
+- Display (channel names, dialog titles, wordmark): Schibsted Grotesk 700, -0.03em.
+- Body (everything else): Instrument Sans 400 / 500 / 600.
+- Outlier (timestamps, counts, dates): DM Mono 400 / 500, one role only.
+- Korean falls through to Pretendard Variable, bundled in `src/assets`.
+- Message body 15px / 1.6. Labels 13px. Timestamps 11px, mono.
+- Numbers that can change in place — counts, times, durations — are tabular.
 
-반응형은 네 개의 대역이고, 경계는 산술로 잡고 측정으로 고쳤습니다. 세 열: 전사록 = W − 1072, 360px 하한 → **1433**. 스택(넓은 레일): W − 632 → 992. 스택(좁은 레일): W − 588 → **948**.
+## Controls
 
-- **≥1433px** — 전사록·스레드·패널이 나란히 세 열.
-- **948–1432px** — 두 시트가 오른쪽 한 열에 위아래로 쌓입니다. 하나를 숨기지 않고 쌓는 이유: 사용자가 방금 연 시트를 돌아갈 길 없이 조용히 치워버리면 "스레드에 들어가도 자리를 잃지 않는다"는 약속이 깨집니다.
-- **721–947px** — 두 시트가 전사록을 덮으며 덮개를 반씩 나눕니다. 짓누르지도, 하나를 숨기지도 않습니다 — 전사록은 여전히 뒤에 있고 닫기 하나 거리입니다.
-- **≤720px** — 셸이 완전히 스택됩니다. 도크가 가로로 눕고, 보드도 가로가 됩니다(순위 있는 행이 다른 축으로 읽힐 뿐, 아무것도 도달 불가가 되지 않습니다). 카드는 위쪽 모서리를 지키고 옆 거터를 버립니다. Tauri 창은 940px 하한을 강제하므로 이 대역은 브라우저 검토 경로뿐이지만, "브라우저에서만"은 "출하하지 않았다"와 다릅니다.
+- Primary: green plastic, 10px radius, 34px high, lit on top and rimmed below,
+  sinks 1px on press. **The key keeps its green under the pointer** — the
+  hover lifts it (a little more light on the top stop, a deeper cast), and
+  never repaints it with a surface its label cannot stand on.
+- Secondary: outline on `--surface-raise`, same radius and height.
+- Icon buttons: 30px square, no chrome until hover.
+- A field is a well: recessed, 10px radius, and the focus ring is the accent.
+- **A choice between several ways is a dropdown field**: a well like any other
+  field, and the list that comes out of it is a raised surface — the chosen row
+  wears the signal colour, the way the selected day wears it on the calendar.
+  The list is ours: the platform's `<select>` paints its menu with the
+  operating system, so it can never wear this app's material. A row may lead
+  with a mark — a face, a hash — so the choice says what it is before it is
+  read. The arrows walk the list, Enter takes the row under the marker, and
+  Escape gives the field its focus back and leaves the dialog behind it open.
+  The field that picks **people** answers the same way — the same arrows, the
+  same Enter, the same Escape — so the hand learns it once.
+- Every control: default, hover, focus-visible, active, disabled, loading, error, success.
+- A **disabled control is inert**: it neither lifts nor answers the pointer, and
+  its label stays readable on the surface it actually has — a dimmed plate and
+  muted ink, never a faded fill under a faded label.
+- **The scrollbar belongs to the browser, not to us.** This is a desktop
+  surface, scrolled with a wheel or a trackpad, so the bar never appears —
+  the scroll itself is untouched. Only the bar is gone.
 
-레일은 991px 에서 좁아집니다(960 이 아닙니다). 960 에서 좁히면 961–991 구간에 넓은 레일이 돌아와 있고 창은 아직 그만큼 넓지 않은 구멍이 생겨, 전사록이 329px 로 떨어집니다. 두 숫자는 함께 고르지 않으면 대역이 만나지 않습니다. 860px 아래에서는 채널 토픽이 먼저 사라집니다 — 토픽은 맥락이고 내비게이션이 아닙니다.
+## Picking people
 
-### Named Rules
-
-**밀어낸다, 덮지 않는다 규칙 (The Push, Not Wipe Rule).** 시트는 가장자리에서 들어와 전사록을 좁게 밀고, 결코 덮지 않습니다(≤947px 대역은 폭이 물리적으로 없을 때의 예외이고, 그때는 애니메이션 자체가 꺼집니다). `dock-in` 은 음수 `margin-right` 를 애니메이트합니다. 이전에는 `clip-path: inset(0 0 0 100%)` → `inset(0)` 였습니다 — 와이프입니다. 전사록의 flex 폭은 한 프레임에 끊어지고 노출만 220ms 동안 돌아서, "옆으로 밀어 열린다"는 약속이 이미 움직여 버린 레이아웃 위의 커튼으로 렌더되었습니다. 음수 마진은 시트를 행의 폭 예산에서 빼고 시간에 걸쳐 되돌려주므로 전사록이 실제로 함께 좁아지고, 시트 자신의 보더 박스는 크기가 변하지 않아 이동 중 내용이 리플로우되지 않습니다.
-
-**시트 하나, 카드 하나 규칙 (The One Sheet, One Card Rule).** 시트는 각각 자기 카드입니다. 작업 영역 전체를 한 장의 카드로 만들고 안을 헤어라인으로 나누는 안을 시도했습니다 — 가로 폭이 아깝다는 논거는 사실이었고 거래는 틀렸습니다. 이 제품의 유일한 구조적 약속은 새 일이 당신의 일 *옆에* 도착한다는 것이고, 옆에 도착하는 것은 물체이지 선 뒤의 구역이 아닙니다. 카드 경계가 있어야 할 자리의 헤어라인은 시트 두 장이 열린 앱의 평상시 상태 — 즉 대부분의 시간 — 에서 전사록의 오른쪽 모서리를 지워버리기도 했습니다. 비용은 열린 시트당 전사록 8px 이고, 세 열 경계가 1417px 에서 1433px 로 옮겨갔습니다. 추정이 아니라 측정입니다.
-
-**칸은 용량을 선언한다 규칙 (The Declared Cell Rule).** 레일의 행과 그 위 섹션 머리는 같은 네 트랙(16px / 1fr / 46px / 20px)에 앉습니다. 수치 칸은 `auto` 가 아니라 고정 폭입니다 — 헤더 행과 그 아래 행들은 별개의 그리드이므로 `auto` 트랙은 각자의 내용에 맞춰지고, 칸 이름이 자기가 앉지 않은 칸을 이름 짓게 됩니다. 이름이 붙은 고정 칸이 이것을 목록이 아니라 보드로 만들고, 머리 행을 재사용하는 데 추가 높이는 들지 않습니다.
-
-**모든 대역은 측정으로 확인한다 규칙.** 위의 네 경계는 720→1600 을 20px 씩 걷고 전사록이 360px 아래로 떨어지면 실패하는 스윕으로 주장됩니다. 최근 두 패스가 각각 산술이 놓친 진짜 구멍을 측정으로 찾아냈고, 그래서 스윕이 존재하고 주석은 권위가 아닙니다.
-
-## Elevation & Depth
-
-이 시스템은 그림자를 씁니다. 다만 깊이 체계의 본체는 그림자가 아니라 카드와 바탕의 관계입니다 — 읽는 모든 것이 `--ground` 위에 뜬 `--card` 이고, 그 들림이 1.14:1 밖에 되지 않기 때문에 헤어라인과 두 겹 그림자가 선택 사항이 아닙니다.
-
-### Shadow Vocabulary
-- **Contact** (`--contact`, `0 1px 2px rgba(29,24,26,0.05)`): 물체가 자기가 놓인 면과 만나는 선. **elevation 이 아닙니다**, 그래서 의도적으로 한 겹입니다. 선택된 레일 행, 활성/열림 도크 타일, 컨테이너 필드가 이걸 씁니다.
-- **E-2** (`--e-2`): 표면을 떠나는 것의 가장 낮은 단계 — 시트 카드, 메시지 hover 액션 바, "최신으로" 버튼, 승인 카드.
-- **E-3** (`--e-3`): 멘션 피커, 알림 토스트, 로그인 판, 크래시 판. "최신으로" 버튼은 hover 에서 E-2 → E-3 로 올라갑니다.
-- **E-4** (`--e-4`): 표면에서 가장 높은 것 — 모달과 ⌘K 팔레트. 네 단계 중 가장 깊고, 가장 넓은 반경과 함께 갑니다.
-- **E-Signal** (`--e-signal` / `--e-signal-hover`): 강조색 자신의 그림자로, 색원이 `--signal-press` 입니다. primary 버튼 전용. 이 값의 리터럴 복사본 일곱 개가 primary 버튼들에 흩어져 각자 드리프트할 자유를 갖고 있었습니다 — 토큰 블록의 "레시피는 하나" 주장이 실제로는 거짓이 되는 경로가 이것입니다.
-- **Focus Ring** (`--focus-ring`, `0 0 0 3px var(--signal-ring)`): 사람이 타이핑하는 모든 것의 유일한 포커스 처리.
-- **Inset hairline**: 아바타 판은 `inset 0 0 0 1px rgba(29,24,26,0.05)`, 워시가 깔린 것들은 `inset 0 0 0 1px var(--signal-edge)`.
-
-### Named Rules
-
-**그림자는 쌍으로, 항상 헤어라인과 함께 규칙 (The Paired Shadow Rule).** 모든 elevation 은 밀착 그림자 하나 + 넓고 부드러운 것 하나이고, 헤어라인이 블러가 그릴 수 없는 정확한 경계에서 일합니다. 한 겹은 드롭섀도로 읽히고 두 겹은 표면 위의 물체로 읽힙니다. 카드가 바탕 위에 있을 때 헤어라인은 `box-shadow: 0 0 0 1px var(--edge)` 로, 팝오버·모달처럼 진짜 떠 있는 것에서는 `border: 1px solid var(--edge)` 로 들어갑니다.
-
-**밀착선은 elevation 이 아니다 규칙 (The Contact-Is-Not-Elevation Rule).** `--contact` 는 표면을 떠나지 않는 것들의 것입니다. 32px 짜리 레일 행은 레일 *안에* 있고 바탕 위에 있지 않으므로 쌍 그림자를 받지 않습니다. 쌍 규칙은 표면을 *떠나는* 것을 다스립니다.
-
-**칩은 파인다 규칙 (The Chips Sink Rule).** 깊이 체계가 안쪽으로 도는 유일한 자리입니다. 칩·반응·첨부·태그·입력 웰·에이전트 도구 행·사용자 발화 판은 반 단 내려가고(`--n2`, hover 에서 `--n3`) 테두리를 전혀 갖지 않습니다. 흰 것 위의 흰 것을 헤어라인으로 붙들어 놓으면 보이지 않는 상자가 되고, 반 단 내려간 같은 칩은 테두리가 필요 없습니다. 이 구분이 반응을 버튼으로 읽히지 않게 합니다.
-
-**떠 있지 않은 것은 그림자를 갖지 않는다 규칙.** 상시 그림자를 갖는 것은 카드와 진짜 떠 있는 물체뿐입니다. 도크의 비활성 타일은 그림자가 아니라 반 단 내려간 채움(`--n4`)으로 몸을 얻습니다 — 렌더해 보니 스타일이 아직 적용되지 않은 이니셜 텍스트로 읽혔고, 하나가 선택될 때까지 어떤 타일도 물체성이 없었습니다.
-
-## Shapes
-
-다이컷 카드 스톡입니다. 표면에 각진 모서리는 남아 있지 않습니다 — 봇 아바타의 사각 모서리가 이 시스템의 유일한 기하학적 구분이면서 동시에 표면에 남은 마지막 각진 모서리였고, 그래서 신호가 아니라 미완성 요소로 읽혔습니다. 지금은 `--r-xs` 를 받고("사람보다 덜 둥글다"는 여전히 읽힙니다), 구분은 전사록의 `BOT` 태그가 말로 집니다.
-
-반경은 다섯 단계이고, 다섯 개 다 하나의 규칙에서 파생됩니다:
-
-- **`--r-xs` 7px** — 칩, 배지, 태그, 반응, 코드 인라인, 봇 아바타, `kbd`
-- **`--r-sm` 9px** — 아이콘 버튼, 아바타 판, 첨부, 코드 블록
-- **`--r-md` 12px** — 입력 웰, 레일 행, 버튼, 메시지 판, 팔레트 결과 행
-- **`--r-lg` 15px** — 도크 타일, 알림, 팝오버, 카드 안의 내부 컨트롤
-- **`--r-xl` 20px** — 다른 것을 담는 카드: 시트, 컴포저, 팔레트, 모달, 로그인 판
-
-스케일 전체가 이전(5/7/9/12/16)보다 한 단 둥급니다. 승차권 재질이 제도판 위의
-정밀한 물건처럼 — 정확한 모서리, 정확한 선 — 읽혔고, 여덟 시간 옆에 두기에는
-그 정밀함이 딱딱함으로 옵니다. 램프도 헤어라인 논리도 컴포넌트 규칙도 건드리지
-않고 부드럽게 트는 가장 싼 손잡이가 반경이라 여기를 돌렸습니다. 같은 이유로
-그림자의 블러가 넓어졌고(알파는 그대로 낮게), 마이크로 트랜지션이
-150–180ms 로 늘었습니다.
-- **full** — 의미가 원인 것에만: 프레즌스 점, 상태 점, 업로드 스피너, 그리고 날짜/안 읽음 구분선의 칩(모양이 "차단"을 뜻하고 "컨테이너"를 뜻하지 않는 유일한 자리)
-
-### Named Rules
-
-**동심 규칙 (The Concentric Rule).** 안여백 `p` 를 가진 컨테이너 안의 자식은 컨테이너의 반경에서 `p` 를 뺀 값을 받습니다. 다섯 단계는 그 파생값들이 착지하는 자리이므로, 아무것도 값을 발명하지 않아도 됩니다. 워크드 예제는 컴포저입니다: 카드 20px, 안여백 5px, 그래서 텍스트영역과 보내기 버튼이 15px → `--r-lg`. 20px 카드에 5px 안여백으로 앉은 15px 버튼이 유일하게 맞아 보이는 값이고, 이것이 사람이 돈을 내는 소프트웨어와 그저 상자를 둥글게 만든 소프트웨어를 가르는 디테일입니다. 국소 예외는 없습니다.
-
-**원은 의미가 원일 때만 규칙 (The Circle Means Circle Rule).** 완전한 원은 그 의미가 원인 것에만 남겨둡니다. 반대로, 12px 모서리 아래의 각진 끝 2px 바 같은 것도 남기지 않습니다 — 도크의 위치 표시자는 16×2.5px 에 `border-radius: 2px` 입니다.
-
-**모서리는 양쪽에 바탕이 필요하다 규칙.** 판은 자기가 앉은 면의 가장자리에서 안으로 들어가 앉습니다. 레일 행은 레일 가장자리에 붙지 않고(9px 모서리가 모서리로 읽히려면 양쪽에 바탕이 필요하고, 가장자리에 닿은 행은 잘린 직사각형으로 읽힙니다), 메시지 판도 카드 가장자리에서 8px 안으로 들어가 앉습니다. 그 안여백이 멘션 판에 가질 모서리를 줍니다.
-
-**inset 선은 모서리에서 쐐기가 된다 규칙.** 12px 모서리에 inset 왼쪽 경계선을 그으면 미터 이음이 쐐기로 보입니다. 그래서 알림의 왼쪽 조각과 에이전트 도구의 2px 왼쪽 경계는 각각 링과 점으로 바뀌었습니다. 예외는 오류 배너로, 그것은 반경이 없습니다.
-
-## Components
-
-### Buttons
-- **Primary** — 표면의 유일한 강조 동작입니다. `--signal` 채움, 반전 잉크, 12px/600, `--e-signal`. hover 에서 `--signal-press` + `--e-signal-hover`, active 에서 그림자를 잃습니다(**누름 그림자, 이동 아님**: 버튼이 5px 안여백의 카드 안에 앉아 있으므로 hover 에서 들어올리면 반경 규칙이 세운 동심 맞음이 깨집니다). disabled 는 `--n4` + `--ink-muted`. 반경은 앉은 자리에서 파생됩니다 — 컴포저 안에서는 `--r-lg`, 카드 안의 독립 버튼은 `--r-md`.
-- **Icon button** — 28px(시트 헤더는 26px, 모달 헤더는 24px), `--ink-muted`, hover 에서 `--ink` + `--hover` 채움, 반경 `--r-sm`. 컴포저 안의 아이콘 버튼만 동심 규칙에 따라 `--r-lg` 입니다.
-- **Equal-weight pair** — 승인 카드 전용이며, 표면에서 primary 동작이 의도적으로 승격되지 *않는* 유일한 자리입니다. 두 버튼 다 `--n2` 채움 + `--n6` 테두리, 둘 다 마운트 시 포커스되지 않고, 거부가 DOM 에서 먼저 와서 Tab 이 먼저 닿습니다. 이미 primary 버튼을 향해 움직이던 커서 아래에 나타날 수 있는 카드는 primary 를 가져서는 안 됩니다.
-- **Ghost/row button** — 채움 없이, hover 에서 `--hover` 판. 레일 행, 팔레트 결과, 새 대화 행, 알림 본문이 이 형태입니다.
-
-### Chips
-- **Recessed by default** — `--n2` 채움, 투명 1px 테두리(페이드인 시 아무것도 밀리지 않게), `--r-xs`(태그·배지·스코프) 또는 `--r-sm`(첨부·반응). hover 에서 `--n3`.
-- **내 반응** — 굵기와 경계로 표시합니다(`--n3` 채움, `--n6` 테두리, 600). 신호색은 규칙상 틀립니다 — 내가 누른 반응은 나를 향한 것도, 내가 있는 곳도 아닙니다.
-- **Count badge** — `--r-xs`, `--n4` 채움, mono 10px/600, 최소 폭 19px. 나를 향한 카운트만 `--signal` 채움을 얻습니다.
-
-### Cards / Containers
-- **하나의 시트 레시피** — 전사록·스레드·미니앱 패널·에이전트 패널은 한 레시피의 네 인스턴스입니다: `--card` 채움, `--r-xl`, `box-shadow: 0 0 0 1px var(--edge), var(--e-2)`, 바탕 위에서 8px 간격. 새 시트가 다른 제품처럼 보이며 도착할 수 없습니다.
-- **시트 헤더** — 48px, 아래에 `--rule` 한 줄, 라벨 12px/600, 닫기 버튼 26px. 시트마다 자기 헤더를 갖습니다.
-- **Modal / Palette** — `min(620px, 92vw)`, `max-height: 72vh`, `--r-xl`, `--edge` 테두리 + `--e-4`. 배경 스크림은 잉크에서 물들인 `rgba(29,24,26,0.26)` 이고, 팔레트가 자기 두 겹 그림자를 갖게 되면서 이전보다 한 단 밝습니다. 스크림 그리드는 `align-items: start` — 늘어나면 팔레트가 자기 결과 아래에 빈 꼬리를 갖습니다.
-- **컴포저는 화면을 종결합니다** — 위에 罫線이 없습니다. 자기 카드 경계가 이미 전사록과 갈라주고, 헤어라인과 카드 경계가 2px 떨어져 있는 것이 인터페이스를 조립품처럼 보이게 하는 이중 경계입니다. 공백이 나눕니다.
-
-### Inputs / Fields
-- **The well** — 앱의 모든 필드는 이 웰입니다: `--n2` 채움, 투명 1px 테두리, `--r-md`, 좌우 11px. hover(포커스 아닐 때) `--n3`. 포커스에서 `--card` 로 올라가고 `--signal` 테두리 + `--focus-ring`. 컴포넌트가 바꿀 수 있는 것은 크기와 레이아웃뿐입니다.
-- **The container field** — 텍스트 옆에 버튼을 담는 필드(두 컴포저, 새 대화의 수신인 줄)는 웰이 아니라 카드입니다. 안에 채워진 버튼이 들어간 웰은 겹쳐진 두 상자로 읽힙니다. `--card` 채움, `--edge` 테두리, `--contact`, 포커스는 **동일하게** `--signal` 테두리 + 같은 링. 그 컨테이너 안의 입력은 이미 상자 안에 있으므로 자기 웰도, 테두리도, 링도 갖지 않습니다.
-- **캐럿은 `--signal`** 입니다. `:focus-visible` 링은 2px `--signal` outline, offset 2px, 그리고 반경을 **강제하지 않습니다** — `border-radius: 1px` 이 강제되어 있어 9px·12px 컨트롤 주위에 거의 정사각형인 링이 그려졌습니다. 키보드 사용자가 가장 많이 보는 부분이 둥근 인터페이스에서 마지막까지 각져 있었습니다.
-- **마우스 클릭은 링을 만들지 않지만 텍스트 필드는 예외입니다.** 필드에 클릭해 들어갔을 때 눈에 보이게 포커스를 받지 않으면 캐럿이 유일한 피드백이고 필드가 비활성으로 읽힙니다.
-- **문서화된 유일한 예외: ⌘K 필드.** 팔레트의 입력은 팔레트 자신의 윗변이므로 웰이 아닙니다 — 안여백 없는 16px 카드 안의 웰은 가질 수 없는 반경을 필요로 합니다. 채움 없이 52px 높이, 16.5px, 아래에 `--rule` 한 줄, 포커스에서 그 줄만 `--signal` 로 바뀝니다. 링은 없습니다(이 필드는 이전에 포커스 스타일이 아예 없었습니다).
-- **Disabled** — 컴포저 카드는 `--n2` 로 내려가고 `--rule` 테두리에 그림자를 버립니다. 입력 웰은 `--ink-muted` 잉크와 `--rule` 테두리.
-
-### Navigation
-- **도크(56px)** — 36px 타일, `--r-lg`. 비활성 타일은 반 단 내려간 판(`--n4`, hover `--n5`)입니다. 상태는 둘로 갈라져 있습니다: `is-active`(당신이 있는 곳)와 `is-open`(당신이 연 패널) 둘 다 카드로 들리지만(`--card` + `--edge` 링 + `--contact`), 위치만 밑에 16×2.5px 신호 밑줄을 받습니다. 도크 배지는 mono 10px, `--signal` 채움, 바탕색 1px 테두리로 타일에서 떼어냅니다.
-- **채널 레일(264px, 991px 아래 220px)** — 바탕색이고 카드가 아닙니다. 그래서 레일 헤더 아래에는 罫線이 없습니다 — 카드 안의 무언가를 나누지 않는 표면의 유일한 선이 될 것이기 때문입니다. 아래 공백이 나눕니다.
-- **행(32px)** — 네 트랙 그리드, `--r-md`, 좌우 10px, hover `--hover`. 안 읽음은 굵기와 잉크(600 + `--ink`), 음소거는 `--ink-muted`. 선택된 행은 종이로 들리고(`--card` + `--edge` 링 + `--contact`) **표식이** 신호색을 받습니다 — 가장자리를 따라 내려가는 바가 아니라 `#` 또는 자물쇠가 색을 받습니다. 한눈에 읽히고 테두리를 쓰지 않습니다.
-- **섹션 머리** = 보드의 칸 이름 행입니다. 아래 행들과 같은 트랙에 앉아 채널 이 이름 칸을, 안 읽음 이 수치 칸을 이름 짓습니다.
-- **≤720px** — 레일은 가로 스트립이 되고 각 행이 자기 카드(`--card` + `--edge` 링 + `--contact`, 30px, 라벨 최대 12ch)가 됩니다. 헤더·푸터·섹션 머리는 숨습니다.
-
-### Transcript & Message
-- **전사록은 판이 되지 않습니다.** 이것이 이 시스템의 기록된 거부입니다(surface contract 의 `AMEND`). 마감 리뷰가 초안대로 메시지 행마다 카드를 요구했고, 거부했습니다: 8시간 훑는 전사록에서 메시지마다 판을 두르면 스캔 비용이 오르고, 제품의 1순위 원칙("훑기가 최우선")과 정면으로 충돌합니다. 카드가 되는 것은 시트·레일 행·나를 향한 메시지 셋뿐이고, 그 자격은 "옆에 도착한 물건"이라는 데서 나옵니다. 평범한 메시지는 hover 에서만 판이 됩니다.
-- **메시지 행** — 44px 거터 + 1fr, `align-items: start`(기본 `stretch` 는 멘션 판이 배경을 얻는 순간 35px 의 죽은 공간이 됩니다 — 측정값 80px 판에 45px 의 글), 카드 가장자리에서 8px 안, `--r-md`, hover `--hover`. 안으로 들여 둥글린 hover 는 창을 가로지르는 색 띠가 아니라 메시지 하나를 집어 올리는 것으로 읽히고, 이것이 8시간 동안 눈이 가장 많이 알아채는 차이입니다.
-- **전사록은 아래에 고정됩니다.** 조용한 채널에서 메시지 두 개가 700px 빈 들판 위쪽에 버려져 있는 것은 조용한 것이 아니라 고장난 것으로 읽힙니다.
-- **멘션 판** — `--signal-wash` + `--signal-edge` inset 링, `--r-md`. 판은 전사록 전체 폭이 아니라 메시지 자신의 측정폭(`72ch + 22px`)에서 멈춥니다. 1440px 에서 시트 없이 측정했을 때 전폭 판은 약 230px 의 글을 위해 약 1075px 의 표면을 표시하고 있었습니다 — 창이 넓어질수록 표시가 *더 커지는* 것은 거꾸로입니다. 멘션은 큰 모니터에서 더 급하지 않습니다. 멘션 행도 hover 는 살아 있습니다(사람은 답하기 위해 멘션에 hover 합니다).
-- **내 이름 언급** — 강조색 잉크뿐입니다. 이전에는 반전 텍스트의 solid `--signal` — 로그인 버튼의 처리, 팔레트가 가진 가장 큰 소리 — 를 이미 워시와 링을 두른 판 *안의* 이름 라벨에 쓰고 있었습니다. 두 개가 옳은 개수이고 일을 깔끔히 나눕니다: 판이 "이 행은 당신 것"이라 말하고, 잉크가 "그 안의 당신 이름이 여기"라 말합니다.
-- **날짜 구분선 / 안 읽음 구분선** — 罫線 위에 올라탄 완전한 원형 칩입니다(라벨이 헤어라인 위에 앉는 것은 폐기된 세계가 구간을 표시하던 방식이었습니다). 안 읽음 구분선은 같은 형태에 `--signal` 잉크·워시·링을 씁니다 — 신호색이 멘션도 내비게이션도 아닌 것을 표시하는 유일한 자리이며, 규칙 자신의 용어로 정당합니다: "당신이 있는 곳"이 정확히 이것입니다. 두 구분선이 같은 종류의 중단으로 읽히고, 색만이 날짜와 멈춘 자리를 가릅니다.
-- **Hover 액션 바** — 판의 우상단에 절대 위치로 떠 있고 공간을 예약하지 않습니다. 두 열 그리드의 세 번째 자식이라 암묵적 세 번째 행으로 자동 배치되어 *모든* 메시지 아래에 전폭의 보이지 않는 띠를 만들고 있었습니다. 측정값: 그 띠가 판 75px 중 40px — 멘션 판의 4분의 3이 아무도 hover 하지 않는 버튼을 위한 빈 공간이었습니다. `opacity` 이고 `display` 가 아니어서 키보드로 닿을 수 있고 나타날 때 아무것도 밀리지 않습니다.
-- **아바타** — 판이고 알약이 아닙니다. `--r-sm`, `--tint-a`…`--tint-d` 중 해시로 고른 채움, 5% inset 헤어라인. 이니셜은 `--ink` 입니다 — `--ink-secondary` 는 가장 어두운 틴트(`--tint-d`)에서 4.37:1(11px 에서 AA 미달)로 측정되었고, 대안은 틴트를 밝혀 네 단계의 분리를 잃는 것이거나 잉크를 어둡게 하는 것이었습니다. 20px 상자 안의 사람 정체성은 부차적일 이유가 없습니다.
-- **프레즌스** — 형태이고 색조가 아닙니다: 채움은 접속, 빈 테두리는 부재, 막힌 것은 방해 금지.
-
-### Agent Sheet
-같은 판, 같은 규칙, 같은 한 색입니다. 에이전트는 자기만의 시각 방언을 갖지 않습니다 — 다른 제품에서 온 손님이 아니라 이 앱의 한 장소입니다. 논거를 갖춘 이탈은 둘뿐입니다: 승인 카드의 동등 무게 버튼 한 쌍, 그리고 고위험 승인이 받는 한 색(그것은 이미 다른 곳에서 지고 있는 뜻과 같습니다 — 이 행은 당신을 필요로 합니다).
-
-- **턴** — 사용자의 말은 들여쓰고 판에 얹고(28px 들여쓰기, `--n2`, `--r-md`), 에이전트의 말은 전폭으로 흐릅니다. 아바타도 이름 라벨도 없습니다: 화자는 정확히 둘이고, 비대칭이 라벨보다 적은 공간에서 어느 쪽인지 말합니다. 에이전트 산문은 채팅 메시지와 같은 `renderMessage` 를 지나므로 `.code-inline`·`.code-block`·`.md-list` 를 이미 입고 도착합니다 — 같은 클래스에 두 번째 규칙 세트를 두는 것이 한 앱의 두 반쪽이 갈라지는 방식입니다.
-- **도구 호출** — 턴 안으로 파이고(`--n2`, `--r-md`, 11px), 상태는 머리의 5px 점입니다: 실행 중 `--n6` + `tool-pulse`, 성공 `--n8`, 오류·거절 `--signal`, 사용자 거부는 `--n6` + 취소선. 2px 왼쪽 경계는 이전 세계의 상태 채널이었고 9px 모서리에서 쐐기가 되었으며, 카드가 네 변 다 테두리를 필요로 하게 만든 이유이기도 했습니다. 점은 더 빨리 읽히고 색각 없이도 살아남으며 판을 깨끗하게 둡니다. 전면 틴트를 쓰면 여섯 번의 호출이 여섯 번의 경보처럼 보입니다.
-- **승인 카드** — 잘못된 클릭이 명령을 실행하는 표면의 유일한 자리이므로, 시트 안에서 자기 elevation 을 갖는 유일한 판입니다(`--card`, `--r-lg`, `0 0 0 1px var(--n6), var(--e-2)`). 고위험은 링을 `--signal-edge` 로 바꿉니다. 모델이 쓴 근거는 표면의 **유일한 점선 경계**(`1px dashed var(--n6)`)를 갖습니다 — 점선은 "잠정"의 시각 문법이고, 이 글은 여기서 신뢰하지 않아야 할 유일한 것이며, 버튼 옆에 절대 오지 않습니다. `argv` 는 한 줄에 한 인자로 유지됩니다: 공백으로 이으면 셸로 읽히기를 청하고 `--author=a b` 가 두 개로 보입니다.
-- **오염 표시(`--agent-taint`)** — 채널 내용이 세션에 들어오면 정책이 조여집니다(승인이 기억되지 않게 됩니다). 말없이 조여지는 게이트는 앱이 변덕스러운 것으로 읽힙니다.
-- **에이전트 빈 상태의 예제는 버튼이 아닙니다.** 클릭으로 실행되는 제안은 사람들에게 읽지 않은 턴을 시작하도록 가르치고, 여기의 모든 턴은 승인 프롬프트에서 끝날 수 있습니다.
-
-### Notices, Banners, Crash
-- **알림 스택** — 우하단, 328px, `--card` + `--edge` + `--e-3`, `--r-lg`, `notice-in` 200ms. `bottom` 은 `Notices.tsx` 에서 측정한 컴포저 높이로 설정되어 스택이 보내기 버튼을 덮지 않습니다(CSS 의 16px 은 측정 전 폴백입니다). 나를 향한 알림은 상류의 멘션 판이 입은 것과 같은 신호 링을 얻습니다 — elevation 을 다시 쓰는 대신 elevation 과 합성합니다. 본문은 두 줄에서 잘립니다: 토스트는 포인터이고 메시지가 아닙니다.
-- **배너** — 카드 전폭을 지나고 안의 판이 아닙니다. 채널 전체에 대해 보고하므로 罫線으로 나누고 자기 반경을 갖지 않습니다. 오류는 신호색으로 문제를 이름 짓고 `inset 2px 0 0` 경계를 지켜 색만이 되지 않습니다.
-- **로그인** — 세계를 한 화면에서 증명해야 하는 첫 표면입니다. 88px 라벨 열과 값 칸으로 罫線된 납작한 판 — 즉 관공서 서식이고, 이 패스가 걷어내려 존재하는 "투박함"이 정확히 그것 — 이었습니다. 지금은 들린 카드 하나, 라벨은 필드 위에, 필드는 웰. 행에서 헤어라인이 사라졌습니다: 행마다 罫線이 있는 서식은 레코드의 표이고, 이것은 질문 세 개입니다.
-- **크래시 화면** — 같은 판 레시피(`--r-xl`, `--edge` 링 + `--e-3`), 420px, 16.5px 제목, `--n2` 위 mono 로 접힌 상세.
-
-### Named Rules
-
-**하나의 필드 문법 규칙 (The One Field Grammar Rule).** 앱의 모든 입력은 하나의 웰이고 하나의 포커스 처리를 갖습니다. 컴포넌트가 덮어쓰는 base 가 아니라 — base 가 **곧** 그 모습이고, 컴포넌트는 크기와 레이아웃만 바꿉니다. 이것이 대체한 것: 전역 규칙의 테두리 안쪽 하드 2px outline, 두 컴포저의 `--ink` 테두리, 로그인의 강조색 테두리, 팔레트 필드의 포커스 스타일 부재, 그리고 팔레트에 웰이 있어야 할 자리의 맨 `border-bottom`. 한 상호작용에 다섯 개의 처리였습니다. 어느 화면에 있느냐에 따라 달라 보이는 필드가 앱을 디자인된 것이 아니라 조립된 것으로 느끼게 하는 디테일입니다.
-
-**이름 없는 영역과 이름 없는 상태를 두지 않는 규칙.** 모든 칸은 이름을 갖고(레일의 칸 이름 행), 모든 상태는 형태를 갖습니다(프레즌스, 도구 점, 오염 표시, 연결 칩, 보류/실패 표시).
-
-## Do's and Don'ts
-
-### Do:
-- **Do** 새 반경을 동심 규칙에서 계산하십시오: `안쪽 = 바깥쪽 − 안여백`, 그리고 결과를 `--r-xs`(5) … `--r-xl`(16) 중 가장 가까운 단계에 착지시키십시오.
-- **Do** 새 elevation 을 두 겹으로, 그리고 항상 헤어라인과 함께 쓰십시오 — 바탕 위 카드는 `box-shadow: 0 0 0 1px var(--edge), var(--e-N)`, 진짜 떠 있는 것은 `border: 1px solid var(--edge)` + `--e-N`.
-- **Do** 모든 톤을 `--n0`…`--n10` 에서 가져오십시오. 램프에 없는 값은 버그입니다.
-- **Do** 새 필드를 공유 웰 문법으로 두고 크기와 레이아웃만 바꾸십시오. 텍스트 옆에 버튼을 담아야 하면 웰 대신 컨테이너 필드(`--card` + `--edge` + `--contact`)를 쓰되, 포커스는 동일한 `--signal` 테두리 + `--focus-ring` 이어야 합니다.
-- **Do** 색으로 말하는 상태에 형태·굵기·숫자·글자 중 하나를 반드시 붙이십시오.
-- **Do** 세는 숫자를 mono + `tabular-nums` 로 두고 그 칸에 고정 폭을 주십시오.
-- **Do** 새 시트를 시트 카드 레시피 그대로 만드십시오: `--r-xl`, `--edge` 링 + `--e-2`, 바탕 위 8px 간격, 자기 48px 헤더.
-- **Do** 새 대역을 추가할 때 산술을 쓰고 스윕으로 확인하십시오(720→1600, 20px 간격, 전사록 360px 하한). 두 패스가 각각 산술이 놓친 구멍을 측정으로 찾았습니다.
-- **Do** 아이콘을 16 단위 격자·1.5 단위 스트로크·둥근 캡·`currentColor` 로 그리십시오.
-
-### Don't:
-- **Don't** `--signal` 을 "나를 향한 것"과 "내가 있는 곳" 밖으로 내보내지 마십시오. 내가 누른 반응, 턴 정지, 성공 상태, 미니앱 강조점, 브랜드 장식은 전부 램프를 씁니다.
-- **Don't** 한 화면에 붉은 위치 표시자를 두 개 두지 마십시오. 위치와 열림은 별개의 상태이고, 밑줄은 위치만의 것입니다.
-- **Don't** 대문자 마이크로라벨이나 양의 자간을 쓰지 마십시오. `uppercase` 는 한글에 아무 일도 하지 않고 양의 트래킹은 본문의 −0.006em 과 싸웁니다.
-- **Don't** 여섯 단계 사이에 타입 크기를 만들지 마십시오. 특히 9px 은 다시 넣지 마십시오 — AA 를 통과하지 못합니다.
-- **Don't** 한 겹 그림자를 elevation 으로 쓰지 마십시오. `--contact` 는 표면을 떠나지 않는 것들의 것입니다.
-- **Don't** 메시지 행마다 카드를 두르지 마십시오. 카드가 되는 것은 시트·레일 행·나를 향한 메시지뿐입니다.
-- **Don't** 12px 이상 모서리에 inset 왼쪽 경계선(2px 상태 바)을 그리지 마십시오 — 쐐기로 미터됩니다. 링이나 점을 쓰십시오.
-- **Don't** 흰 것 위의 흰 칩을 헤어라인으로 붙들지 마십시오. 반 단 내리면 테두리가 필요 없습니다.
-- **Don't** 시트를 wipe(`clip-path`)로 열지 마십시오. 레이아웃은 한 프레임에 끊기고 노출만 애니메이트되어 약속이 커튼으로 렌더됩니다.
-- **Don't** 시트 카드 경계 위나 컴포저 위에 罫線을 더하지 마십시오. 2px 떨어진 이중 경계는 인터페이스를 조립품으로 보이게 합니다.
-- **Don't** 승인 카드에 primary 버튼을 승격하지 마십시오. 커서 아래에 나타날 수 있는 카드는 눌리기 쉬운 버튼을 가져서는 안 됩니다.
-- **Don't** 이모지를 아이콘으로 쓰지 마십시오. 자기 색과 자기 무게를 들고 오며, 한 색이 한 뜻을 갖는 표면에서 그것은 팔레트 누수입니다. 반응의 이모지는 예외입니다 — 그것은 사람이 고른 내용이고 iconography 가 아닙니다.
-- **Don't** 강조색 그림자를 리터럴로 복사하지 마십시오. `--e-signal` / `--e-signal-hover` 를 쓰십시오. 복사본 일곱 개가 각자 드리프트한 전례가 있습니다.
+- A field that holds people is a **well that opens a list under itself** — not
+  a menu that floats over the dialog, and not a list that is always there. The
+  list opens below the field; when the window has no room below, it opens
+  above.
+- The list is **drawn over the page**, the way the menu of a plain dropdown is
+  drawn: a dialog's overflow must never cut a roster of people in half. It
+  measures the field, places itself under it, and follows it while the page
+  scrolls.
+- **The list opens with the search already focused.** A company has hundreds
+  of people, and typing is the way in — so the reader may type the moment
+  the list is open. Typing on the closed field opens the list and starts the
+  search, the way the palette does.
+- The search matches the **name, the email and the title, anywhere in the
+  string**: "민수" finds "김민수", "minsu" finds "minsu@hanbit.co.kr".
+- **The keyboard is the control.** The arrows walk a marker through the rows,
+  Enter (and Space) take the row under the marker, Home and End jump to the
+  first and the last row, the marked row scrolls into sight, and Escape closes
+  the list and gives the field its focus back — the dialog behind it stays
+  open. It is the same contract the plain dropdown answers with, so the hand
+  learns it once.
+- **The list is written for a company, not for a team of ten.** The people
+  already chosen stand at the **top**, under a quiet label that counts them
+  (**선택됨 N명**); the rest follow under **전체 N명**; the search says how
+  many it found. The marker follows the filtered list, and it follows the
+  person who has just been chosen.
+- **The people already chosen stay in the list**, and each one carries a
+  **tip** — a small green label with a tail that points back at the person.
+  You can read who is in the room while you are still choosing it.
+- The closed field holds the **faces** of the chosen people and their count in
+  DM Mono, so the state is legible without opening the list.
+- **Nothing found is a state of its own**: the list says that nobody was
+  found, names the term that was searched for, and offers the way out — the
+  search to clear.
 
 ## Motion
 
-authored 모션은 다섯 개이고, 각각 하나의 조건에서 정당화됩니다.
+- Character: calm. `--dur-micro` 120ms for press and colour, `--dur-short` 200ms for
+  hover and menus, `--dur-long` 320ms for dialogs and the thread sheet. Transform
+  and opacity only.
+- One authored moment: the thread sheet slides in as it opens. Nothing else
+  moves on its own.
+- Under `prefers-reduced-motion: reduce` everything ends at once.
 
-- **`dock-in`** (220ms, `--ease`): 시트가 옆에 도착하며 전사록을 실제로 밀어냅니다. 제품의 유일한 구조적 약속이므로, 모션을 쓰는 유일한 자리입니다. 시트가 전사록을 덮는 대역(≤947px)에서는 꺼집니다.
-- **`notice-in`** (200ms): 알림이 6px 아래에서 올라옵니다.
-- **`flap-tick`** (160ms): 수치 칸이 자기 축을 중심으로 한 번 돕니다. 안내판 세계의 자기 메커니즘이 남은 한 자리이며, 보드에서 스스로 바뀌는 유일한 것이 카운트이기 때문입니다. 컴포넌트가 새 값에서 셀을 remount 하므로 숫자가 실제로 움직였을 때만 돌고 무관한 재렌더에서는 돌지 않습니다.
-- **`sweep`** (1.05s, 부트): 스피너가 아니라 결정적으로 보이는 쓸기 — 페이지가 로딩되는 것이 아니라 보드가 갱신되는 것으로 읽힙니다.
-- **`spin`** (0.7s, 업로드) · **`tool-pulse`** (1.1s, 실행 중인 도구) · **`agent-blink`** (1.05s, 열린 턴의 캐럿): 진행 중임을 말하는 세 지시자.
+## Dark mode
 
-상태 전이는 100–140ms 이고, `--ease`(`cubic-bezier(0.16, 1, 0.3, 1)`)를 공유합니다. `prefers-reduced-motion: reduce` 는 모든 애니메이션과 트랜지션을 1ms 로 조이지만, 진행 지시자(부트 쓸기·업로드 스피너)는 반복을 유지합니다 — 멈춘 진행 지시자는 멈춘 앱으로 읽힙니다.
+A derived night, not an inversion: the same green at `oklch(70% 0.12 158)` on an
+`18.5%` canvas, a rail that sits a clear step below it, the same radius scale,
+the same rules. `--color-focus` stays brighter there — a focus ring must pop on
+a dark ground.
 
-**키보드 힌트는 포커스에서만 나타납니다.** 상시 표시였고, 컴포저 카드 *아래* 바탕 위에 앉아 있었습니다 — 그래서 카드가 더 이상 표면을 종결하지 못하고 창의 마지막 것이 10px 단축키 목록이 되었습니다. 만 번 본 안내를 읽는 사람은 없고, 필요한 사람은 커서가 필드 안에 있는 사람입니다.
+## Replies
 
-## 없는 것
+There are two ways to answer a message, and one answer at a time.
 
-정직하게 기록합니다. 이 목록은 지켜야 할 경계이고, 채워진 척 해서는 안 되는 자리입니다.
+- **The thread** is the reply that lives on the right. It never covers the
+  channel.
+- **The answer in the room** is the reply that shows where it was written: it
+  sits in the channel, quoting the message it answers, and it joins that
+  message's thread as well. So the thread holds every reply, and the room
+  shows the ones written there.
+- Either way the answered message's **reply count** counts them all, and the
+  thread opens on them.
+- Replies are **one level deep**. An answer to an answer joins the thread of
+  the message that answer answered.
+- The quote above an answer is one line: who was answered, and what they said,
+  truncated. It is a **reference, not a second message** — clicking it walks
+  back to the message it names and calls it out for a moment.
+- The answer being written shows in the composer, above the input, naming the
+  message it answers, and can be dismissed.
+- A reply you accept wears the signal; a reply you decline does not.
 
-- **다크 테마는 구현되지 않았습니다.** 램프는 컴포넌트 규칙을 건드리지 않고 반전할 수 있도록 authored 되어 있지만, `color-scheme: light` 하나뿐이고 다크 값은 존재하지 않습니다.
-- **채널 멤버 목록이 없습니다.** 백엔드에 채널별 멤버 엔드포인트가 없어서, 헤더의 인원수는 아직 비활성입니다. UI 를 먼저 그리지 않습니다.
-- **이모지 피커와 채널 섹션 편집 UI 가 없습니다.** 반응은 빠른 네 개뿐이며, 섹션은 스키마와 API 만 있습니다.
-- **`--n1` 은 현재 소비처가 없습니다.** 스케일의 여분 한 칸으로 남깁니다.
+## Presence
+
+- A person wears one state, and it is a **live state chip on an avatar** — the
+  same chip in every place: the rail, the member list, the message header.
+- The states are the ones a team already reads at a glance: **온라인** (a green
+  dot), **바쁨** (a red dot), **방해 금지** (a red dot with a bar through it),
+  **잠시 자리 비움** (a pale amber ring), **곧 돌아오겠습니다** (a solid amber
+  dot), and **오프라인** (a grey dot the server gives, never the person).
+- The picker lives in the profile menu, beside the name: **상태 변경 ›** opens a
+  second menu beside it, with the current state ticked. The submenu opens on
+  hover and on click, and it closes with the menu it belongs to.
+- A state the person chose is theirs until they choose another one — a socket
+  opening does not turn "busy" into "online".
+
+## Avatar colour
+
+- A person's avatar colour is **theirs to choose**, in the profile settings.
+- The palette is a fixed set of deep colours — the same seven the app has
+  always handed out — so an avatar is recognisable at a glance. A free colour
+  picker sits beside them for anyone who wants one of their own.
+- Whatever is chosen is **darkened until paper-white initials on it are
+  readable** (5:1). The hue is kept; only the lightness moves. A colour is
+  never allowed to make a face unreadable. The initials are paper white in
+  both themes, and the darkening is applied when the avatar is drawn — so a
+  colour stored long ago is corrected too, not only one just chosen.
+- The chosen colour is shown next to the swatches as a value, and the avatar
+  beside them previews it live.
+- A changed profile reaches the team at once: the roster updates without a
+  reload.
+
+## Settings
+
+The app's own settings live in one place — a wide sheet with the sections
+down the left and the section's content on the right.
+
+- **Four sections, always the same four:** 알림 · 외관 · 계정 및 조직 ·
+  파일 및 링크. The section in force is a surface in the signal colour, the
+  way the selected day is on the calendar.
+- **A row is a name, a sentence, and the control.** The sentence says what
+  the control does — never that it exists.
+- **A boolean is a moulded toggle**: a groove cut into the panel with a
+  raised knob, filled with the signal when it is on. A choice between two
+  or three ways is a segmented control in a well. Nothing else.
+- **Settings split by owner.** The account's own — name, title, face, role —
+  belong to the server and are edited here. The device's own — notifications,
+  screen, files — stay on this machine. A setting that belongs to neither is
+  not a setting.
+- **The layout is a device setting too.** 외관 holds the screen mode, the
+  clock, and whether the main pane is split at all — a reader who wants one
+  surface at a time says so once, here.
+- **Nothing is claimed that does not happen.** Every switch here changes
+  something the app does: the notification preview really does change the
+  notification, the screen mode really does follow the OS, the folder really
+  does receive the file.
+
+## Schedule
+
+The calendar is a **picking** surface, not a reading one — so it is quieter
+than the conversation.
+
+- The month is a navigator: seven columns and a number. A day that has
+  something on it says so with a **dot**, not a count — the count belongs to
+  the day list, where the events are.
+- **The dot says whose it is.** The signal green is a day you are in; quiet
+  ink is a day the team has something on and you do not — the same division
+  the day list and the **내 앞으로** card already make. A legend under the
+  month says so with the same marks, and the selected day keeps the
+  distinction too: full ink for yours, half for the team's.
+- Today is marked by weight; the selected day by a surface. Neither uses a
+  second hue.
+- A day outside the month is present but dimmed — it is still a place.
+- The day list reads left to right like a message: a mono time, then the
+  title, then the place, then the people, then the faces. The time is in DM
+  Mono because it is a label, not prose.
+- On a wide window the days ahead stand beside the day in a card, so the
+  width is used rather than left blank. **That card is yours**: it holds the
+  events you are in — the team's day list stays the team's. Its heading says
+  so, and an empty card says plainly that nothing of yours is coming up.
+- An event you created wears no special colour. Ownership is carried by the
+  roster and the answer, not by a badge.
+
+## The board
+
+The project board is the same shape as the calendar: a **picking** list on the
+left, a **reading** surface on the right. The rules are the calendar's rules.
+
+- The project list is a well cut into the app, like the month. The filter in
+  force — 전체 / 내 프로젝트 — is a surface in the signal colour, the way the
+  selected day is.
+- A project is a name, a line about what it is for, and the faces of the
+  people on it. Nothing else.
+- **A project says three things about itself**, in one line under its name:
+  how far it has come (a meter and its percentage), how much is left, and
+  the period it runs in. A newcomer reads that line before the cards — a
+  project is a piece of work with a shape, not a column of cards.
+- The facts are separated by a hairline, not a middot: a middot left at the
+  start of a wrapped line says nothing.
+- **Two kinds of thing live in a project, and they never share a row.** 할 일
+  (the cards) and 마일스톤 (dated goals) are picked by a **segmented control
+  in a well** — a switch between two surfaces, each with its own count. The
+  로드맵 filter then narrows the cards *inside* the 할 일 view: it filters
+  one surface, it is not a peer of it.
+- The lane filter is a **named** row — the word 로드맵 stands beside it —
+  because a row of pills with no name is a row of tabs, and tabs at the same
+  level are what made this surface unreadable.
+- **The board and the lanes are told apart by a rule.** The first chip is
+  모든 카드 — the whole board — and a vertical rule separates it from the
+  roadmaps that follow. A chip named "전체" sitting among lane names reads
+  like a lane called "전체"; "모든 카드" with a rule beside it cannot.
+- **A project with no roadmaps shows no filter row at all.** There is
+  nothing to narrow, so the board says so by being the board.
+- The board is **four columns**, always the same four: 요청, 할 일, 진행 중,
+  완료. A column is a well; a card is a raised surface on top of it. The
+  column header carries a count in DM Mono — never a dot, never a colour.
+- **A narrow pane holds two columns of cards, not four.** In the side pane
+  the board folds to 2×2, so every column stays readable and the
+  conversation keeps the other half of the window.
+- **A deadline is said in words.** "3일 남음", "오늘 마감이", "2일 지남" — the
+  badge is a label, not a colour. Late is the only tone that changes hue, and
+  it still says how late.
+- The assignee's face sits on the card, where a person's face always sits.
+- Your own work is a separate, small list: **내 할일**. It holds the tasks
+  that are yours and not finished, across every project — the same job
+  **내 앞으로** does on the calendar.
+- A card carries its own conversation: the number of opinions on it is a
+  count in DM Mono, and the opinions themselves open beside the card.
+- Moving a card is the reader's hand, not a dialog. The column lights up
+  while a card is held over it, and a card can also be moved from a menu —
+  the board is not a mouse-only surface.
+- A room that belongs to a project says so in its header: the project's name
+  sits in the same groove as the search and pin tools. The board and the
+  conversation are one click apart.
+
+## The project chart
+
+The chart is a **reading** surface: the board's work on a time axis. It opens
+as a modal from the project's own **period**, in the header — the chart is
+that period drawn out, so the period is the way in. There is no second
+entrance: an icon beside the project's name would say the same thing twice,
+in a smaller voice.
+
+- **The months are the ruler.** The chart spans only the months the project
+  actually occupies — the first month a milestone or a deadline falls in,
+  through the last. A month is as long as it really is; February is shorter
+  and the chart says so. The year is named where it changes.
+- **A milestone is a bar of its own colour.** The bar spans the period, and
+  the part of it that is done is filled. The colour is the company's, chosen
+  in the milestone dialog; it rides on a custom property, never on a literal.
+- **A deadline is a dot, a meeting is a tick.** The card's 마감일 is a round
+  dot in the status tone; the team's 일정 is a vertical tick. They are never
+  the same mark, because one is a commitment and the other is a meeting.
+- **Today is a line in ink**, not a colour of its own. It runs through every
+  row at once, so the whole chart is read against one moment.
+- The legend says what the marks are, in the app's own hand — the board
+  never asks the reader to guess what a shape means.
+- **Under the chart, the same thing in words.** The milestone list says the
+  period, the progress and the cards that belong; the calendar list says the
+  meetings. A chart nobody can read as text is a picture, not a surface.
+
+## Rules
+
+- One accent: the primary action, the current selection, the focus ring, the unread
+  count, links and mentions, and your own message bubble. It is never decoration.
+- No decorative status dots before a label; presence is a live state chip on an avatar.
+- No emoji as an icon; one icon set (lucide) for the whole app.
+- Labels are the body face, a step smaller, sentence case, untracked.
+- A surface is told apart by light falling on it — sheen, rim, recess — not by a
+  border alone.
+- **Nothing loses its ground under the pointer.** A hover may change a
+  surface, but the label on it keeps at least 4.5:1 — in both themes. The
+  check that keeps this true is `scripts/check-contrast.py`.
+- A button is ours: no platform chrome, no platform ink. A control that
+  forgets its own background wears the browser's grey plate, and its label
+  ends up printed on a colour nobody chose.
+- A reaction is a number until you ask who. Hovering one names the people
+  behind it, on a small strip of the ink band — a label, printed like the
+  labels on a shelf. It turns below the chip when the chip is near the top of
+  the list.
+- **A destructive action asks in a dialog, never in a strip inside the
+  page.** The question names the thing and the consequence, the answer
+  lands on 취소, and the risky key is the one that has to be reached for.
+- Every region that loads data has four states: loading, empty, error, full.
+
+## Exports
+
+`desktop/src/styles/tokens.css` — CSS custom properties on `:root`, with a derived
+`[data-theme="dark"]` block. The app has no Tailwind, no CSS-in-JS and no component
+library: the utility layer at the bottom of `app.css` is the only other CSS.

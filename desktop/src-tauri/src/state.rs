@@ -1,224 +1,177 @@
-//! Application state shared by every Tauri command.
+//! 창을 닫아도 남아 있어야 하는 것.
 //!
-//! The API client and realtime handle only exist once the user has chosen a
-//! server, so both live behind an `RwLock<Option<..>>` rather than being
-//! constructed at launch.
+//! 지금은 두 가지뿐이다.
+//!   * API 주소 — 프론트엔드가 어디에 붙어야 하는지.
+//!   * 창 크기/위치 — 다음에 띄울 때 같은 자리에서 열리도록.
+//!
+//! 창 상태는 앱 설정 디렉터리에 `window-state.json` 으로 저장한다. 저장에
+//! 실패해도 앱은 계속 돌아간다(그냥 다음에 기본 위치로 열린다).
 
+use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::RwLock;
 
-use llack_core::error::{Error, Result};
-use llack_core::session::TokenStore;
-use llack_core::{ApiClient, ApiConfig, Cache, RealtimeHandle, Session, SyncEngine};
-use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 
-pub struct AppState {
-    pub cache: Arc<Cache>,
-    pub token_store: Arc<dyn TokenStore>,
-    inner: RwLock<Connected>,
-    pub data_dir: PathBuf,
-    /// The agent, once the window exists.
-    ///
-    /// Late-initialised because the approval notifier needs an `AppHandle`, and
-    /// `AppState` is built before the window is. `None` means the panel is
-    /// simply unavailable — every command that needs it says so rather than
-    /// unwrapping.
-    agent: RwLock<Option<Arc<llack_core::agent::AgentEngine>>>,
+use crate::api::ApiClient;
+
+/// 마지막으로 창을 닫았을 때의 위치와 크기(논리 픽셀).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WindowState {
+    pub width: f64,
+    pub height: f64,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
 }
 
-#[derive(Default)]
-struct Connected {
-    api: Option<Arc<ApiClient>>,
-    session: Option<Arc<Session>>,
-    sync: Option<Arc<SyncEngine>>,
-    realtime: Option<RealtimeHandle>,
-    /// The workspace the UI is currently showing.
-    active_workspace_id: Option<String>,
-    server_url: Option<String>,
+impl Default for WindowState {
+    fn default() -> Self {
+        Self {
+            width: 1280.0,
+            height: 860.0,
+            x: None,
+            y: None,
+        }
+    }
+}
+
+/// 앱이 살아 있는 동안 함께 들고 있는 상태.
+pub struct AppState {
+    api_base: RwLock<String>,
+    window: RwLock<WindowState>,
+    client: Option<ApiClient>,
+    store: RwLock<Option<PathBuf>>,
 }
 
 impl AppState {
-    pub fn new(data_dir: PathBuf, token_store: Arc<dyn TokenStore>) -> Result<Self> {
-        std::fs::create_dir_all(&data_dir)
-            .map_err(|e| Error::Cache(format!("could not create {}: {e}", data_dir.display())))?;
-        let cache = Arc::new(Cache::open(data_dir.join("cache.sqlite3"))?);
-        Ok(Self {
-            cache,
-            token_store,
-            inner: RwLock::new(Connected::default()),
-            data_dir,
-            agent: RwLock::new(None),
-        })
-    }
+    /// API 주소로 시작하는 상태를 만든다. 주소가 잘못되면 클라이언트만 없이
+    /// 동작한다(앱 자체는 뜨고, API 관련 기능만 조용히 실패한다).
+    pub fn new(api_base: impl Into<String>) -> Self {
+        let api_base = api_base.into();
+        let client = match ApiClient::new(&api_base) {
+            Ok(client) => Some(client),
+            Err(err) => {
+                tracing::warn!(?err, "API 주소를 사용할 수 없습니다");
+                None
+            }
+        };
 
-    /// Point the client at a server. Called on first launch and on sign-in.
-    pub fn connect(&self, server_url: &str, device_name: Option<String>) -> Result<Arc<ApiClient>> {
-        let mut config = ApiConfig::new(server_url);
-        if let Some(name) = device_name {
-            config = config.with_device_name(name);
-        }
-        // The account key is the server URL, so one machine can hold
-        // credentials for several Llack deployments side by side.
-        let session = Arc::new(Session::new(
-            self.token_store.clone(),
-            config.base_url.clone(),
-        ));
-        session.restore()?;
-
-        let api = Arc::new(ApiClient::new(config, session.clone())?);
-
-        let mut inner = self.inner.write();
-        inner.api = Some(api.clone());
-        inner.session = Some(session);
-        inner.server_url = Some(server_url.to_string());
-        inner.sync = None;
-        Ok(api)
-    }
-
-    /// The path policy context for this machine.
-    ///
-    /// No roots: nothing here is a session the user granted the agent, so every
-    /// path is judged on the deny list alone. Used by `upload_file`, which
-    /// reads an arbitrary absolute path the webview handed it.
-    pub fn path_context(&self) -> llack_core::agent::policy::SessionContext {
-        llack_core::agent::policy::SessionContext {
-            tainted: false,
-            roots: Vec::new(),
-            home: dirs_home(),
-            app_data_dir: self.data_dir.clone(),
+        Self {
+            api_base: RwLock::new(api_base),
+            window: RwLock::new(WindowState::default()),
+            client,
+            store: RwLock::new(None),
         }
     }
 
-    pub fn api(&self) -> Result<Arc<ApiClient>> {
-        self.inner
-            .read()
-            .api
-            .clone()
-            .ok_or_else(|| Error::Config("no server configured yet".into()))
-    }
-
-    pub fn session(&self) -> Result<Arc<Session>> {
-        self.inner
-            .read()
-            .session
-            .clone()
-            .ok_or_else(|| Error::Config("no server configured yet".into()))
-    }
-
-    pub fn server_url(&self) -> Option<String> {
-        self.inner.read().server_url.clone()
-    }
-
-    /// Build the sync engine once the signed-in user is known.
-    pub fn install_sync(&self, user_id: &str) -> Result<Arc<SyncEngine>> {
-        let api = self.api()?;
-        let engine = Arc::new(SyncEngine::new(self.cache.clone(), api, user_id));
-        self.inner.write().sync = Some(engine.clone());
-        // The agent learns who it belongs to here rather than in each of the
-        // three sign-in paths (resume, login, register). Its keychain accounts
-        // and its session rows are all keyed by user id, so a missed call would
-        // be an agent that silently reads another account's settings.
-        if let Ok(agent) = self.agent() {
-            agent.set_user(user_id);
+    /// 상태 파일을 정한다. 파일이 있으면 저장된 창 상태를 읽어온다.
+    pub fn with_store(self, path: PathBuf) -> Self {
+        if let Some(saved) = read_window_state(&path) {
+            *self.window.write().unwrap_or_else(|err| err.into_inner()) = saved;
         }
-        Ok(engine)
+        *self.store.write().unwrap_or_else(|err| err.into_inner()) = Some(path);
+        self
     }
 
-    pub fn sync(&self) -> Result<Arc<SyncEngine>> {
-        self.inner
+    /// 현재 API 주소.
+    pub fn api_base(&self) -> String {
+        self.api_base
             .read()
-            .sync
+            .unwrap_or_else(|err| err.into_inner())
             .clone()
-            .ok_or_else(|| Error::Unauthenticated("not signed in".into()))
     }
 
-    pub fn set_realtime(&self, handle: RealtimeHandle) {
-        self.inner.write().realtime = Some(handle);
+    /// API 클라이언트. 주소가 잘못된 상태면 `None`.
+    /// (연결 풀을 그대로 쓰기 위해 복사해 건넨다 — `reqwest::Client` 는 싸게 복사된다.)
+    pub fn client(&self) -> Option<ApiClient> {
+        self.client.clone()
     }
 
-    pub fn realtime(&self) -> Result<RealtimeHandle> {
-        self.inner
+    /// 기억해 둔 창 상태.
+    pub fn window_state(&self) -> WindowState {
+        *self.window.read().unwrap_or_else(|err| err.into_inner())
+    }
+
+    /// 창 상태를 갱신한다(저장까지).
+    pub fn set_window_state(&self, state: WindowState) {
+        *self.window.write().unwrap_or_else(|err| err.into_inner()) = state;
+    }
+
+    /// 창 상태를 파일에 저장한다. 실패해도 앱은 계속 동작한다.
+    pub fn save_window_state(&self) {
+        let path = self
+            .store
             .read()
-            .realtime
-            .clone()
-            .ok_or_else(|| Error::Realtime("realtime is not running".into()))
-    }
+            .unwrap_or_else(|err| err.into_inner())
+            .clone();
+        let Some(path) = path else {
+            return;
+        };
+        let state = self.window_state();
 
-    pub fn take_realtime(&self) -> Option<RealtimeHandle> {
-        self.inner.write().realtime.take()
-    }
-
-    pub fn set_active_workspace(&self, workspace_id: Option<String>) {
-        self.inner.write().active_workspace_id = workspace_id;
-    }
-
-    pub fn active_workspace(&self) -> Option<String> {
-        self.inner.read().active_workspace_id.clone()
-    }
-
-    /// Alias used by the agent commands, which read it per call rather than
-    /// caching it — the panel can be open across a workspace switch.
-    pub fn active_workspace_id(&self) -> Option<String> {
-        self.active_workspace()
-    }
-
-    // ── The agent ────────────────────────────────────────────────────────
-
-    pub fn install_agent(&self, engine: Arc<llack_core::agent::AgentEngine>) {
-        *self.agent.write() = Some(engine);
-    }
-
-    pub fn agent(&self) -> Result<Arc<llack_core::agent::AgentEngine>> {
-        self.agent
-            .read()
-            .clone()
-            .ok_or_else(|| Error::Other("에이전트를 사용할 수 없습니다.".into()))
-    }
-
-    /// Tear down everything user-specific. Called on sign-out.
-    ///
-    /// The agent goes first. It holds the provider key in the keychain, live
-    /// approval grants in memory, and pending prompts on screen; clearing the
-    /// message cache while an approved `host.exec` is still in flight would
-    /// leave the most dangerous state behind and the least dangerous state
-    /// gone.
-    pub fn reset(&self) -> Result<()> {
-        if let Ok(agent) = self.agent() {
-            // A failure here is reported but does not stop the sign-out: a user
-            // who pressed sign-out must end up signed out.
-            if let Err(error) = agent.clear_user() {
-                tracing::warn!(%error, "could not fully clear agent state on sign-out");
+        if let Some(parent) = path.parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                tracing::warn!(?err, path = %parent.display(), "설정 디렉터리를 만들지 못했습니다");
+                return;
             }
         }
-        if let Some(handle) = self.take_realtime() {
-            let _ = handle.shutdown();
+
+        match serde_json::to_vec_pretty(&state) {
+            Ok(bytes) => {
+                if let Err(err) = fs::write(&path, bytes) {
+                    tracing::warn!(?err, path = %path.display(), "창 상태를 저장하지 못했습니다");
+                }
+            }
+            Err(err) => tracing::warn!(?err, "창 상태를 직렬화하지 못했습니다"),
         }
-        self.cache.clear()?;
-        let mut inner = self.inner.write();
-        inner.sync = None;
-        inner.active_workspace_id = None;
-        Ok(())
     }
 }
 
-/// The user's home directory, without taking a dependency for one lookup.
-///
-/// Returning `None` is safe: the home-relative rules simply do not fire, and
-/// every absolute deny rule still does. It is not safe to *guess* — a wrong
-/// home would make `~/.ssh` look like an ordinary directory.
-fn dirs_home() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        std::env::var_os("USERPROFILE")
-            .map(PathBuf::from)
-            .or_else(|| {
-                let drive = std::env::var_os("HOMEDRIVE")?;
-                let path = std::env::var_os("HOMEPATH")?;
-                Some(PathBuf::from(drive).join(path))
-            })
+/// 저장된 창 상태를 읽는다. 없거나 깨졌으면 `None`.
+fn read_window_state(path: &PathBuf) -> Option<WindowState> {
+    let bytes = fs::read(path).ok()?;
+    match serde_json::from_slice(&bytes) {
+        Ok(state) => Some(state),
+        Err(err) => {
+            tracing::warn!(?err, path = %path.display(), "저장된 창 상태를 읽지 못했습니다");
+            None
+        }
     }
-    #[cfg(not(windows))]
-    {
-        std::env::var_os("HOME").map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_state_survives_a_restart() {
+        let dir = std::env::temp_dir().join(format!("llack-state-{}", std::process::id()));
+        let path = dir.join("window-state.json");
+
+        let state = AppState::new("http://127.0.0.1:8000").with_store(path.clone());
+        let mut saved = state.window_state();
+        saved.width = 1000.0;
+        saved.height = 700.0;
+        saved.x = Some(120);
+        saved.y = Some(80);
+        state.set_window_state(saved);
+        state.save_window_state();
+
+        let restored = AppState::new("http://127.0.0.1:8000").with_store(path);
+        let window = restored.window_state();
+        assert_eq!(window.width, 1000.0);
+        assert_eq!(window.height, 700.0);
+        assert_eq!(window.x, Some(120));
+        assert_eq!(window.y, Some(80));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_missing_store_leaves_the_defaults_alone() {
+        let state = AppState::new("http://127.0.0.1:8000")
+            .with_store(std::env::temp_dir().join("llack-state-does-not-exist.json"));
+        assert_eq!(state.window_state(), WindowState::default());
     }
 }

@@ -1,153 +1,92 @@
-"""Messages, threads, attachments and reactions."""
+"""Messages, reactions and per-user read state."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.enums import MessageKind
-from app.models.base import ULID, Base, SoftDelete, Timestamps, ULIDPrimaryKey, UTCDateTime
+from app.models.base import Base, UTCDateTime, utcnow
 
-if TYPE_CHECKING:
-    from app.models.channel import Channel
-    from app.models.file import FileObject
-    from app.models.user import User
+KIND_TEXT = "text"
+KIND_SYSTEM = "system"
+
+message_attachments = Table(
+    "message_attachments",
+    Base.metadata,
+    Column(
+        "message_id", String(40), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("file_id", String(40), ForeignKey("files.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
-class Message(Base, ULIDPrimaryKey, Timestamps, SoftDelete):
+class Message(Base):
     __tablename__ = "messages"
-    __table_args__ = (
-        # The channel-history query: WHERE channel_id = ? ORDER BY id DESC.
-        Index("ix_messages_channel_id_id", "channel_id", "id"),
-        # The thread query.
-        Index("ix_messages_parent_id_id", "parent_id", "id"),
-        # No unique key on (channel_id, client_msg_id) here: on Postgres this
-        # table is range-partitioned by `id`, and a unique constraint on a
-        # partitioned table must include the partition key. Idempotent sends
-        # are enforced by `MessageClientKey` instead.
-    )
 
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
     channel_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
-    )
-    user_id: Mapped[str | None] = mapped_column(
-        ULID, ForeignKey("users.id", ondelete="SET NULL"), default=None, index=True
-    )
-    # Set when the message was posted by an installed mini-app.
-    app_id: Mapped[str | None] = mapped_column(
-        ULID, ForeignKey("apps.id", ondelete="SET NULL"), default=None
-    )
-
-    kind: Mapped[str] = mapped_column(String(16), nullable=False, default=MessageKind.USER.value)
-    client_msg_id: Mapped[str | None] = mapped_column(String(64), default=None)
-
-    # Markdown source of truth. `blocks` holds the parsed/rich representation
-    # (app-authored rich layouts, link unfurls, attachments metadata).
-    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, default=None)
-
-    # Denormalised mention targets so the notification fan-out is one read.
-    mentioned_user_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    mentions_everyone: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Which crowd `mentions_everyone` addressed: "channel" (everyone) or "here"
-    # (only people present when it was posted). NULL when nobody was.
-    broadcast: Mapped[str | None] = mapped_column(String(8), default=None)
-
-    # ── Threading ───────────────────────────────────────────────────────
-    parent_id: Mapped[str | None] = mapped_column(
-        ULID, ForeignKey("messages.id", ondelete="CASCADE"), default=None
-    )
-    # Denormalised on the thread root.
-    reply_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    reply_user_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    last_reply_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
-    # A threaded reply the author also broadcast to the channel.
-    also_sent_to_channel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-
-    edited_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
-    edit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-
-    channel: Mapped[Channel] = relationship(back_populates="messages", lazy="raise_on_sql")
-    author: Mapped[User | None] = relationship(lazy="raise_on_sql")
-    parent: Mapped[Message | None] = relationship(remote_side="Message.id", lazy="raise_on_sql")
-    reactions: Mapped[list[Reaction]] = relationship(
-        back_populates="message", cascade="all, delete-orphan", lazy="raise_on_sql"
-    )
-    attachments: Mapped[list[MessageAttachment]] = relationship(
-        back_populates="message", cascade="all, delete-orphan", lazy="raise_on_sql"
-    )
-
-    @property
-    def is_thread_reply(self) -> bool:
-        return self.parent_id is not None
-
-
-class MessageClientKey(Base, Timestamps):
-    """One row per (channel, client_msg_id): the idempotency key for sends.
-
-    The client mints `client_msg_id` before the first attempt; a retry after a
-    dropped response inserts the same key, hits this primary key, and reads
-    back the message that already exists. Kept apart from `messages` so that
-    table can be partitioned by time without losing the uniqueness guarantee.
-    """
-
-    __tablename__ = "message_client_keys"
-
-    channel_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("channels.id", ondelete="CASCADE"), primary_key=True
-    )
-    client_msg_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    message_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-
-
-class Reaction(Base, ULIDPrimaryKey, Timestamps):
-    __tablename__ = "reactions"
-    __table_args__ = (
-        UniqueConstraint(
-            "message_id", "user_id", "emoji", name="uq_reactions_message_id_user_id_emoji"
-        ),
-        Index("ix_reactions_message_id_emoji", "message_id", "emoji"),
-    )
-
-    message_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+        String(40), ForeignKey("channels.id", ondelete="CASCADE"), index=True
     )
     user_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        String(40), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    emoji: Mapped[str] = mapped_column(String(80), nullable=False)
+    body: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(16), default=KIND_TEXT)
+    parent_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("messages.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # The message this one answers. A reply also joins the thread of the
+    # message it answers, so every reply to a message stays in one place.
+    reply_to_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+    # True when the reply was written in the channel: it shows there too,
+    # quoting the message it answers, as well as in that message's thread.
+    inline: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    edited_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True, default=None)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True, default=None)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    reply_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_reply_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True, default=None)
 
-    message: Mapped[Message] = relationship(back_populates="reactions", lazy="raise_on_sql")
-
-
-class MessageAttachment(Base, ULIDPrimaryKey, Timestamps):
-    __tablename__ = "message_attachments"
-    __table_args__ = (
-        UniqueConstraint("message_id", "file_id", name="uq_message_attachments_message_id_file_id"),
+    author: Mapped[User] = relationship(  # noqa: F821
+        lazy="joined", foreign_keys=[user_id], viewonly=True
+    )
+    attachments: Mapped[list[File]] = relationship(  # noqa: F821
+        secondary=message_attachments, lazy="selectin", viewonly=True
     )
 
+
+class Reaction(Base):
+    __tablename__ = "reactions"
+    __table_args__ = (UniqueConstraint("message_id", "user_id", "emoji", name="uq_reaction"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
     message_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, index=True
+        String(40), ForeignKey("messages.id", ondelete="CASCADE"), index=True
     )
-    file_id: Mapped[str] = mapped_column(
-        ULID, ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True
+    user_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    emoji: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
-    message: Mapped[Message] = relationship(back_populates="attachments", lazy="raise_on_sql")
-    file: Mapped[FileObject] = relationship(lazy="joined")
+
+class ReadState(Base):
+    __tablename__ = "read_states"
+    __table_args__ = (UniqueConstraint("channel_id", "user_id", name="uq_read_state"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    channel_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("channels.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    last_read_message_id: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, default=None
+    )
+    last_read_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

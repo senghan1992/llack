@@ -1,0 +1,304 @@
+/* Llack design tokens — Hallmark · theme: Dose · scope: app screen
+ * One token block. Every colour, font, size and duration used by the app
+ * resolves from here. Nothing literal appears outside this file.
+ *
+ * The material: warm paper, one pharmacy green, moulded plastic, DM Mono
+ * labels. Surfaces climb one ladder and each rung is told apart by real
+ * elevation — a lit top edge, a shaded bottom edge, one soft shadow — not
+ * by a hairline alone.
+ */
+
+/* Korean companion to the Latin faces, so Hangul keeps one voice everywhere. */
+@font-face {
+  font-family: "Pretendard Variable";
+  src: url("../assets/PretendardVariable.woff2") format("woff2-variations");
+  font-weight: 45 920;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+
+  /* ── spacing scale ─────────────────────────────────────────── */
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px;
+  --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+
+  /* ── type scale · app scope, ratio ~1.14 from 15px ─────────── */
+  --text-tiny: 12px; --text-small: 13px; --text-ui: 14px; --text-body: 15px;
+  --text-lead: 16px; --text-title: 18px; --text-head: 21px; --text-display: 28px;
+  --text-mono: 11px;   /* the pharmacy label: DM Mono, set small and tight */
+  --text-mono-sm: 10px;
+  --text-code: 12.5px;
+
+  /* ── motion ─────────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms; --dur-short: 200ms; --dur-long: 320ms;
+
+  /* ── layers ─────────────────────────────────────────────────── */
+  --z-base: 1; --z-raised: 10; --z-dropdown: 100; --z-sticky: 200;
+  --z-sticky-nav: 300; --z-modal: 400; --z-menu: 450; --z-toast: 500; --z-tooltip: 600;
+
+  /* ── paper & ink ────────────────────────────────────────────── */
+  --color-paper: oklch(97.4% 0.008 88);
+  --color-ink: oklch(21% 0.025 170);
+  --color-ink-2: oklch(31% 0.02 170);
+  --color-muted: oklch(45% 0.024 165);
+  --color-rule: oklch(87.5% 0.02 140);
+  --color-rule-soft: oklch(91.5% 0.014 120);
+
+  /* ── the one signal ─────────────────────────────────────────── */
+  --color-accent: oklch(47% 0.13 160);
+  --color-accent-lift: oklch(52% 0.12 158);
+  --color-accent-deep: oklch(38% 0.105 162);
+  /* The key catching more light under the pointer. The label on it must
+     still hold 4.5:1, so the lift stops well short of the pale end. */
+  --color-accent-hover-top: oklch(53.5% 0.128 157);
+  --color-accent-hover-bottom: oklch(48.5% 0.134 159);
+  --color-accent-soft: oklch(91% 0.055 160);
+  --color-accent-ink: oklch(99% 0.006 160);
+  --color-focus: oklch(45% 0.14 160);
+  --accent-on-soft: oklch(32% 0.09 162);
+  --accent-ring: oklch(47% 0.13 160 / 0.16);
+  --accent-edge: oklch(47% 0.13 160 / 0.5);
+  --on-accent-soft: oklch(99% 0.006 160 / 0.45);
+
+  /* ── surfaces · the ladder: frame, rail, canvas, raise, well ── */
+  --surface-frame: oklch(92.2% 0.024 96);
+  --surface-rail: oklch(93.6% 0.026 100);
+  --surface-canvas: oklch(98.8% 0.005 88);
+  --surface-raise: oklch(99.6% 0.004 84);
+  --surface-well: oklch(95.4% 0.014 92);
+  --surface-ink: oklch(21% 0.025 170);
+  --surface-selected: oklch(90% 0.055 158);
+  --surface-overlay: oklch(30% 0.02 165 / 0.34);
+  --on-ink: oklch(98% 0.008 88);
+  --avatar-bg: oklch(39% 0.11 162);
+  /* Initials on a coloured tile. Paper white in both themes: the tile
+     colour is the person's, and it may be any mid tone. */
+  --avatar-ink: oklch(99% 0.002 100);
+  /* a groove cut into a surface — darker than what it is cut from */
+  --surface-groove: oklch(91.4% 0.018 104);
+  /* the light that falls along a lit edge */
+  --edge-light: oklch(100% 0 0 / 0.4);
+
+  /* ── the sign-in panel · a deep tray lit from one corner ─────── */
+  --gate-night-top: oklch(25% 0.055 163);
+  --gate-night-bottom: oklch(16% 0.032 168);
+  --gate-glow: oklch(44% 0.1 158 / 0.55);
+
+  /* ── the rail band, top to bottom ───────────────────────────── */
+  --surface-rail-top: oklch(94.6% 0.028 100);
+  --surface-rail-bottom: oklch(92.4% 0.026 104);
+  --surface-rail-foot: oklch(92.5% 0.024 104);
+
+  /* ── the moulded key ────────────────────────────────────────── */
+  --edge-key: oklch(78% 0.03 120);
+  --surface-key-top: oklch(97.6% 0.014 100);
+  --surface-key-bottom: oklch(94.2% 0.018 100);
+  --surface-key-hover-top: oklch(99% 0.012 100);
+  --surface-key-hover-bottom: oklch(95.8% 0.018 100);
+  --shadow-key: oklch(28% 0.02 165 / 0.1);
+
+  /* ── edges & washes ─────────────────────────────────────────── */
+  --edge-search: oklch(85% 0.022 120);
+  --edge-search-hover: oklch(76% 0.03 130);
+  --wash-rail: oklch(30% 0.02 165 / 0.09);
+  --wash-row: oklch(30% 0.02 165 / 0.055);
+  --wash-message: oklch(30% 0.02 165 / 0.028);
+
+  /* ── plastic tints · theme material, never a signal ─────────── */
+  --plastic-thu: oklch(86.5% 0.075 160);
+  --plastic-sun: oklch(84% 0.048 322);
+  --plastic-wed: oklch(91.5% 0.064 98);
+  --glint: oklch(100% 0 0 / 0.72);
+
+  /* ── on the ink band ────────────────────────────────────────── */
+  --ink-on-dark: oklch(88% 0.02 160);
+  --note-on-dark: oklch(86% 0.015 160);
+  --kbd-ink-bg: oklch(99% 0.01 160 / 0.12);
+  --kbd-ink-edge: oklch(99% 0.01 160 / 0.22);
+  --kbd-ink-ink: oklch(96% 0.01 160);
+
+  /* ── error ──────────────────────────────────────────────────── */
+  --color-error: oklch(50% 0.19 27);
+  --error-wash: oklch(93% 0.04 27);
+  --error-ink: oklch(36% 0.14 27);
+
+  /* ── presence ────────────────────────────────────────────────────
+     The states a person can wear. They are states, not decoration: one
+     green, one amber, one red — the same three a chat client has used
+     for years, so a glance still means something. */
+  --color-warn: oklch(72% 0.14 78);
+  --warn-wash: oklch(93% 0.055 80);
+
+  /* ── your own message ──────────────────────────────────────────
+     The one surface in the app that wears the signal colour: your words
+     travel in a bubble against the right of the column, theirs stay on the
+     paper at the left. The bubble, its ink, its dim timestamp and the link
+     colour inside it are one set. */
+  --bubble-mine: oklch(42% 0.115 161);
+  --bubble-mine-ink: oklch(98.5% 0.008 160);
+  --bubble-mine-dim: oklch(98.5% 0.008 160 / 0.74);
+  --bubble-mine-link: oklch(92% 0.06 158);
+
+  /* ── radii · one per nesting level ──────────────────────────── */
+  --radius-xs: 5px; --radius-sm: 8px; --radius-input: 10px;
+  --radius-card: 14px; --radius-panel: 16px; --radius-pill: 999px;
+
+  /* ── metrics ────────────────────────────────────────────────── */
+  --rail-w: 264px; --thread-w: 400px; --header-h: 60px;
+  --control-h: 34px; --field-h: 38px; --hit-h: 44px;
+  --avatar-sm: 22px; --avatar: 30px; --avatar-lg: 40px;
+  /* where the message text starts inside a pane: the row's padding, the
+     avatar gutter and the gap. Headings, the thread's reply count and the
+     composer all line up on it, so nothing hangs in the gutter.
+     It is the conversation's frame: its left line *and* its right line. The
+     text, the bubble and the composer's keys all stop on it, so a
+     conversation has the same margin on both sides. */
+  --text-inset: calc(var(--space-md) + 44px + var(--space-xs));
+  /* the composer's own inset: one step out from the frame (the input's own
+     padding), so the composer's text lands exactly on the message text */
+  --composer-inset: calc(var(--text-inset) - var(--space-sm));
+  /* the thread pane's text line: the pane's padding plus the input's own
+     padding, so its messages and its composer share one line */
+  --thread-inset: calc(var(--space-md) + var(--space-sm));
+  /* a field edge must clear 3:1 against its own surface */
+  --edge-field: oklch(58% 0.022 165);
+  /* the reading measure of a single line of message text. The conversation
+     itself fills its pane — rows, wash, composer, and your own bubble
+     against the right edge — so a wide window reads as one spread
+     conversation, not a column with a margin beside it. */
+  --text-measure: 920px;
+  /* the agenda's own measure: a day of events is a block, not a table row
+     stretched across the window */
+  --agenda-measure: 720px;
+
+  /* ── depth · one shadow per surface, never a border and a shadow ── */
+  --shadow-e1: 0 1px 2px oklch(28% 0.02 165 / 0.06), 0 1px 1px oklch(28% 0.02 165 / 0.04);
+  --shadow-e2: 0 1px 2px oklch(28% 0.02 165 / 0.05), 0 10px 24px -12px oklch(28% 0.03 165 / 0.26);
+  --shadow-e3: 0 2px 4px oklch(28% 0.02 165 / 0.07), 0 28px 60px -28px oklch(28% 0.03 165 / 0.38);
+  --shadow-sheet: -14px 0 34px -22px oklch(28% 0.03 165 / 0.45);
+  /* the casts a surface makes on what is under it */
+  --cast-small: 0 1px 2px oklch(28% 0.02 165 / 0.22);
+  --cast-bar: 0 8px 16px -14px oklch(28% 0.03 165 / 0.6);
+  --cast-pane: -14px 0 28px -22px oklch(28% 0.03 165 / 0.5);
+  /* a hairline drawn in shadow, for a shape too small to border */
+  --ring-hair: 0 0 0 1px oklch(28% 0.02 165 / 0.08);
+  /* the same, for a shape that carries a colour of its own */
+  --ring-edge: 0 0 0 1px oklch(28% 0.02 165 / 0.16);
+  /* a plastic surface catches light on its top edge and loses it on its
+     bottom edge; that pair does more work than any hairline */
+  --sheen: inset 0 1px 0 oklch(100% 0 0 / 0.24);
+  --rim: inset 0 -1px 0 oklch(28% 0.02 165 / 0.16);
+  /* a recessed surface loses light on its top edge */
+  --recess: inset 0 1px 2px oklch(28% 0.02 165 / 0.08);
+
+  /* ── paper tooth · a fine grain, tiled; the paper is a material ── */
+  --tooth: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAACYUlEQVR42u3W2W6FMAxF0czD//9wqRoq69RO+9DHHQnBBW4S7AwrpZR6+ir7HOs5avJLe47yHPO82879Yer4LPkcbynmepn3tMzTn/d51A/bTpK2tO5y2ry1P8236H3vOpnvHulelsTqRynBx9bzrF86teV5No02uVdN8qZ5TwOr/ejywdXUqR+f5f1iBlVy3k3BYChOoFtQj43JNv/PUk912sv2w9cfM+oFrv0ywto5qvk9nMQ3p3PdCUh2AuTNgHdGNXMu0k6V8xvs7QyA5AzSJCtCM+1Gs2xFyS/BrNhBwKssGW9Dy7z3JqQEgW7B9NRk1CA5+wStXEao9rGYevY5T0nkkMG5TR32uplZmYMl2Gv7e0aNy/LyZqufc5HKuulMkyANGUHDSVQKZtxy+tHNMpaDddxLXg0SY/eR4Sx5y9kbdVDMYBbaGVDkunmrSHHWxH0ZTV7gtlTcLxvPdP47nfbzZd8qkpghs2wG+1qTfUH7OS+beQpm4naWyCpL7o6WMxSEglAQCkJBKAgFoSAUhIJQEApCQSgIBaEgFISCUBAKQkEoCAWhIBSEglAQCkJBKAgFoSAUhIJQEApCQSgIBaEgFISCUBAKQkEoCAWhIBSEglAQCkJBKAgFoSAUhIJQEApCQSgIBaEgFISCUBAKQkEoCAWhIBSEglAQCkJBKAgFoSAUhIJQEApCQSjo/xT0AaoQWUG980hbAAAAAElFTkSuQmCC");
+
+  /* ── type families ──────────────────────────────────────────── */
+  --font-display: "Schibsted Grotesk", "Pretendard Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Instrument Sans", "Pretendard Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-outlier: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --tracking-display: -0.03em; --display-weight: 700;
+}
+
+/* ── night · a derived ground, not an inversion ────────────────── */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-paper: oklch(13.5% 0.011 168);
+  --color-ink: oklch(93% 0.014 165);
+  --color-ink-2: oklch(84% 0.014 165);
+  --color-muted: oklch(68% 0.02 165);
+  --color-rule: oklch(29% 0.018 166);
+  --color-rule-soft: oklch(23% 0.016 166);
+
+  --color-accent: oklch(70% 0.12 158);
+  --color-accent-lift: oklch(76% 0.115 156);
+  --color-accent-deep: oklch(60% 0.11 160);
+  --color-accent-hover-top: oklch(78% 0.115 155);
+  --color-accent-hover-bottom: oklch(73% 0.12 157);
+  --color-accent-soft: oklch(31% 0.055 160);
+  --color-accent-ink: oklch(16% 0.02 168);
+  --color-focus: oklch(78% 0.14 158);
+  --accent-on-soft: oklch(86% 0.1 158);
+  --accent-ring: oklch(70% 0.12 158 / 0.26);
+  --accent-edge: oklch(70% 0.12 158 / 0.6);
+  --on-accent-soft: oklch(23% 0.03 160 / 0.5);
+
+  --surface-frame: oklch(10.5% 0.011 168);
+  --surface-rail: oklch(15% 0.014 168);
+  --surface-canvas: oklch(18.5% 0.012 168);
+  --surface-raise: oklch(22.5% 0.013 168);
+  --surface-well: oklch(25.5% 0.015 168);
+  --surface-ink: oklch(12% 0.011 168);
+  --surface-selected: oklch(30% 0.05 160);
+  --surface-overlay: oklch(4% 0.01 168 / 0.66);
+  --on-ink: oklch(93% 0.012 168);
+  --avatar-bg: oklch(28% 0.05 162);
+  --surface-groove: oklch(11.5% 0.014 168);
+  --edge-light: oklch(100% 0 0 / 0.07);
+
+  --gate-night-top: oklch(19% 0.042 164);
+  --gate-night-bottom: oklch(10.5% 0.024 168);
+  --gate-glow: oklch(46% 0.095 158 / 0.6);
+
+  --surface-rail-top: oklch(17.5% 0.016 168);
+  --surface-rail-bottom: oklch(13.5% 0.014 168);
+  --surface-rail-foot: oklch(13% 0.014 168);
+
+  --edge-key: oklch(30% 0.02 166);
+  --surface-key-top: oklch(26% 0.016 168);
+  --surface-key-bottom: oklch(23% 0.015 168);
+  --surface-key-hover-top: oklch(29% 0.017 168);
+  --surface-key-hover-bottom: oklch(25% 0.016 168);
+  --shadow-key: oklch(4% 0.01 168 / 0.5);
+
+  --edge-search: oklch(31% 0.018 166);
+  --edge-field: oklch(52% 0.022 165);
+  --edge-search-hover: oklch(42% 0.02 166);
+  --wash-rail: oklch(99% 0.01 160 / 0.09);
+  --wash-row: oklch(99% 0.01 160 / 0.06);
+  --wash-message: oklch(99% 0.01 160 / 0.035);
+
+  --plastic-thu: oklch(32% 0.045 160);
+  --plastic-sun: oklch(31% 0.035 322);
+  --plastic-wed: oklch(34% 0.04 98);
+  --glint: oklch(100% 0 0 / 0.07);
+
+  --ink-on-dark: oklch(78% 0.02 160);
+  --note-on-dark: oklch(72% 0.018 160);
+  --kbd-ink-bg: oklch(99% 0.01 160 / 0.1);
+  --kbd-ink-edge: oklch(99% 0.01 160 / 0.2);
+  --kbd-ink-ink: oklch(92% 0.012 168);
+
+  --color-error: oklch(76% 0.14 27);
+  --error-wash: oklch(28% 0.06 27);
+  --error-ink: oklch(86% 0.08 27);
+
+  --color-warn: oklch(80% 0.13 78);
+  --warn-wash: oklch(28% 0.05 80);
+
+  /* the bubble keeps its own pair at night: a deeper green so it still
+     reads as a surface against the dark canvas, not as a signal. */
+  --bubble-mine: oklch(34% 0.095 162);
+  --bubble-mine-ink: oklch(93% 0.012 165);
+  --bubble-mine-dim: oklch(93% 0.012 165 / 0.7);
+  --bubble-mine-link: oklch(87% 0.095 158);
+
+  --shadow-e1: 0 1px 2px oklch(4% 0.01 168 / 0.5);
+  --shadow-e2: 0 1px 2px oklch(4% 0.01 168 / 0.45), 0 10px 24px -12px oklch(2% 0.01 168 / 0.7);
+  --shadow-e3: 0 2px 4px oklch(4% 0.01 168 / 0.5), 0 28px 60px -28px oklch(2% 0.01 168 / 0.75);
+  --shadow-sheet: -14px 0 34px -22px oklch(2% 0.01 168 / 0.8);
+  --cast-small: 0 1px 2px oklch(2% 0.01 168 / 0.6);
+  --cast-bar: 0 8px 16px -14px oklch(2% 0.01 168 / 0.9);
+  --cast-pane: -14px 0 28px -22px oklch(2% 0.01 168 / 0.85);
+  --ring-hair: 0 0 0 1px oklch(99% 0.01 160 / 0.08);
+  --ring-edge: 0 0 0 1px oklch(99% 0.01 160 / 0.14);
+  --sheen: inset 0 1px 0 oklch(100% 0 0 / 0.1);
+  --rim: inset 0 -1px 0 oklch(2% 0.01 168 / 0.45);
+  --recess: inset 0 1px 2px oklch(2% 0.01 168 / 0.5);
+}

@@ -1,139 +1,135 @@
-/** Small formatting helpers shared across the UI. */
+import { AVATAR_PALETTE } from "./color";
+import { getSettings } from "./settings";
 
-const KST_FALLBACK = "Asia/Seoul";
+const KOREAN = /[가-힯]/;
 
-export function formatTime(iso: string, timeZone: string = KST_FALLBACK): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone,
-  }).format(date);
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * 메시지 옆의 시간. 표기 방식은 설정이 정한다 — 24시간制와 12시간制.
+ */
+export function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (getSettings().clock === "12h") {
+    const hour = d.getHours();
+    const twelve = hour % 12 === 0 ? 12 : hour % 12;
+    return `${hour < 12 ? "오전" : "오후"} ${twelve}:${pad(d.getMinutes())}`;
+  }
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function formatDayHeading(iso: string, timeZone: string = KST_FALLBACK): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
+export function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
+export function formatDateLong(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+export function weekday(iso: string): string {
+  return WEEKDAYS[new Date(iso).getDay()];
+}
+
+/** 오늘 · 어제 · 11월 2일 (화) — the relative label a team actually reads. */
+export function dayLabel(iso: string): { rel: string; date: string } {
+  const d = new Date(iso);
   const today = new Date();
-  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (sameDay(date, today)) return "오늘";
+  const same = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+  if (same(d, today)) return { rel: "오늘", date: formatDate(iso) };
 
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  if (sameDay(date, yesterday)) return "어제";
+  if (same(d, yesterday)) return { rel: "어제", date: formatDate(iso) };
 
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "short",
-    timeZone,
-  }).format(date);
+  const sameYear = d.getFullYear() === today.getFullYear();
+  const date = sameYear
+    ? `${d.getMonth() + 1}월 ${d.getDate()}일`
+    : `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+  return { rel: `${date} (${weekday(iso)})`, date: formatDate(iso) };
 }
 
-/** "3분 전" style relative time, for presence and thread previews. */
-export function formatRelative(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const seconds = Math.round((Date.now() - then) / 1000);
+export function isSameDay(a: string, b: string): boolean {
+  const x = new Date(a);
+  const y = new Date(b);
+  return (
+    x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate()
+  );
+}
 
-  if (seconds < 45) return "방금";
-  if (seconds < 3600) return `${Math.round(seconds / 60)}분 전`;
-  if (seconds < 86_400) return `${Math.round(seconds / 3600)}시간 전`;
-  if (seconds < 604_800) return `${Math.round(seconds / 86_400)}일 전`;
-  return formatDayHeading(iso);
+/** A period of time, as the short range a milestone shows: 03/01 – 06/30. */
+export function dateRange(startIso: string, endIso: string): string {
+  return `${monthDay(startIso)} – ${monthDay(endIso)}`;
+}
+
+/**
+ * The period a project occupies — `2026.11.03 – 01.05`.
+ *
+ * The year is written where it changes, because a reader who sees `01.05`
+ * must not mistake it for January of this year.
+ */
+export function periodLabel(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const left = `${start.getFullYear()}.${pad(start.getMonth() + 1)}.${pad(start.getDate())}`;
+  const right =
+    start.getFullYear() === end.getFullYear()
+      ? `${pad(end.getMonth() + 1)}.${pad(end.getDate())}`
+      : `${end.getFullYear()}.${pad(end.getMonth() + 1)}.${pad(end.getDate())}`;
+  return `${left} – ${right}`;
+}
+
+/** The day of an instant, as `MM/DD`. */
+function monthDay(iso: string): string {
+  const date = new Date(iso);
+  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+}
+
+/** Two initials. Korean names take the given name, Latin names the first letters. */
+export function initials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+  if (KOREAN.test(trimmed)) return trimmed.slice(-2);
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unitIndex]}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** Two initials for an avatar placeholder, working for Hangul and Latin. */
-export function initials(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return "?";
-  // Hangul names are short; the first character reads better than two.
-  if (/[가-힣]/.test(trimmed[0] ?? "")) return trimmed.slice(0, 1);
-  const parts = trimmed.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return (parts[0] ?? "").slice(0, 2).toUpperCase();
-  return `${(parts[0] ?? "")[0] ?? ""}${(parts[1] ?? "")[0] ?? ""}`.toUpperCase();
+export function relativeTime(iso: string | null): string {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "방금";
+  if (min < 60) return `${min}분 전`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}일 전`;
+  return formatDate(iso);
 }
 
-/**
- * A stable plate tint for an identity.
- *
- * Four steps of the neutral ramp rather than a hue wheel: on this surface one
- * colour carries one meaning (당신을 향한 신호), so an avatar may not spend it.
- * Differentiation comes from the initials and a faint step in value, which is
- * what the eye actually uses when scanning a column of names.
- */
-export function colorForId(id: string): string {
-  const tints = [
-    "var(--tint-a)",
-    "var(--tint-b)",
-    "var(--tint-c)",
-    "var(--tint-d)",
-  ];
+/** A stable colour from a name, so an avatar keeps its colour without a stored field. */
+export function colorFor(seed: string): string {
   let hash = 0;
-  for (let index = 0; index < id.length; index += 1) {
-    hash = (hash * 31 + id.charCodeAt(index)) | 0;
-  }
-  return tints[Math.abs(hash) % tints.length] as string;
+  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
 }
 
-/**
- * The typographic mark before a channel name.
- *
- * `#` is a character, not an icon, so it sets with the label. A private channel
- * has no character that reads correctly at this size and takes a drawn lock
- * instead — see `ChannelMark` in `components/Icon.tsx`.
- */
-export function channelPrefix(kind: string): string {
-  switch (kind) {
-    case "private":
-    case "dm":
-    case "group_dm":
-      return "";
-    default:
-      return "#";
-  }
-}
-
-/** Group consecutive messages from the same author within a few minutes. */
-export function shouldGroupWithPrevious(
-  current: {
-    author?: { id: string } | null;
-    created_at: string;
-    parent_id?: string | null;
-    addressedToMe?: boolean;
-  },
-  previous: { author?: { id: string } | null; created_at: string } | undefined,
-  windowMinutes = 5,
-): boolean {
-  if (!previous) return false;
-  /*
-   * A message addressed to you never groups.
-   *
-   * Grouping drops the author and the timestamp, which is right for a
-   * follow-on line in someone's train of thought. But a mention renders as its
-   * own plate, and a plate with no name on it is an object the reader cannot
-   * attribute — "who is asking me this, and when?" is exactly what you need
-   * from the one message you have to answer.
-   */
-  if (current.addressedToMe) return false;
-  const sameAuthor = (current.author?.id ?? null) === (previous.author?.id ?? null);
-  if (!sameAuthor || !current.author) return false;
-  const gap = new Date(current.created_at).getTime() - new Date(previous.created_at).getTime();
-  return gap >= 0 && gap < windowMinutes * 60_000;
+/** Whether a message body names a person — "@김현진" and the like. */
+export function mentionsUser(body: string, name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`@${escaped}(?![\\w가-힯])`).test(body);
 }

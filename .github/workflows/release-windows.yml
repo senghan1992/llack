@@ -41,23 +41,25 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # 컴파일이 느린 부분(llack-core + tauri 크레이트)을 캐시해 재실행을
+      # 컴파일이 느린 부분(Tauri 셸 + tauri 크레이트)을 캐시해 재실행을
       # 몇 분 단위로 줄입니다 — 무료 분을 아끼는 가장 큰 레버입니다.
+      # 셸은 워크스페이스가 아니라 독립형 cargo 패키지이므로 캐시 경로도
+      # desktop/src-tauri 를 가리킵니다.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop
+          workspaces: desktop/src-tauri
 
       - name: 프론트 의존성 설치
         working-directory: desktop
         run: npm ci
 
-      # beforeBuildCommand(`npm run build` = tsc + vite)가 프론트 번들을 만들고,
-      # 그 뒤 tauri 가 셸을 컴파일해 Windows 인스톨러 두 종을 굽습니다.
+      # npm run build(tsc + vite) 가 프론트 번들을 만들고, 그 뒤 tauri 가 셸을
+      # 컴파일해 Windows 인스톨러 두 종을 굽습니다.
       #   · msi  — 기업 배포(그룹 정책·자동 설치)에 적합
       #   · nsis — 개인 사용자용 setup.exe
       - name: Tauri 빌드 (MSI + NSIS)
         working-directory: desktop
-        run: npm run tauri build -- --bundles nsis,msi
+        run: npm run build && npm run tauri build
 
       # 어떤 트리거로 돌든 다운로드 가능한 아티팩트를 남깁니다. 수동 실행에서는
       # 이것이 결과물을 받는 유일한 경로입니다(만료 30일).

@@ -1,0 +1,4921 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Dose (deal 3/3, seed premium-minimal-internal-company-5063·a7692998·2026-11-02·r0)
+ * nav: three-pane shell, rail at the left edge, thread at the right · signature: the message label, a mono timestamp set like a pharmacy label
+ * states: loading, empty, error, full · posture: restrained · axes: light/grotesk-sans/chromatic-green · contrast: pass · v2.1.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V5 · weakest: P, a messenger has no argument to make, so the tone is taken from the material: exact, unhurried, one signal */
+/* v2.1.0 — deeper material: real elevation, a reading measure, machined keys.
+   The identity is unchanged; the craft is not. */
+
+@import url("./tokens.css");
+@import url("./base.css");
+
+/* ══ shell ═══════════════════════════════════════════════════════════ */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  grid-template-rows: 100%;
+  position: relative;
+  height: 100dvh;
+  background: var(--surface-frame);
+  color: var(--color-ink);
+  overflow: clip;
+}
+
+.app--thread { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--thread-w); }
+
+/* The conversation pane is a sheet laid over the rail: it lifts a little and
+   casts a soft shadow to its left, so the two halves are not one flat plane. */
+.app__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  background: var(--surface-canvas);
+  border-left: 1px solid var(--color-rule);
+  box-shadow: var(--cast-pane);
+}
+
+/* A pane is a header and a body. The main region holds one pane, or two
+   when the window is wide enough to show the conversation and the board at
+   the same time. */
+.pane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The cleared screen has no header over it — the empty state is the whole
+   pane, so it takes the one row the pane has. */
+.pane--empty { grid-template-rows: minmax(0, 1fr); }
+
+/* A full pane is a header over a page that fills the rest of it: the page
+   scrolls inside itself, never the pane. */
+.pane--full { grid-template-rows: auto minmax(0, 1fr); }
+
+/* The board sits beside the conversation, ruled off from it. */
+.app--split .app__main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.pane--board { border-left: 1px solid var(--color-rule); }
+
+/* In a split window the thread is a sheet over the board: the conversation
+   keeps its place, and so does the board under it. */
+.app--split.app--thread { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
+.app--split .thread {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: var(--z-raised);
+  width: var(--thread-w);
+  box-shadow: var(--shadow-e3);
+}
+
+/* A room window has no rail — it is one conversation and nothing else. */
+.app--room { grid-template-columns: minmax(0, 1fr); }
+.app--room.app--thread { grid-template-columns: minmax(0, 1fr); }
+.app--room .app__main { border-left: 0; box-shadow: none; }
+.app--room .head__menu { display: none; }
+.app--room .thread {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: var(--z-modal);
+  width: min(380px, 90vw);
+  box-shadow: var(--shadow-e3);
+}
+
+/* The conversation fills its pane — the rows, the hover wash, the date rules,
+   the header and the composer all reach the pane's edge, so the chat occupies
+   the window instead of sitting in a ribbon with a dead band beside it.
+   Left-anchored on purpose: a centred column re-centres every time the
+   thread pane opens and the page shifts under the reader. */
+.conversation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  width: 100%;
+  margin-inline: 0;
+}
+
+/* The composer's band is ruled across the whole pane, so the window is
+   framed at the foot the way the header frames it at the top — the column
+   inside it stays left-anchored and bounded. */
+.conversation__foot {
+  min-width: 0;
+  padding-top: var(--space-2xs);
+  border-top: 1px solid var(--color-rule-soft);
+}
+
+/* ══ rail ════════════════════════════════════════════════════════════ */
+
+.rail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  background:
+    var(--tooth),
+    linear-gradient(180deg, var(--surface-rail-top), var(--surface-rail-bottom));
+  position: relative;
+}
+
+/* the light that falls along the top of the rail */
+.rail::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: var(--glint);
+  opacity: 0.6;
+}
+
+.rail__top {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-sm) var(--space-2xs);
+}
+
+/* the moulded workspace key — raised, lit from above, with a real rim */
+.wkey {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-xs) 0 var(--space-2xs);
+  border: 1px solid var(--edge-key);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--surface-key-top), var(--surface-key-bottom));
+  box-shadow: var(--sheen), var(--rim), 0 1px 2px var(--shadow-key);
+  color: var(--color-ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+}
+
+.wkey:hover {
+  background: linear-gradient(180deg, var(--surface-key-hover-top), var(--surface-key-hover-bottom));
+}
+
+.wkey:active {
+  transform: translateY(1px);
+  box-shadow: var(--rim), 0 1px 1px var(--shadow-key);
+}
+
+.wkey__mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: var(--surface-ink);
+  box-shadow: var(--sheen), var(--cast-small);
+  color: var(--on-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-tiny);
+  font-weight: var(--display-weight);
+}
+
+.wkey__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.wkey__chev { flex: 0 0 auto; color: var(--color-muted); }
+
+/* the search field is cut into the rail — a groove, not another key */
+.rail__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  height: var(--control-h);
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--edge-search);
+  border-radius: var(--radius-input);
+  background: var(--surface-groove);
+  box-shadow: var(--recess);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: border-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.rail__search:hover { border-color: var(--edge-search-hover); color: var(--color-ink-2); }
+.rail__search:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+
+.rail__search span { flex: 1 1 auto; text-align: left; font-size: var(--text-small); }
+.rail__search .kbd { flex: 0 0 auto; }
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-xs);
+  background: var(--surface-well);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.rail__scroll {
+  overflow-y: auto;
+  overflow-x: clip;
+  padding: var(--space-2xs) var(--space-xs) var(--space-sm);
+}
+
+.rail__group { margin-top: var(--space-lg); }
+.rail__group:first-child { margin-top: 0; }
+
+.rail__groupline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 26px;
+  padding: 0 var(--space-2xs);
+  color: var(--color-muted);
+}
+
+.rail__grouptitle {
+  font-size: var(--text-tiny);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+}
+
+.rail__add {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.rail__add:hover { background: var(--wash-rail); color: var(--color-ink); }
+.rail__add:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* channel & dm rows */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.row:hover { background: var(--wash-row); color: var(--color-ink); }
+.row:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.row[aria-current="true"] { background: var(--surface-selected); color: var(--color-ink); }
+
+.row__hash { flex: 0 0 auto; width: 22px; color: var(--color-muted); }
+.row[aria-current="true"] .row__hash { color: var(--color-accent); }
+
+/* The room that stays open beside the board keeps the app's own marks — the
+   signal on its glyph, its name in full ink — but no selected wash. One
+   surface is selected at a time; the other is only still there. */
+.row--beside { color: var(--color-ink); }
+.row--beside .row__hash { color: var(--color-accent); }
+
+.row__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-ui);
+  letter-spacing: -0.005em;
+}
+
+.row--unread .row__name { font-weight: 600; color: var(--color-ink); }
+
+.row__count {
+  flex: 0 0 auto;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 var(--space-2xs);
+  border-radius: 5px;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono-sm);
+  font-weight: 500;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.row__lock { flex: 0 0 auto; color: var(--color-muted); }
+
+/* The rail's foot holds the profile and the settings key side by side. The
+   profile takes the room it needs; the gear stands at the rail's edge. */
+.rail__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: var(--space-xs);
+  border-top: 1px solid var(--color-rule);
+  background: var(--surface-rail-foot);
+  box-shadow: inset 0 1px 0 var(--edge-light);
+}
+
+.rail__gear { flex: 0 0 auto; }
+
+.me {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-2xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.me:hover { background: var(--wash-row); }
+.me:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+.me__text { flex: 1 1 auto; min-width: 0; }
+.me__name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.me__status {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+/* ══ avatars & presence ═════════════════════════════════════════════ */
+
+.avatar {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--avatar);
+  height: var(--avatar);
+  border-radius: 9px;
+  background: var(--avatar-bg);
+  box-shadow: var(--sheen), var(--ring-hair);
+  color: var(--avatar-ink);
+  font-size: var(--text-tiny);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+
+.avatar--sm { width: var(--avatar-sm); height: var(--avatar-sm); border-radius: 7px; font-size: 10px; }
+.avatar--lg { width: var(--avatar-lg); height: var(--avatar-lg); border-radius: 12px; font-size: var(--text-lead); }
+
+.presence {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--surface-canvas);
+  border-radius: var(--radius-pill);
+  background: var(--color-muted);
+}
+
+/* the states a person can wear — one green, one amber, one red */
+.presence--online { background: var(--color-accent); }
+.presence--busy { background: var(--color-error); }
+.presence--dnd { background: var(--color-error); }
+.presence--dnd::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  height: 1.5px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-canvas);
+  transform: translateY(-50%);
+}
+.presence--away { background: var(--warn-wash); box-shadow: inset 0 0 0 2px var(--color-warn); }
+.presence--brb { background: var(--color-warn); }
+.presence--offline { background: var(--surface-well); box-shadow: inset 0 0 0 1px var(--color-rule); }
+
+/* the same chip, standing on its own — in a menu, beside a label */
+.presence--dot {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 0;
+}
+
+.rail .presence { border-color: var(--surface-rail); }
+.rail__foot .presence { border-color: var(--surface-rail-foot); }
+
+/* ══ channel header ══════════════════════════════════════════════════ */
+
+.head {
+  height: var(--header-h);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--surface-raise);
+  box-shadow: 0 1px 0 var(--glint), var(--cast-bar);
+}
+
+.head__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  height: 100%;
+  padding: 0 var(--space-md);
+}
+
+/* the channel's own tile — a small moulded chip beside the name */
+.head__glyph {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-muted);
+}
+
+/* a bare glyph in the header gets the same tile, so every header in the
+   app wears the same chip */
+.head__inner > svg {
+  width: 26px;
+  height: 26px;
+  padding: var(--space-2xs);
+  border-radius: 8px;
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-muted);
+}
+
+.head__id { display: flex; align-items: baseline; gap: var(--space-xs); min-width: 0; }
+
+.head__name {
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.head__name:hover { text-decoration: underline; text-underline-offset: 0.16em; }
+.head__name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.head__topic {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: var(--space-sm);
+  border-left: 1px solid var(--color-rule);
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+/* a narrow pane — the bar keeps the name and the tools, and drops the rest */
+.head--compact .head__topic { display: none; }
+.head--compact .faces { gap: var(--space-3xs); }
+
+.head__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* the toolbar is a groove cut into the bar; the icons sit in it */
+.head__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  padding: var(--space-3xs);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.iconbtn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.iconbtn:hover { background: var(--surface-raise); color: var(--color-ink); }
+.iconbtn:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.iconbtn[aria-pressed="true"] { background: var(--surface-selected); color: var(--color-ink); }
+.iconbtn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.head__tools .iconbtn { width: 28px; height: 28px; }
+
+/* The project a room belongs to. It sits in the same groove as the other
+   tools, so the bar keeps one line of chrome. */
+.head__project {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  height: 28px;
+  max-width: 190px;
+  padding: 0 var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.head__project:hover { background: var(--surface-raise); color: var(--color-ink); }
+.head__project:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.head__project span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.faces {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  cursor: pointer;
+}
+
+.faces .avatar-wrap { margin-left: calc(-1 * var(--space-xs)); }
+.faces .avatar-wrap:first-child { margin-left: 0; }
+.faces .avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 10px;
+  box-shadow: 0 0 0 2px var(--surface-raise);
+}
+
+.faces__more {
+  margin-left: var(--space-xs);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══ message canvas ══════════════════════════════════════════════════ */
+
+.canvas {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  background-color: var(--surface-canvas);
+  background-image: var(--tooth);
+}
+
+.canvas > * { min-width: 0; }
+
+/* The pane the message list scrolls in. It fills the canvas — the rows run
+   the whole width of the pane, not the width of their own text. */
+.listpane {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.thread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  border-left: 1px solid var(--color-rule);
+  background-color: var(--surface-canvas);
+  background-image: var(--tooth);
+  box-shadow: var(--shadow-sheet);
+  animation: sheet-in var(--dur-long) var(--ease-out);
+}
+
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+.scroll {
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.list { padding: var(--space-md) 0 var(--space-xs); }
+
+/* the opening title of a conversation — it sits on the message text's own
+   line, so the column reads as one thing from its first line to its last */
+.msg__intro {
+  padding: var(--space-2xs) var(--text-inset) var(--space-lg) var(--text-inset);
+}
+
+.msg__intro-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lead);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.msg__intro-topic {
+  margin-top: var(--space-3xs);
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+/* the label that divides days */
+.divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: var(--space-lg) 0 var(--space-sm);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--color-rule-soft);
+}
+
+.divider__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 0 0 auto;
+  margin-inline: var(--space-sm);
+  padding: var(--space-2xs) var(--space-sm);
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e1);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.divider__date {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* a message — the row and the text column both fill the pane */
+.msg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
+  gap: 0 var(--space-xs);
+  padding: var(--space-xs) var(--space-md) var(--space-3xs);
+  /* The right margin is the frame's right line — the same distance the
+     avatar gutter takes on the left. The row's wash still reaches the
+     pane's edge; only the text stops on the line. */
+  padding-right: var(--text-inset);
+  scroll-margin-top: var(--space-lg);
+}
+
+.msg:hover { background: var(--wash-message); }
+
+.msg--grouped { padding-top: 0; padding-bottom: var(--space-3xs); }
+
+/* Your own message travels in a bubble against the right of the column. The
+   conversation then reads as two columns — theirs on the paper at the left,
+   yours in the signal colour at the right — so you never have to look for
+   your own words. The bubble is the only surface in the app that wears the
+   signal colour; everything else stays paper. */
+.msg--mine {
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: var(--space-3xs);
+  padding-bottom: var(--space-3xs);
+}
+
+.msg--mine .msg__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* the text column: it fills the pane, so a row is as wide as the pane and
+   not as wide as its own words */
+.msg__stack { min-width: 0; }
+
+.msg__bubble--mine {
+  width: fit-content;
+  max-width: min(560px, 100%);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-card) var(--radius-card) var(--space-2xs) var(--radius-card);
+  background: var(--bubble-mine);
+  box-shadow: var(--sheen), var(--rim), var(--cast-small);
+  color: var(--bubble-mine-ink);
+}
+
+.msg__bubble--mine .msg__body { color: var(--bubble-mine-ink); }
+.msg__bubble--mine .msg__body a { color: var(--bubble-mine-link); }
+
+/* code carries its own ink: it sits on its own pale chip, so it must not
+   inherit the bubble's paper-white */
+.msg__bubble--mine .msg__body code { color: var(--color-ink); }
+.msg__bubble--mine .msg__body pre { color: var(--color-ink); }
+.msg__bubble--mine .msg__body pre code { color: inherit; }
+
+/* a mention inside the bubble inverts, so it never dissolves into the
+   bubble it sits on */
+.msg__bubble--mine .msg__mention {
+  background: var(--bubble-mine-ink);
+  color: var(--bubble-mine);
+}
+
+.msg__when {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  margin-top: var(--space-2xs);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.02em;
+  color: var(--bubble-mine-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.msg__when .msg__edited {
+  font-family: var(--font-body);
+  font-size: var(--text-tiny);
+  color: var(--bubble-mine-dim);
+}
+
+.msg__gutter {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+}
+
+/* the timestamp of a grouped message rides in the gutter, dim until the
+   row is under the cursor */
+.msg__stamp {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.01em;
+  color: var(--color-muted);
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--dur-micro) var(--ease-out);
+}
+
+.msg--grouped:hover .msg__stamp { opacity: 1; }
+
+.msg__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.msg__author {
+  font-size: var(--text-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.msg__author:hover { text-decoration: underline; text-underline-offset: 0.16em; }
+
+.msg__time {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.02em;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.msg__edited { font-size: var(--text-tiny); color: var(--color-muted); }
+
+.msg__body {
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--color-ink);
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  text-wrap: pretty;
+  /* a line ends where a line should end, even on a wide window */
+  max-width: var(--text-measure);
+}
+
+/* The quote above an answer: who was answered, and what they said. It is a
+   reference, not a second message — one line, and it walks back to the
+   message it names. */
+.msg__quote {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2xs);
+  min-width: 0;
+  /* One line, never wider than the column it sits in — a quote that reaches
+     past the frame is a line cut in half. */
+  max-width: min(var(--text-measure), 100%);
+  margin: 0 0 var(--space-2xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.msg__quote:hover { color: var(--color-ink-2); }
+.msg__quote:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.msg__quote svg {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--color-muted);
+}
+
+.msg__quote-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--color-ink-2);
+  white-space: nowrap;
+}
+
+.msg__quote-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* inside your own bubble the quote wears the bubble's ink */
+.msg__bubble--mine .msg__quote { color: var(--bubble-mine-dim); }
+.msg__bubble--mine .msg__quote svg { color: var(--bubble-mine-dim); }
+.msg__bubble--mine .msg__quote-name { color: var(--bubble-mine-ink); }
+
+/* the message a quote points at is briefly called out when you jump to it */
+.msg { isolation: isolate; }
+
+.msg--pointed::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--color-accent-soft);
+  opacity: 0;
+  pointer-events: none;
+  animation: point-at 1400ms var(--ease-out);
+}
+
+@keyframes point-at {
+  from { opacity: 0.85; }
+  to { opacity: 0; }
+}
+
+.msg__body a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 0.16em; }
+.msg__body code {
+  padding: 0 var(--space-2xs);
+  border-radius: var(--radius-xs);
+  background: var(--surface-well);
+  font-family: var(--font-outlier);
+  font-size: var(--text-code);
+}
+
+.msg__body pre {
+  margin: var(--space-xs) 0;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  overflow-x: auto;
+}
+
+.msg__body pre code { padding: 0; background: none; font-size: var(--text-code); line-height: 1.6; }
+
+.msg__mention {
+  padding: 0 var(--space-2xs);
+  border-radius: var(--radius-xs);
+  background: var(--color-accent-soft);
+  color: var(--accent-on-soft);
+  font-weight: 500;
+}
+
+.msg__deleted { color: var(--color-muted); font-style: normal; }
+
+.msg__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  margin-top: var(--space-2xs);
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  height: 24px;
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raise);
+  color: var(--color-ink-2);
+  font-size: var(--text-tiny);
+  cursor: pointer;
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+}
+
+.reaction:hover { border-color: var(--color-muted); transform: translateY(-1px); }
+.reaction:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.reaction--mine {
+  border-color: var(--accent-edge);
+  background: var(--color-accent-soft);
+  color: var(--accent-on-soft);
+}
+
+.reaction__count {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The label that names who pressed a reaction: a small strip of the ink
+   band, printed like the labels on a shelf. */
+.reactiontip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  transform: translate(-50%, -100%);
+  max-width: 300px;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--surface-ink);
+  box-shadow: var(--shadow-e2);
+  color: var(--on-ink);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  text-align: center;
+  pointer-events: none;
+  animation: tip-in var(--dur-short) var(--ease-out);
+}
+
+.reactiontip--below { transform: translate(-50%, 0); }
+
+@keyframes tip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.msg__tools {
+  position: absolute;
+  top: -13px;
+  right: var(--space-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  padding: var(--space-3xs);
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e2);
+  transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+}
+
+.js .msg__tools { opacity: 0; transform: translateY(2px); pointer-events: none; }
+
+/* The tools are shown only once they have been measured against the
+   message they belong to, so they never flash at the row's far edge
+   before they find their place beside the words. */
+.js .msg:hover .msg__tools[data-placed],
+.js .msg__tools[data-placed]:focus-within { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+.msg__tools .iconbtn { width: 26px; height: 26px; border-radius: 6px; }
+
+/* 지우는 동작은 도구 모음에서도 바로 닿는다 — 서브메뉴를 한 겹 더
+   파고들지 않아도 되게. */
+.msg__tools--danger { color: var(--color-error); }
+.msg__tools--danger:hover { background: var(--error-wash); color: var(--error-ink); }
+
+.msg__thread {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-top: var(--space-2xs);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: var(--text-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.msg__thread:hover { text-decoration: underline; text-underline-offset: 0.16em; }
+.msg__thread:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+
+.msg__thread .avatar { margin-right: var(--space-3xs); }
+
+.msg__files { display: grid; gap: var(--space-2xs); margin-top: var(--space-xs); }
+.msg__file {
+  width: fit-content;
+  max-width: 320px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-rule-soft);
+  box-shadow: var(--shadow-e1);
+}
+
+/* the image keeps its own proportions and its own size: it is never
+   stretched to a guessed ratio, and a small picture is not blown up */
+.msg__file img { display: block; max-width: 100%; height: auto; }
+
+/* ══ composer ═════════════════════════════════════════════════════════ */
+
+/* The composer is a card lifted off the canvas. It is inset by the same
+   distance on both sides, and what it holds lands on the conversation's
+   frame: the text on the left line, the send key on the right one. */
+.composer {
+  padding: 0 var(--composer-inset) var(--space-md);
+}
+
+/* The thread pane is 400px wide. The conversation's text inset — there so the
+   composer text lands on the message text — would leave its bottom-left
+   hollow and push the composer off centre. In the pane it fills the width
+   instead, symmetric with the pane's own padding. */
+.thread .composer { padding-inline: var(--space-md); }
+
+/* the composer is a card lifted off the canvas */
+.composer__box {
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e2);
+  transition: border-color var(--dur-micro) var(--ease-out);
+}
+
+.composer__box:focus-within { border-color: var(--accent-edge); }
+
+.composer__box:has(textarea:focus-visible) {
+  border-color: var(--accent-edge);
+  box-shadow: var(--shadow-e3), 0 0 0 3px var(--accent-ring);
+}
+
+.composer__input {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-sm) var(--space-2xs);
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+
+.composer__input::placeholder { color: var(--color-muted); }
+
+.composer__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: var(--space-3xs) var(--space-sm) var(--space-2xs);
+}
+
+.composer__spacer { flex: 1 1 auto; }
+
+.composer__hint {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.01em;
+}
+
+.composer__thread,
+.composer__reply {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+.composer__thread strong,
+.composer__reply strong { font-weight: 600; }
+
+/* the answer being written carries the signal: it is the one thing you are
+   about to do */
+.composer__reply > svg { color: var(--color-accent); flex: 0 0 auto; }
+
+/* ══ buttons ══════════════════════════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  height: var(--control-h);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e1);
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+}
+
+.btn:not(:disabled):hover { background: var(--surface-well); }
+.btn:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.btn:active { transform: translateY(1px); box-shadow: none; }
+
+/* A disabled button is inert: it neither lifts nor answers the pointer,
+   and its label stays readable on the surface it actually has. A button
+   that is only waiting keeps its own surface — the spinner on it still
+   has to be seen. */
+.btn:disabled:not(.btn--loading) {
+  border-color: var(--color-rule);
+  background: var(--surface-well);
+  box-shadow: none;
+  color: var(--color-muted);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* the primary action is a moulded green key: lit on top, rimmed below */
+.btn--primary {
+  border-color: var(--color-accent-deep);
+  background: linear-gradient(180deg, var(--color-accent-lift), var(--color-accent));
+  box-shadow: var(--sheen), var(--rim), var(--cast-small);
+  color: var(--color-accent-ink);
+}
+
+/* The key keeps its green under the pointer. A generic `.btn:hover` is
+   lighter in specificity than it looks, and used to wipe the fill out —
+   leaving paper-white ink on a pale well, which is no ink at all. The
+   hover is written here so the label never loses its ground. */
+.btn--primary:not(:disabled):hover {
+  background: linear-gradient(180deg, var(--color-accent-hover-top), var(--color-accent-hover-bottom));
+  box-shadow: var(--sheen), var(--rim), var(--cast-bar);
+}
+.btn--primary:not(:disabled):active { transform: translateY(1px); box-shadow: var(--rim); }
+
+.btn--quiet { border-color: transparent; background: transparent; box-shadow: none; color: var(--color-ink-2); }
+.btn--quiet:not(:disabled):hover { background: var(--surface-well); color: var(--color-ink); }
+
+/* The one destructive action on a screen. It wears the error hue, not the
+   accent — the accent means "this is the thing you came to do". */
+.btn--danger {
+  border-color: var(--color-error);
+  background: var(--error-wash);
+  box-shadow: none;
+  color: var(--error-ink);
+}
+
+.btn--danger:not(:disabled):hover { background: var(--error-wash); filter: brightness(0.97); }
+.btn--danger:not(:disabled):active { transform: translateY(1px); }
+
+.btn--sm { height: 28px; padding: 0 var(--space-xs); font-size: var(--text-small); }
+.btn--block { width: 100%; }
+
+.btn--loading { position: relative; color: transparent; cursor: progress; }
+.btn--loading::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--on-accent-soft);
+  border-top-color: var(--color-accent-ink);
+  border-radius: var(--radius-pill);
+  animation: spin 700ms linear infinite;
+}
+
+.btn--error { border-color: var(--color-error); color: var(--color-error); }
+.btn--success { border-color: var(--color-accent); color: var(--color-accent-deep); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ══ fields ═══════════════════════════════════════════════════════════ */
+
+.field { display: grid; gap: var(--space-2xs); }
+
+.field__label {
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--color-ink-2);
+}
+
+/* a field is a well cut into the surface it sits on */
+.field__input {
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--edge-field);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+}
+
+.field__input::placeholder { color: var(--color-muted); }
+.field__input:hover { border-color: var(--color-muted); }
+.field__input:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--surface-raise);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.field__input:disabled { opacity: 0.55; cursor: not-allowed; }
+.field__input[aria-invalid="true"] { border-color: var(--color-error); }
+
+.field__error { color: var(--color-error); font-size: var(--text-tiny); }
+.field__hint { color: var(--color-muted); font-size: var(--text-tiny); }
+
+/* ══ avatar colours ══════════════════════════════════════════════════ */
+
+/* The palette you may wear: deep enough to keep paper-white initials
+   readable, so every avatar in the app reads at a glance. */
+.swatches {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.swatches__preview {
+  display: grid;
+  place-items: center;
+  padding-right: var(--space-2xs);
+  margin-right: var(--space-3xs);
+  border-right: 1px solid var(--color-rule-soft);
+}
+
+.swatch {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--swatch);
+  box-shadow: var(--sheen), var(--ring-edge);
+  cursor: pointer;
+  transition: transform var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+}
+
+.swatch:hover { transform: translateY(-1px); }
+.swatch:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* the chosen one wears a ring, not the signal: a ring reads on every colour */
+.swatch--on {
+  box-shadow: var(--sheen), 0 0 0 2px var(--surface-raise), 0 0 0 3px var(--color-ink);
+}
+
+/* the free picker: the system's own colour well, under a plus */
+.swatch--free {
+  display: grid;
+  place-items: center;
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-muted);
+}
+
+.swatch--free input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatches__hex {
+  margin-left: var(--space-3xs);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══ menus & popovers ════════════════════════════════════════════════ */
+
+.menu {
+  position: absolute;
+  /* 포털로 나온 메뉴는 창(400)보다 위에 있어야 한다 — 좁은 창에서
+     레일이 덮고 있으면 메뉴가 보이지도, 눌리지도 않는다. */
+  z-index: var(--z-menu);
+  min-width: 200px;
+  padding: var(--space-2xs);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e3);
+  transform-origin: top left;
+  animation: menu-in var(--dur-short) var(--ease-out);
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu__item:hover { background: var(--surface-well); }
+.menu__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.menu__item--danger { color: var(--color-error); }
+/* an item that opens another menu beside it */
+.menu__item--sub { color: var(--color-ink); }
+.menu__item--sub svg { color: var(--color-muted); }
+.menu__sep { height: 1px; margin: var(--space-2xs) 0; background: var(--color-rule-soft); }
+
+/* a menu that opens beside its parent item */
+/* a menu that opens beside its parent item — the same sheet, one step in */
+.menu--sub {
+  position: absolute;
+  animation: menu-in var(--dur-short) var(--ease-out);
+}
+.menu__label {
+  padding: var(--space-2xs) var(--space-xs);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+/* ══ dialogs ══════════════════════════════════════════════════════════ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: start center;
+  padding: var(--space-xl) var(--space-md);
+  background: var(--surface-overlay);
+  -webkit-backdrop-filter: blur(3px) saturate(0.94);
+  backdrop-filter: blur(3px) saturate(0.94);
+  animation: fade-in var(--dur-short) var(--ease-out);
+}
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.dialog {
+  width: 100%;
+  max-width: 460px;
+  max-height: min(78dvh, 680px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e3);
+  overflow: clip;
+  animation: dialog-in var(--dur-long) var(--ease-out);
+}
+
+.dialog--wide { max-width: 620px; }
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+
+.dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-rule-soft);
+  background: var(--surface-raise);
+}
+
+.dialog__title {
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+}
+
+.dialog__body { padding: var(--space-lg); overflow-y: auto; }
+
+.dialog__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-lg);
+  border-top: 1px solid var(--color-rule-soft);
+  background: var(--surface-well);
+}
+
+/* ══ settings ══════════════════════════════════════════════════════════ */
+
+/* 앱 설정. 왼쪽은 구역의 목록(팔요면 가로로 넘어간다), 오른쪽은 그 구역의
+   내용. 하나의 모달이 앱 전체의 갈래를 한곳에 모은다. */
+.settings {
+  width: 100%;
+  max-width: 860px;
+  /* 높이는 고정이다 — 어느 구역을 골라도 같은 크기이고, 내용이 넘치면
+     그 안에서만 스크롤된다. */
+  height: min(80dvh, 640px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e3);
+  overflow: clip;
+  animation: dialog-in var(--dur-long) var(--ease-out);
+}
+
+.settings__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-rule-soft);
+}
+
+.settings__title {
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+}
+
+.settings__body {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* 구역 목록은 패널에 파인 우물이다. 내용이 길면 이 안에서 스크롤된다. */
+.settings__nav {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3xs);
+  padding: var(--space-md) var(--space-sm);
+  border-right: 1px solid var(--color-rule-soft);
+  background: var(--surface-well);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.settings__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.settings__tab svg { flex: 0 0 auto; color: var(--color-muted); }
+.settings__tab:hover { background: var(--surface-raise); color: var(--color-ink); }
+.settings__tab:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* 지금 있는 구역은 신호색의 면으로 말한다 — 달력의 선택된 날처럼. */
+.settings__tab[aria-current="true"] {
+  background: var(--surface-selected);
+  box-shadow: var(--ring-hair);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+.settings__tab[aria-current="true"] svg { color: var(--color-accent); }
+
+.settings__content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-lg) var(--space-xl) var(--space-xl);
+}
+
+.settings__heading {
+  font-family: var(--font-display);
+  font-size: var(--text-head);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+}
+
+.settings__lead {
+  margin-top: var(--space-2xs);
+  max-width: 56ch;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+.setgroup { margin-top: var(--space-lg); }
+
+/* 한 줄: 이름과 설명이 왼쪽, 고르는 것이 오른쪽. */
+.setrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-soft);
+}
+.setgroup > .setrow:first-child { padding-top: var(--space-sm); border-top: 0; }
+/* 쌓이는 줄 — 이름이 위에, 내용이 그 아래에 온다. */
+.setrow--stack { grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--space-sm); }
+
+.setrow__text { min-width: 0; }
+.setrow__label { font-size: var(--text-ui); font-weight: 500; }
+.setrow__hint {
+  margin-top: 2px;
+  max-width: 48ch;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+.setrow__control {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: var(--space-xs);
+}
+.setrow__value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  text-align: right;
+  word-break: break-all;
+}
+
+/* 꺼진 줄은 고르는 것만 죽는다 — 이름과 설명은 그대로 읽힌다. */
+.setrow--off .setrow__control { opacity: 0.45; pointer-events: none; }
+
+/* 깜빡하는 스위치 — 파인 홈 안에 솟은 손잡이. */
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess), var(--ring-hair);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface-raise);
+  box-shadow: var(--sheen), var(--cast-small);
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+.switch[aria-checked="true"] { background: var(--color-accent); }
+.switch[aria-checked="true"]::after { transform: translateX(18px); }
+.switch:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* 내 프로필 — 얼굴과 색, 그리고 이름과 직함. */
+.profile {
+  display: grid;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+.profile__face { display: flex; align-items: center; gap: var(--space-md); }
+.profile__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+.profile__save { display: flex; justify-content: flex-end; }
+
+/* 다운로드 폴더 — 경로는 라벨처럼(모노로) 읽힌다. */
+.folderpick { display: flex; align-items: center; gap: var(--space-xs); }
+.folderpick__path {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  max-width: 200px;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  overflow: hidden;
+  color: var(--color-ink-2);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-xs); }
+
+@media (max-width: 46rem) {
+  .settings { min-height: 0; height: min(84dvh, 560px); }
+  .settings__body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings__nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2xs);
+    padding: var(--space-sm);
+    border-right: 0;
+    border-bottom: 1px solid var(--color-rule-soft);
+  }
+  .settings__tab { width: auto; white-space: nowrap; }
+  .settings__content { padding: var(--space-md) var(--space-lg) var(--space-lg); }
+  .profile__fields { grid-template-columns: minmax(0, 1fr); }
+  .setrow { grid-template-columns: minmax(0, 1fr); gap: var(--space-sm); }
+  .setrow__control { justify-self: start; }
+}
+
+/* ══ lists inside dialogs ═════════════════════════════════════════════ */
+
+.pick { display: grid; gap: var(--space-2xs); }
+
+.pick__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.pick__item:hover { background: var(--surface-well); }
+.pick__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.pick__text { flex: 1 1 auto; min-width: 0; }
+.pick__name { display: block; font-size: var(--text-ui); font-weight: 500; }
+.pick__sub { display: block; color: var(--color-muted); font-size: var(--text-tiny); }
+
+/* ══ a field that opens a list of people under it ═══════════════════════ */
+
+.select { display: grid; gap: var(--space-2xs); }
+
+/* the closed field — a well, like every other field */
+.select__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--edge-field);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+}
+.select__trigger:hover { border-color: var(--color-muted); }
+.select__trigger:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.select__trigger[aria-expanded="true"] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.select__placeholder { color: var(--color-muted); }
+.select__count {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  color: var(--color-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.select__chev {
+  margin-left: auto;
+  color: var(--color-muted);
+  transition: transform var(--dur-short) var(--ease-out);
+}
+.select__trigger[aria-expanded="true"] .select__chev { transform: rotate(180deg); }
+
+/* the faces of the people already chosen */
+.select__stack { display: flex; align-items: center; }
+.select__stack > * + * { margin-left: var(--space-2xs); }
+.select__stack .avatar { box-shadow: var(--sheen), 0 0 0 2px var(--surface-well); }
+
+/* the list that comes out under the field — a raised surface over the page.
+   It is drawn in a portal, like the list of a plain Select: a dialog's
+   overflow must never cut the roster of a room in half. */
+.select__panel {
+  position: fixed;
+  z-index: var(--z-menu);
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e2);
+  animation: dropdown-in var(--dur-short) var(--ease-out);
+}
+
+/* the search the list opens on — a well, like every other field */
+.select__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  height: var(--field-h);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--edge-field);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+}
+.select__search:focus-within {
+  border-color: var(--color-accent);
+  background: var(--surface-raise);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.select__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  outline: none;
+}
+.select__input::placeholder { color: var(--color-muted); }
+
+/* how many the search found */
+.select__meta {
+  margin: 0;
+  padding: 0 var(--space-xs);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+/* the two shelves of the list: the chosen, then the rest */
+.select__grouplabel {
+  margin: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+.select__list {
+  display: grid;
+  gap: var(--space-2xs);
+  /* the list may grow to five of the largest spaces — a long roster is
+     still a roster you can read */
+  max-height: calc(var(--space-2xl) * 5);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.select__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  /* the label of the group stays in sight above the row the marker is on */
+  scroll-margin-top: calc(var(--space-md) + var(--space-xs));
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+/* the row under the marker wears the same wash as the marked row of a
+   plain Select */
+.select__row:hover,
+.select__row[data-active="true"] { background: var(--surface-well); }
+.select__person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.select__person .pick__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* nothing found — the empty state says what is wrong and how out */
+.select__empty {
+  display: grid;
+  gap: var(--space-2xs);
+  justify-items: start;
+  padding: var(--space-md) var(--space-sm);
+}
+.select__empty p { margin: 0; }
+.select__emptytitle {
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.select__emptytext {
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+.select__term {
+  color: var(--color-ink-2);
+  font-family: var(--font-outlier);
+}
+
+/* the tip that hangs off a person who is already in */
+.tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  flex: 0 0 auto;
+  padding: 2px var(--space-xs);
+  border-radius: var(--radius-xs);
+  background: var(--color-accent-soft);
+  color: var(--accent-on-soft);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono-sm);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+/* the tail, pointing back at the person */
+.tip::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--color-accent-soft);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+/* ══ a field that opens a list of choices ══════════════════════════════ */
+
+/* 하나의 고르는 자리. 닫힌 자리는 다른 필드처럼 우물이고, 나오는 목록은
+   떠 있는 면이다 — 그림자 하나, 테두리 하나. 고른 줄은 달력의 고른 날처럼
+   신호색 면을 입는다. */
+
+.select--sm .select__trigger {
+  width: auto;
+  min-width: 104px;
+  height: 32px;
+  padding: 0 var(--space-xs);
+  font-size: var(--text-small);
+}
+
+/* the mark that leads a row — a face, a hash */
+.select__lead {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--color-muted);
+}
+.select__lead .avatar { box-shadow: var(--sheen), 0 0 0 1px var(--surface-well); }
+
+.select__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select__hint {
+  display: block;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+/* the list that comes out of the field — a raised surface over the page */
+.select__menu {
+  position: fixed;
+  z-index: var(--z-menu);
+  max-height: 264px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: var(--space-2xs);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e2);
+  transform-origin: top left;
+  animation: dropdown-in var(--dur-short) var(--ease-out);
+}
+
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.select__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 32px;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+.select__option:hover,
+.select__option[data-active="true"]:not([aria-selected="true"]) {
+  background: var(--surface-well);
+}
+
+/* the chosen row wears the signal, the way the selected day wears it */
+.select__option[aria-selected="true"] {
+  background: var(--surface-selected);
+  box-shadow: var(--ring-hair);
+  font-weight: 500;
+}
+.select__option[aria-disabled="true"] { color: var(--color-muted); cursor: not-allowed; }
+.select__check { margin-left: auto; color: var(--color-accent); }
+
+/* ══ search & palette ═════════════════════════════════════════════════ */
+
+.find {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--color-rule-soft);
+}
+
+.find__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-lead);
+  outline: none;
+}
+
+.find__input::placeholder { color: var(--color-muted); }
+
+.palette { max-width: 520px; }
+.palette__group { padding: var(--space-2xs) 0; }
+.palette__label {
+  padding: var(--space-2xs) var(--space-lg);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-xs) var(--space-lg);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette__item[aria-selected="true"] { background: var(--surface-selected); }
+.palette__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+.palette__key {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+/* ══ states: loading, empty, error ═══════════════════════════════════ */
+
+.skel {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-well), var(--surface-canvas), var(--surface-well));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-xs);
+  height: 100%;
+  padding: var(--space-xl) var(--space-md);
+  text-align: center;
+}
+
+.empty__mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-2xs);
+  border-radius: var(--radius-card);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-muted);
+}
+
+.empty__title {
+  font-family: var(--font-display);
+  font-size: var(--text-lead);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.02em;
+}
+
+.empty__text { max-width: 46ch; color: var(--color-muted); font-size: var(--text-small); }
+.empty__action { margin-top: var(--space-xs); }
+
+/* the quiet line under the empty state — where to go next */
+.empty__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-top: var(--space-2xs);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+/* The cleared screen's sentence is longer than the usual empty state, so it
+   gets a wider measure — two lines, not three. */
+.empty--room { position: relative; }
+.empty--room .empty__text { max-width: 30em; }
+
+/* The rail is an overlay on a narrow window, and the cleared screen has no
+   header to open it from — the key stands in the pane's corner instead. It
+   wears the header's own rail key, so it only shows where the rail is an
+   overlay. */
+.empty__rail {
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-md);
+}
+
+.errorstate {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-xs);
+  height: 100%;
+  padding: var(--space-xl) var(--space-md);
+  text-align: center;
+}
+
+.errorstate__title { font-size: var(--text-lead); font-weight: 600; }
+.errorstate__text { max-width: 46ch; color: var(--color-muted); font-size: var(--text-small); }
+
+/* ══ toasts ═══════════════════════════════════════════════════════════ */
+
+.toasts {
+  position: fixed;
+  right: var(--space-md);
+  bottom: var(--space-md);
+  z-index: var(--z-toast);
+  display: grid;
+  gap: var(--space-xs);
+  width: 300px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-sm);
+  border-radius: var(--radius-input);
+  background: var(--surface-ink);
+  box-shadow: var(--shadow-e3);
+  color: var(--on-ink);
+  font-size: var(--text-small);
+  animation: toast-in var(--dur-short) var(--ease-out);
+}
+
+@keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.toast__action { margin-left: auto; border: 0; background: none; color: var(--color-accent-soft); font-size: var(--text-small); font-weight: 500; cursor: pointer; }
+.toast__action:focus-visible { outline: 2px solid var(--glint); outline-offset: 2px; }
+
+/* ══ typing & jump-to-latest ══════════════════════════════════════════ */
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  height: 22px;
+  padding: 0 var(--text-inset);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.jump {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-md);
+  z-index: var(--z-raised);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  height: 32px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e2);
+  color: var(--color-ink);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: toast-in var(--dur-short) var(--ease-out);
+}
+
+.jump:hover { background: var(--surface-well); }
+.jump:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* ══ sign in ══════════════════════════════════════════════════════════ */
+
+.gate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 100dvh;
+  background: var(--surface-frame);
+}
+
+.gate__form {
+  display: grid;
+  align-content: center;
+  justify-items: stretch;
+  gap: var(--space-md);
+  padding: var(--space-xl) var(--space-2xl);
+  background-color: var(--surface-raise);
+  background-image: var(--tooth);
+}
+
+.gate__inner { width: 100%; max-width: 380px; margin-inline: auto; }
+
+.gate__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+}
+
+/* the brand tile wears the signal */
+.gate__mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--color-accent-lift), var(--color-accent));
+  box-shadow: var(--sheen), var(--rim), var(--cast-small);
+  color: var(--color-accent-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-lead);
+  font-weight: var(--display-weight);
+}
+
+.gate__wordmark {
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+}
+
+.gate__title {
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--tracking-display);
+  line-height: 1.15;
+}
+
+.gate__lead { color: var(--color-muted); font-size: var(--text-lead); line-height: 1.55; }
+.gate__form-fields { display: grid; gap: var(--space-sm); }
+
+/* the tray: a deep panel lit from one corner */
+.gate__aside {
+  position: relative;
+  display: grid;
+  align-content: end;
+  gap: var(--space-sm);
+  padding: var(--space-2xl);
+  background:
+    radial-gradient(120% 90% at 6% -12%, var(--gate-glow), transparent 58%),
+    linear-gradient(168deg, var(--gate-night-top), var(--gate-night-bottom));
+  color: var(--on-ink);
+  overflow: clip;
+}
+
+/* the light that falls along the top edge of the tray */
+.gate__aside::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: var(--glint);
+  opacity: 0.35;
+}
+
+.gate__quote {
+  max-width: 34ch;
+  font-family: var(--font-display);
+  font-size: var(--text-head);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.4;
+}
+
+.gate__attrib { color: var(--ink-on-dark); font-size: var(--text-small); }
+
+.gate__switch {
+  margin-top: var(--space-xs);
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+.gate__switch button {
+  border: 0;
+  background: none;
+  padding: var(--space-xs) 0;
+  margin-block: calc(-1 * var(--space-xs));
+  color: var(--color-accent);
+  font-size: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.gate__switch button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+.banner--error { border-color: var(--color-error); background: var(--error-wash); color: var(--error-ink); }
+
+/* ══ thread pane ══════════════════════════════════════════════════════ */
+
+.thread__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  height: var(--header-h);
+  padding: 0 var(--space-sm) 0 var(--space-md);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--surface-raise);
+  box-shadow: var(--cast-bar);
+}
+
+.thread__title {
+  font-family: var(--font-display);
+  font-size: var(--text-ui);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.02em;
+}
+
+.thread__sub {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.02em;
+}
+
+.thread__body { padding: var(--space-md) 0 0; }
+
+.thread__count {
+  padding: var(--space-xs) var(--space-md) var(--space-xs) var(--thread-inset);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.02em;
+  border-top: 1px solid var(--color-rule-soft);
+  border-bottom: 1px solid var(--color-rule-soft);
+}
+
+/* 400px is not enough for an avatar column of its own: it would take a
+   seventh of the pane, push the text away from the edge and leave the
+   composer stranded in the corner. In a thread the avatar sits on the name
+   line instead — in the flow, so it can never sit on the body's first line
+   — and the text, the reply count and the composer's text all land on one
+   line near the pane's edge. */
+.thread .msg {
+  grid-template-columns: minmax(0, 1fr);
+  padding-left: var(--thread-inset);
+  padding-right: var(--thread-inset);
+}
+
+/* your own reply in a thread keeps the pane's own inset on the right, so
+   the bubble lands on the same edge the composer's send button does */
+.thread .msg--mine {
+  padding-left: 0;
+  padding-right: var(--thread-inset);
+}
+
+.msg--flat .msg__head > .avatar {
+  align-self: flex-start;
+  margin-right: var(--space-3xs);
+}
+
+/* ══ emoji picker ═════════════════════════════════════════════════════ */
+
+.emoji {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  width: 280px;
+  padding: var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e3);
+  animation: menu-in var(--dur-short) var(--ease-out);
+}
+
+.emoji__grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--space-3xs); }
+
+.emoji__item {
+  display: grid;
+  place-items: center;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emoji__item:hover { background: var(--surface-well); }
+.emoji__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* ══ settings ══════════════════════════════════════════════════════════ */
+
+.segmented {
+  display: inline-flex;
+  justify-self: start;
+  padding: var(--space-2xs);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.segmented__item {
+  padding: var(--space-2xs) var(--space-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.segmented__item[aria-pressed="true"] { background: var(--surface-raise); color: var(--color-ink); box-shadow: var(--shadow-e1); }
+/* 꺼진 선택지 — 우물 위에 흐린 잉크로 놓는다. 흐림(투명도)으로 죽이지
+   않는다: 글자는 읽혀야 꺼진 것이지 사라져서는 안 된다. */
+.segmented__item:disabled { color: var(--color-muted); cursor: not-allowed; }
+.segmented__item:disabled[aria-pressed="true"] { background: transparent; box-shadow: none; }
+.segmented__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* ══ responsive ═══════════════════════════════════════════════════════ */
+
+@media (max-width: 72rem) {
+  .app { grid-template-columns: 220px minmax(0, 1fr); }
+  :root { --rail-w: 220px; --thread-w: 340px; }
+}
+
+@media (max-width: 60rem) {
+  .gate { grid-template-columns: minmax(0, 1fr); }
+  .gate__aside { display: none; }
+}
+
+@media (max-width: 52rem) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .rail { display: none; }
+  .app--rail .rail { display: grid; position: fixed; inset: 0 auto 0 0; z-index: var(--z-modal); width: var(--rail-w); box-shadow: var(--shadow-e3); }
+}
+
+/* ══ schedule ═══════════════════════════════════════════════════════════
+   The team calendar. Two columns: the month on the left, the day on the
+   right. The month is a navigator, the day is the reading surface. */
+
+.sched {
+  display: grid;
+  grid-template-columns: 344px minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  background-color: var(--surface-canvas);
+  background-image: var(--tooth);
+}
+
+/* ── the month ─────────────────────────────────────────────────────────── */
+
+/* The month is a well cut into the app: a recessed panel you read a
+   navigator out of, not a page that happens to hold a calendar. */
+.sched__cal {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-right: 1px solid var(--color-rule);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.sched__calhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.sched__month {
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+}
+
+/* the month arrows sit in a groove, like every other group of controls */
+.sched__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  padding: var(--space-3xs);
+  border-radius: var(--radius-input);
+  background: var(--surface-canvas);
+  box-shadow: var(--recess);
+}
+
+.sched__nav .iconbtn { width: 26px; height: 26px; border-radius: 6px; }
+
+/* the weekday strip is a label, not prose */
+.sched__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-3xs);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+  text-align: center;
+}
+
+.sched__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-3xs);
+}
+
+.calday {
+  display: grid;
+  grid-template-rows: 22px 10px;
+  place-items: center;
+  align-content: center;
+  height: 42px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.calday:hover { background: var(--wash-row); }
+.calday:active { background: var(--wash-rail); }
+.calday:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* A day outside the month is present but quiet — it is still a place. */
+.calday--out { color: var(--color-muted); opacity: 0.45; }
+
+/* Today is marked by weight and by the signal's own colour. */
+.calday--today .calday__num {
+  color: var(--color-accent-deep);
+  font-weight: 600;
+}
+
+/* The selected day is a surface in the signal colour. It is the one day
+   you are looking at, and it says so with a fill, not a tint. */
+.calday--sel {
+  background: var(--color-accent);
+  border-color: var(--color-accent-deep);
+  color: var(--color-accent-ink);
+  font-weight: 600;
+  box-shadow: var(--sheen);
+}
+
+.calday--sel:hover { background: var(--color-accent); }
+.calday--sel:active { background: var(--color-accent-deep); }
+
+.calday__num { line-height: 22px; }
+.calday--sel .calday__num { color: var(--color-accent-ink); }
+
+/* A day with something on it says so with a mark. The count of the day
+   belongs to the day list on the right, where the events are. */
+.dotmark {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+
+/* The team's days are a quiet mark — the signal is spoken for, so it is
+   only worn by the days that are mine. */
+.dotmark--team { background: var(--color-muted); }
+
+.calday--sel .dotmark { background: var(--color-accent-ink); }
+/* On the selected day the mark wears the surface's own ink — mine full,
+   the team's half. The legend's promise still holds on the day you are
+   looking at. */
+.calday--sel .dotmark--team { background: var(--on-accent-soft); }
+
+/* ── the legend ───────────────────────────────────────────────────────────
+   What the mark on a day means: the signal is a day I am in, quiet ink is a
+   day the team has something on and I do not. The legend sits with the
+   month, because that is where the marks are. */
+
+.sched__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs) var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.sched__legenditem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  color: var(--color-ink-2);
+}
+
+.sched__today { margin-top: var(--space-xs); }
+
+/* ── the day ───────────────────────────────────────────────────────────── */
+
+.sched__list {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.sched__listhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg) var(--space-sm);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+/* A day of events reads left, like a conversation. It does not stretch to
+   the width of a wide monitor — a line of text has a natural measure. */
+.sched__day {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  max-width: var(--agenda-measure);
+}
+
+.sched__daytitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.02em;
+}
+
+.sched__daymeta {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* The day reads down the left and the days ahead sit beside it. On a
+   narrow window they stack instead. */
+.sched__scroll {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-lg) var(--space-2xl);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-md) var(--space-lg) var(--space-xl);
+}
+
+.sched__loading {
+  display: grid;
+  place-items: center;
+  padding: var(--space-xl) 0;
+}
+
+/* ── an event ──────────────────────────────────────────────────────────── */
+
+.event {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-xs);
+  border-bottom: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.event:hover { background: var(--wash-message); }
+
+.event__time {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding-top: var(--space-3xs);
+  white-space: nowrap;
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.event__body { min-width: 0; }
+
+.event__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.event__title:hover { text-decoration: underline; text-underline-offset: 0.16em; }
+.event__title:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.event__lock { color: var(--color-muted); }
+
+.event__meta,
+.event__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin: var(--space-2xs) 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+/* the people, your answer and the faces belong to one line — an event is a
+   block, not a title with its crowd adrift at the far edge */
+.event__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-2xs);
+}
+
+.event__foot .event__who { margin: 0; }
+
+/* Your own answer is a chip. Only "attending" wears the signal — the
+   accent means the thing you committed to. */
+.event__mine {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin: 0;
+  padding: 0 var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono-sm);
+}
+
+.event__mine--on {
+  background: var(--color-accent-soft);
+  color: var(--accent-on-soft);
+}
+
+.event__faces {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+}
+
+/* ── what is next ──────────────────────────────────────────────────────── */
+
+.sched__next {
+  align-self: start;
+  padding: var(--space-md);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e2);
+}
+
+.sched__nexttitle {
+  margin: 0 0 var(--space-xs);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  font-weight: 600;
+}
+
+.sched__nextrow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-2xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.sched__nextrow:hover { background: var(--surface-well); color: var(--color-ink); }
+.sched__nextrow:active { background: var(--color-rule); }
+.sched__nextrow:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+.sched__nextwhen {
+  flex: 0 0 auto;
+  min-width: 66px;
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+.sched__nextname { flex: 1 1 auto; min-width: 0; }
+
+/* no event of mine is coming up — say so, plainly */
+.sched__nextempty {
+  margin: 0;
+  padding: var(--space-2xs) 0;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+/* ── the event form ────────────────────────────────────────────────────── */
+
+.sched__when {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.sched__whenlabel {
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.sched__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.sched__people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-2xs);
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.sched__person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raise);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+}
+
+.sched__person:hover { border-color: var(--color-muted); }
+.sched__person:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.sched__person span { flex: 1 1 auto; min-width: 0; }
+
+.sched__person--on {
+  border-color: var(--accent-edge);
+  background: var(--surface-selected);
+  color: var(--color-ink);
+}
+
+.sched__response {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+/* ── the read-only view of somebody else's event ───────────────────────── */
+
+.sched__viewtitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.02em;
+}
+
+.sched__viewmeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+.sched__viewtext {
+  margin: 0;
+  color: var(--color-ink-2);
+  font-size: var(--text-body);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* ── narrow windows ────────────────────────────────────────────────────── */
+
+/* A wide window has room for the day and the days ahead side by side. */
+@media (min-width: 92rem) {
+  .sched__scroll { grid-template-columns: minmax(0, 1fr) 300px; }
+}
+
+@media (max-width: 60rem) {
+  .sched { grid-template-columns: 280px minmax(0, 1fr); }
+  .sched__scroll { padding-inline: var(--space-md); }
+  .sched__listhead { padding-inline: var(--space-md); }
+}
+
+@media (max-width: 46rem) {
+  .sched { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .sched__cal { border-right: 0; border-bottom: 1px solid var(--color-rule); }
+  .event { grid-template-columns: minmax(0, 1fr); gap: var(--space-2xs); }
+}
+
+/* ══ the board in a side pane ═══════════════════════════════════════════
+   A wide window puts the board beside the conversation, so the board gets
+   half the width it would have on its own. It answers that by stacking what
+   it can and scrolling what it cannot. */
+
+.pane--board .head__topic { display: none; }
+
+.pane--board .sched {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.pane--board .sched__cal { border-right: 0; border-bottom: 1px solid var(--color-rule); }
+.pane--board .sched__listhead { padding-inline: var(--space-md); }
+.pane--board .event { grid-template-columns: minmax(0, 1fr); gap: var(--space-2xs); }
+
+/* the list of projects gives way — the board's own name picks the project */
+.pane--board .proj { grid-template-columns: minmax(0, 1fr); }
+.pane--board .proj__list { display: none; }
+.pane--board .proj__head { padding-inline: var(--space-md); }
+.pane--board .proj__cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow-x: auto;
+  padding-inline: var(--space-md);
+}
+.pane--board .proj__views { margin-inline-start: var(--space-md); }
+
+/* ══ badges ═════════════════════════════════════════════════════════════
+   A state wears a label, never a bare dot of colour: 요청, 할 일, 진행 중,
+   완료 — each in its own pill, each read from the tokens that already
+   exist. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raise);
+  color: var(--color-ink-2);
+  font-size: var(--text-tiny);
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+/* 요청 — 아직 아무도 맡지 않은 것. 조용하다. */
+.badge--request {
+  background: transparent;
+  border-color: var(--color-rule-soft);
+  color: var(--color-muted);
+}
+
+/* 할 일 — 맡은 것. */
+.badge--todo {
+  background: var(--surface-well);
+  border-color: var(--color-rule);
+  color: var(--color-ink-2);
+}
+
+/* 진행 중 — 지금 하는 것. 주의의 색을 입는다. */
+.badge--in-progress {
+  background: var(--warn-wash);
+  border-color: var(--color-warn);
+  color: var(--color-ink-2);
+}
+
+/* 완료 — 끝난 것. */
+.badge--done {
+  background: var(--color-accent-soft);
+  border-color: var(--accent-edge);
+  color: var(--accent-on-soft);
+}
+
+/* 카드가 속한 로드맵 — 상태가 아니라 이름이라 조용하다. */
+.badge--roadmap {
+  justify-self: start;
+  background: var(--surface-well);
+  border-color: var(--color-rule-soft);
+  color: var(--color-muted);
+}
+
+/* ══ projects ══════════════════════════════════════════════════════════
+   The board of work. Two parts, like the calendar: the list of projects on
+   the left — a well you navigate out of — and the board on the right, where
+   the work itself is read. The four columns are the same four every time:
+   요청, 할 일, 진행 중, 완료. */
+
+.proj {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  background-color: var(--surface-canvas);
+  background-image: var(--tooth);
+}
+
+/* ── the list of projects ───────────────────────────────────────────────── */
+
+.proj__list {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  padding: var(--space-md);
+  border-right: 1px solid var(--color-rule);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.proj__listhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.proj__listtitle {
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+}
+
+/* The two filters sit in a groove, like every other group of controls. */
+.proj__filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3xs);
+  margin-top: var(--space-sm);
+  padding: var(--space-3xs);
+  border-radius: var(--radius-input);
+  background: var(--surface-canvas);
+  box-shadow: var(--recess);
+}
+
+.proj__filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2xs);
+  height: 28px;
+  padding: 0 var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.proj__filter:hover { background: var(--wash-row); }
+.proj__filter:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+
+/* The filter in force is a surface in the signal colour — the same way a
+   selected day says so on the calendar. */
+.proj__filter--on {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: 600;
+  box-shadow: var(--sheen);
+}
+
+.proj__filter--on:hover { background: var(--color-accent); }
+
+.proj__filternum {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0;
+}
+
+.proj__scroll {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2xs);
+  min-height: 0;
+  margin-top: var(--space-sm);
+  overflow-y: auto;
+}
+
+/* One project: its name, what it is for, and the people on it. */
+.projitem {
+  display: grid;
+  gap: var(--space-3xs);
+  width: 100%;
+  padding: var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.projitem:hover { background: var(--wash-row); }
+.projitem:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+.projitem--on {
+  background: var(--surface-selected);
+  box-shadow: var(--ring-hair);
+}
+
+.projitem--on:hover { background: var(--surface-selected); }
+
+.projitem__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.projitem__name {
+  font-weight: 600;
+  font-size: var(--text-ui);
+}
+
+.projitem__count {
+  flex: 0 0 auto;
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  color: var(--color-muted);
+}
+
+.projitem__purpose {
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.projitem__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  margin-top: var(--space-3xs);
+}
+
+.projitem__more {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+.projitem__mine {
+  margin-left: auto;
+  padding: 1px var(--space-2xs);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--accent-on-soft);
+  font-size: var(--text-tiny);
+}
+
+/* ── my own work ───────────────────────────────────────────────────────── */
+
+.proj__mine {
+  display: grid;
+  gap: var(--space-3xs);
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule);
+}
+
+.proj__minetitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2xs);
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+  font-weight: 600;
+}
+
+/* 몇 개나 있는지는 라벨처럼(모노로) 읽힌다. */
+.proj__minetitle-n {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-weight: 400;
+}
+
+.proj__minerow {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  padding: var(--space-3xs) var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.proj__minerow:hover { background: var(--wash-row); }
+.proj__minerow:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+.proj__minename { min-width: 0; }
+
+/* 어디의 일인지, 그리고 지금 어떤 단계인지 — 두 줄로 읽힌다. */
+.proj__minemeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.proj__mineproject { flex: 1 1 auto; min-width: 0; }
+
+.proj__minemeta .badge { flex: 0 0 auto; }
+
+/* 남은 것은 있다고 말해 준다 — 조용히 사라지지 않는다. */
+.proj__minemore {
+  margin: var(--space-2xs) 0 0;
+  padding: 0 var(--space-xs);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.proj__mineempty {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+/* ── the board ─────────────────────────────────────────────────────────── */
+
+.proj__board {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+.proj__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg) var(--space-sm);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.proj__headmain {
+  display: grid;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.proj__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.02em;
+}
+
+/* the name is the picker: it opens the list of projects */
+.proj__namebtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.proj__namebtn:hover { color: var(--color-accent-deep); }
+.proj__namebtn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.proj__purpose {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+/* ── the project's own three facts ────────────────────────────────────────
+   어디쯤인가, 무엇이 남았는가, 언제까지인가. 헤더는 이 셋을 말한다 —
+   나머지는 아래의 보드가 말한다. */
+
+.proj__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: var(--space-3xs) 0 0;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+.proj__meter {
+  flex: 0 0 92px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.proj__meterfill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+
+.proj__fact { color: var(--color-ink-2); }
+
+/* The facts are separated by a hairline, not a middot — a middot left at
+   the start of a wrapped line says nothing. */
+.proj__fact + .proj__fact,
+.proj__fact + .proj__period {
+  padding-inline-start: var(--space-xs);
+  border-left: 1px solid var(--color-rule);
+}
+
+.proj__fact--num {
+  color: var(--color-ink);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0;
+}
+
+/* The period is the way into the chart — the chart is that period drawn
+   out, so the period itself is the link that opens it. */
+.proj__period {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.proj__period:hover { color: var(--color-accent-deep); }
+
+.proj__period:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.proj__headtools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 0 0 auto;
+}
+
+.proj__cols {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-sm);
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-md) var(--space-lg);
+  overflow: auto;
+}
+
+/* the milestone panel takes the same frame as the columns */
+.proj__body .mspanel { flex: 1 1 auto; }
+
+/* ── what kind of thing am I looking at ──────────────────────────────────
+   할 일(카드)과 마일스톤(기한이 있는 목표)은 종류가 다르다. 그래서 하나는
+   홈 안에 파인 스위치이고 — 다른 하나는 카드 위의 거르기다. */
+
+.proj__views {
+  display: inline-flex;
+  gap: var(--space-3xs);
+  justify-self: start;
+  margin: var(--space-sm) 0 0 var(--space-lg);
+  padding: var(--space-3xs);
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.proj__view {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  height: 28px;
+  padding: 0 var(--space-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.proj__view:hover { background: var(--wash-row); }
+.proj__view:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+
+/* 고른 쪽은 신호색의 면 — 목록의 필터와 같은 손. */
+.proj__view--on {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: 600;
+  box-shadow: var(--sheen);
+}
+
+.proj__view--on:hover { background: var(--color-accent); }
+
+.proj__viewn {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* on the signal, the count wears the signal's own ink */
+.proj__view--on .proj__viewn { color: var(--color-accent-ink); }
+
+/* ── the board's own frame ────────────────────────────────────────────────
+   스위치 아래에 있는 것 — 카드들이 놓이는 자리. */
+
+.proj__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+
+/* ── the card filter ──────────────────────────────────────────────────────
+   로드맵은 카드의 묶음이다. 보드 위의 한 줄, 이름이 붙은 거르기. */
+
+.proj__lanes {
+  display: grid;
+  gap: var(--space-3xs);
+  flex: 0 0 auto;
+  padding: var(--space-sm) var(--space-lg) 0;
+}
+
+.proj__lanelabel {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+/* The line that tells "모든 카드" (the whole board) from the roadmaps.
+   Without it the first chip reads like a roadmap named "모든 카드". */
+.proj__lanediv {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 16px;
+  margin-inline: var(--space-2xs);
+  background: var(--color-rule);
+}
+
+.proj__lanechips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.proj__lanechip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  max-width: 200px;
+  height: 26px;
+  padding: 0 var(--space-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.proj__lanechip:hover { background: var(--wash-row); color: var(--color-ink-2); }
+.proj__lanechip:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+
+/* 지금 고른 묶음 — 목록의 필터와 같은 신호색의 면. */
+.proj__lanechip--on {
+  background: var(--surface-selected);
+  border-color: var(--color-rule-soft);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.proj__lanecn {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-weight: 400;
+}
+
+.proj__lanewrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 묶음을 지우는 손 — 묶음 위에 손이 올라갔을 때만 나타난다. */
+.proj__lanex {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  color: var(--color-muted);
+  opacity: 0;
+  transition: opacity var(--dur-micro) var(--ease-out);
+}
+
+.proj__lanewrap:hover .proj__lanex,
+.proj__lanewrap:focus-within .proj__lanex { opacity: 1; }
+
+.proj__lanex:hover { background: var(--surface-raise); color: var(--color-ink); }
+
+/* ── one column ────────────────────────────────────────────────────────── */
+
+.projcol {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-xs);
+  min-width: 0;
+  min-height: 180px;
+  padding: var(--space-xs);
+  border-radius: var(--radius-panel);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  transition: box-shadow var(--dur-short) var(--ease-out);
+}
+
+/* A card held over the column: the column says it will take it. */
+.projcol--over {
+  box-shadow: var(--recess), 0 0 0 2px var(--accent-ring);
+}
+
+.projcol__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-3xs) var(--space-2xs);
+}
+
+.projcol__label {
+  font-size: var(--text-small);
+  font-weight: 600;
+}
+
+.projcol__count {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+.projcol__cards {
+  display: grid;
+  align-content: start;
+  gap: var(--space-xs);
+  min-height: var(--space-lg);
+}
+
+.projcol__add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.projcol__add:hover { background: var(--wash-row); color: var(--color-ink-2); }
+.projcol__add:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+/* ── one card ──────────────────────────────────────────────────────────── */
+
+.taskcard {
+  display: grid;
+  gap: var(--space-3xs);
+  padding: var(--space-xs);
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e1);
+  cursor: grab;
+}
+
+.taskcard:active { cursor: grabbing; }
+
+.taskcard__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.taskcard__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: var(--text-small);
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.taskcard__title:hover { text-decoration: underline; text-underline-offset: 0.16em; }
+.taskcard__title:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* A deadline says how much is left in words — never in colour alone. */
+.taskcard__due {
+  flex: 0 0 auto;
+  padding: 1px var(--space-2xs);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.taskcard__due--soon {
+  background: var(--color-accent-soft);
+  color: var(--accent-on-soft);
+}
+
+.taskcard__due--late {
+  background: var(--error-wash);
+  color: var(--error-ink);
+}
+
+.taskcard__desc {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+  line-height: 1.5;
+}
+
+.taskcard__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.taskcard__who {
+  display: flex;
+  align-items: center;
+}
+
+.taskcard__who--none {
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.taskcard__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+.taskcard__move { width: 24px; height: 24px; border-radius: 6px; }
+
+/* ══ milestones ═════════════════════════════════════════════════════════
+   A milestone is not a lane and not a column: it is a period with a colour,
+   a progress and the cards that belong to it. The colour is the company's
+   own — it rides on a custom property, never on a literal. */
+
+.mspanel {
+  display: grid;
+  align-content: start;
+  gap: var(--space-md);
+  min-height: 0;
+  padding: var(--space-md) var(--space-lg);
+  overflow-y: auto;
+}
+
+.mspanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+/* the panel's one line of teaching — what a milestone is */
+.mspanel__hint {
+  margin: 0;
+  max-width: 54ch;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+.mspanel__list {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mscard {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e1);
+}
+
+.mscard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+/* the colour the company chose — it rides on a custom property */
+.mscard__dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ms-color, var(--color-muted));
+  box-shadow: var(--ring-edge);
+}
+
+.mscard__title {
+  min-width: 0;
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.mscard__dates {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mscard__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.mscard__count {
+  color: var(--color-ink-2);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mscard__desc {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+.mscard__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3xs);
+}
+
+.mschip {
+  max-width: 22ch;
+  padding: 0 var(--space-2xs);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the bar of a milestone — the fill wears the milestone's own colour */
+.msbar {
+  flex: 1 1 auto;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.msbar__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ms-color, var(--color-accent));
+}
+
+/* the milestone a card belongs to — a name, and the colour beside it */
+.badge--milestone {
+  justify-self: start;
+  background: var(--surface-well);
+  border-color: var(--color-rule-soft);
+  color: var(--color-ink-2);
+}
+
+.badge--milestone::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ms-color, var(--color-muted));
+}
+
+/* the one new control: a progress the reader holds */
+.msrange {
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.msrange::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.msrange::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: var(--sheen), var(--rim);
+}
+
+.msrange::-moz-range-track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.msrange::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: var(--sheen), var(--rim);
+}
+
+.msrange:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* ── the milestone dialog ───────────────────────────────────────────────── */
+
+.msdlg__dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+}
+
+.msdlg__date {
+  display: grid;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.msdlg__datelabel {
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.msdlg__percent {
+  color: var(--color-ink-2);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the progress that comes from the cards, not from a hand */
+.msdlg__auto {
+  margin: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+.msdlg__count {
+  padding: 0 var(--space-2xs);
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+  white-space: nowrap;
+}
+
+/* the free colour well — it wears the colour in force */
+.msdlg__free {
+  background: var(--swatch);
+}
+
+.msdlg__tasks {
+  display: grid;
+  max-height: 180px;
+  overflow-y: auto;
+  border-radius: var(--radius-input);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.msdlg__task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
+  border-bottom: 1px solid var(--color-rule-soft);
+  cursor: pointer;
+  font-size: var(--text-small);
+}
+
+.msdlg__task:last-child { border-bottom: 0; }
+
+.msdlg__tasktitle {
+  min-width: 0;
+}
+
+/* a card that is done says so — struck through and dimmed */
+.msdlg__task--done .msdlg__tasktitle {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+
+/* the parent of a new unit, written out as a line */
+.orgdlg__parent {
+  margin: 0;
+}
+
+/* ── the empty board ───────────────────────────────────────────────────── */
+
+.empty--board {
+  align-content: center;
+  height: 100%;
+}
+
+/* ── the dialogs ───────────────────────────────────────────────────────── */
+
+.proj__roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.proj__rosteritem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: var(--space-3xs) var(--space-2xs) var(--space-3xs) var(--space-3xs);
+  border-radius: var(--radius-pill);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  font-size: var(--text-small);
+}
+
+.proj__rosterx { width: 20px; height: 20px; border-radius: var(--radius-pill); }
+
+.taskdlg__project {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.taskdlg__comments {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskdlg__comment {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border-radius: var(--radius-card);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.taskdlg__commentmeta {
+  font-size: var(--text-tiny);
+  font-weight: 600;
+}
+
+.taskdlg__commentbody {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.taskdlg__write {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.taskdlg__write .field__input { flex: 1 1 auto; }
+
+/* ── narrow windows ────────────────────────────────────────────────────── */
+
+@media (max-width: 72rem) {
+  .proj { grid-template-columns: 280px minmax(0, 1fr); }
+  .proj__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-inline: var(--space-md); }
+  .proj__head { padding-inline: var(--space-md); }
+  .proj__views { margin-inline-start: var(--space-md); }
+}
+
+@media (max-width: 46rem) {
+  .proj { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .proj__list { border-right: 0; border-bottom: 1px solid var(--color-rule); }
+  .proj__cols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ══ organization ══════════════════════════════════════════════════════
+   The organization's own page. Three parts: the workspace's admins above,
+   the tree of units on the left — a well you navigate out of — and the
+   unit that is open on the right. The tree and the unit scroll inside
+   themselves; the page never scrolls as a whole. */
+
+.org {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  background-color: var(--surface-canvas);
+  background-image: var(--tooth);
+}
+
+/* ── the workspace's admins ─────────────────────────────────────────────── */
+
+.org__admins {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg) var(--space-sm);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.org__adminshead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.org__adminlist {
+  display: grid;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.org__adminrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+}
+
+.org__adminrow:hover { background: var(--wash-row); }
+
+.org__adminname {
+  min-width: 0;
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+
+.org__admintitle { min-width: 0; }
+
+/* ── the tree of units ─────────────────────────────────────────────────── */
+
+.org__body {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.org__tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-height: 0;
+  padding: var(--space-md);
+  border-right: 1px solid var(--color-rule);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.org__treehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.org__treetitle {
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.025em;
+}
+
+/* the search of the tree is a well like any other field */
+.org__tree .find {
+  padding: var(--space-2xs) var(--space-xs);
+  border-bottom: 0;
+  border-radius: var(--radius-input);
+  background: var(--surface-canvas);
+  box-shadow: var(--recess);
+}
+
+.org__tree .find__input { font-size: var(--text-small); }
+
+.org__treescroll {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2xs);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* One unit: its name, whether I manage it, and how many people it holds. */
+.orgrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  padding-inline-start: calc(var(--space-xs) + var(--org-depth, 0) * var(--space-md));
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+
+.orgrow:hover { background: var(--wash-row); }
+.orgrow:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+
+.orgrow--on {
+  background: var(--surface-selected);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.orgrow--on:hover { background: var(--surface-selected); }
+
+.orgrow__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-small);
+}
+
+.orgrow__badge { flex: 0 0 auto; }
+
+.orgrow__count {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+/* the tree while it is loading */
+.org__skels { display: grid; gap: var(--space-2xs); }
+
+.org__skel { display: block; height: 26px; }
+
+/* ── the unit that is open ─────────────────────────────────────────────── */
+
+.org__detail {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.org__scroll {
+  display: grid;
+  align-content: start;
+  gap: var(--space-md);
+  min-height: 0;
+  padding: var(--space-md) var(--space-lg);
+  overflow-y: auto;
+}
+
+.org__detailhead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.org__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.02em;
+}
+
+.org__meta {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+/* the form of a unit is a raised surface on the canvas */
+.org__form {
+  display: grid;
+  gap: var(--space-sm);
+  max-width: 520px;
+  padding: var(--space-md);
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e1);
+}
+
+.org__textarea {
+  height: auto;
+  min-height: 72px;
+  padding-block: var(--space-2xs);
+  resize: vertical;
+}
+
+/* ── a section of the unit ─────────────────────────────────────────────── */
+
+.org__section {
+  display: grid;
+  gap: var(--space-xs);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule-soft);
+}
+
+.org__sectionhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.org__sectiontitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lead);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.02em;
+}
+
+.org__sectionhint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.org__people {
+  display: grid;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.org__person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-small);
+}
+
+.org__person:hover { background: var(--wash-row); }
+
+.org__hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+.org__text {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+/* the line that asks before it deletes */
+.org__confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+}
+
+/* ── narrow windows ────────────────────────────────────────────────────── */
+
+@media (max-width: 72rem) {
+  .org__body { grid-template-columns: 260px minmax(0, 1fr); }
+  .org__scroll { padding-inline: var(--space-md); }
+}
+
+@media (max-width: 46rem) {
+  .org__body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .org__tree { border-right: 0; border-bottom: 1px solid var(--color-rule); }
+  .org__treescroll { max-height: 30vh; }
+}
+
+/* ══ utility layer ════════════════════════════════════════════════════
+ * A short, token-bound set of layout helpers. No colour, size or font
+ * literal lives here either: every value resolves from the token block.
+ */
+
+.u-row { display: flex; }
+.u-row--center { align-items: center; }
+.u-row--start { align-items: flex-start; }
+.u-row--base { align-items: baseline; }
+.u-row--wrap { flex-wrap: wrap; }
+.u-col { display: grid; }
+.u-center { justify-items: center; }
+.u-place-center { place-items: center; }
+.u-grow { flex: 1 1 auto; min-width: 0; }
+.u-self-start { align-self: start; }
+
+.u-gap-1 { gap: var(--space-2xs); }
+.u-gap-2 { gap: var(--space-xs); }
+.u-gap-3 { gap: var(--space-sm); }
+.u-gap-4 { gap: var(--space-md); }
+.u-gap-5 { gap: var(--space-lg); }
+
+.u-mt-1 { margin-top: var(--space-2xs); }
+.u-mt-2 { margin-top: var(--space-xs); }
+.u-mt-4 { margin-top: var(--space-md); }
+.u-mt-6 { margin-top: var(--space-lg); }
+.u-mb-2 { margin-bottom: var(--space-xs); }
+.u-mb-4 { margin-bottom: var(--space-md); }
+.u-ml-2 { margin-left: var(--space-xs); }
+.u-mr-1 { margin-right: var(--space-2xs); }
+
+.u-px-2 { padding-inline: var(--space-xs); }
+.u-px-3 { padding-inline: var(--space-sm); }
+.u-px-4 { padding-inline: var(--space-md); }
+.u-py-1 { padding-block: var(--space-2xs); }
+.u-py-2 { padding-block: var(--space-xs); }
+.u-py-6 { padding-block: var(--space-xl); }
+.u-py-8 { padding-block: var(--space-2xl); }
+.u-pb-2 { padding-bottom: var(--space-xs); }
+.u-pb-3 { padding-bottom: var(--space-sm); }
+.u-pb-4 { padding-bottom: var(--space-md); }
+.u-pt-1 { padding-top: var(--space-2xs); }
+.u-pt-4 { padding-top: var(--space-md); }
+.u-p0 { padding: 0; }
+
+.u-tiny { font-size: var(--text-tiny); }
+.u-small { font-size: var(--text-small); }
+.u-ui { font-size: var(--text-ui); }
+.u-body { font-size: var(--text-body); }
+.u-lead { font-size: var(--text-lead); }
+.u-semibold { font-weight: 600; }
+.u-normal { font-weight: 400; }
+.u-tight { letter-spacing: -0.01em; }
+.u-muted { color: var(--color-muted); }
+
+.u-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-pre { white-space: pre-wrap; }
+.u-clamp2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.u-center-text { text-align: center; }
+.u-right { text-align: right; }
+.u-left { text-align: left; }
+.u-inline { display: inline; }
+.u-hidden { display: none; }
+.u-full { width: 100%; }
+.u-cover { object-fit: cover; }
+.u-h-full { height: 100%; }
+.u-h-auto { height: auto; }
+.u-minh-0 { min-height: 0; }
+.u-minh-screen { min-height: 100dvh; }
+.u-minh-72 { min-height: 72px; }
+.u-stack { display: grid; gap: var(--space-xs); }
+.u-frame { background: var(--surface-frame); }
+.u-hairline { border: 1px solid var(--color-rule); }
+.u-border-t { border-top: 1px solid var(--color-rule); }
+
+.u-h-3 { height: 0.75rem; }
+.u-h-4 { height: 1rem; }
+.u-h-6 { height: 1.5rem; }
+.u-h-12 { height: 3rem; }
+.u-h-30 { height: 30px; }
+.u-w-4 { width: 1rem; }
+.u-w-6 { width: 1.5rem; }
+.u-w-28 { width: 7rem; }
+.u-w-30 { width: 30px; }
+.u-w-44 { width: 44px; }
+.u-w-wide { width: min(420px, 70%); }
+.u-r-4 { border-radius: var(--radius-xs); }
+.u-r-8 { border-radius: var(--radius-sm); }
+
+.avatar-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.u-shrink-0 { flex-shrink: 0; }
+
+.kbd--on-ink {
+  background: var(--kbd-ink-bg);
+  border-color: var(--kbd-ink-edge);
+  color: var(--kbd-ink-ink);
+}
+
+.gate__note { color: var(--note-on-dark); }
+
+/* ══ invites ═════════════════════════════════════════════════════════ */
+
+.invite-fresh {
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-rule-soft);
+  border-radius: var(--radius-card);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.invite-fresh__label { font-size: var(--text-tiny); color: var(--color-muted); }
+
+.invite-fresh__code {
+  flex: 1 1 auto;
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px dashed var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raise);
+  font-family: var(--font-outlier);
+  font-size: var(--text-small);
+  letter-spacing: 0.02em;
+}
+
+.invite-code {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  color: var(--color-muted);
+  letter-spacing: 0.02em;
+}
+
+/* the rail collapses into an overlay on a narrow window */
+.head__menu { display: none; }
+
+@media (max-width: 52rem) {
+  .head__menu { display: grid; }
+}
+
+@media (max-width: 60rem) {
+  .app--thread { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
+  .app--thread .thread {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: var(--z-modal);
+    width: min(380px, 90vw);
+    box-shadow: var(--shadow-e3);
+  }
+}
+
+.pick__item > button.u-left {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pick__item > button.u-left:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ══ the project chart ═══════════════════════════════════════════════════
+   The Gantt view of one project. It is a reading surface: a band of months
+   on top, a row per milestone, and the cards' deadlines as dots below. The
+   milestone's own colour rides on a custom property, never on a literal. */
+
+.dialog--chart {
+  width: 100%;
+  max-width: min(1040px, 94vw);
+  max-height: min(84dvh, 760px);
+}
+
+.chart {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  overflow: auto;
+}
+
+.chart__grid {
+  display: grid;
+  gap: var(--space-2xs);
+  min-width: 620px;
+}
+
+.chart__headrow,
+.chart__row {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+/* the rows that carry the bars — the lines behind them run through all
+   of them at once, so the chart reads as one surface */
+.chart__body {
+  position: relative;
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.chart__overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* the label column and the gap before the track */
+  left: calc(148px + var(--space-sm));
+  right: 0;
+  pointer-events: none;
+}
+
+.chart__headrow {
+  padding-bottom: var(--space-2xs);
+  border-bottom: 1px solid var(--color-rule-soft);
+}
+
+.chart__headlabel {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  letter-spacing: 0.02em;
+}
+
+/* the band of months — the ruler the bars are read against */
+.chart__track {
+  position: relative;
+  height: 26px;
+}
+
+.chart__month {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: var(--space-2xs);
+  border-left: 1px solid var(--color-rule-soft);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  white-space: nowrap;
+}
+
+.chart__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  min-width: 0;
+  color: var(--color-ink);
+  font-size: var(--text-small);
+}
+
+.chart__label--quiet {
+  color: var(--color-muted);
+}
+
+.chart__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ms-color, var(--color-muted));
+}
+
+/* the month lines that run through the rows */
+.chart__gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-rule-soft);
+}
+
+/* today — a line in ink, not a colour of its own */
+.chart__today {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 1px;
+  background: var(--color-ink-2);
+}
+
+/* the period of a milestone — its colour, and the progress inside it */
+.chart__bar {
+  position: absolute;
+  top: 50%;
+  height: 16px;
+  transform: translateY(-50%);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--ms-color, var(--color-accent)) 24%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ms-color, var(--color-accent)) 40%, transparent);
+}
+
+.chart__barfill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ms-color, var(--color-accent));
+}
+
+/* the deadline of a card — a dot on the day it falls */
+.chart__track--dots { height: 22px; }
+
+.chart__dotmark {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--dot-tone, var(--color-ink-2));
+}
+
+/* a meeting on the calendar — a tick, so it is not a deadline */
+.chart__notch {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--color-muted);
+}
+
+/* the legend says what the marks are, in the app's own hand */
+.chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+.chart__legenditem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3xs);
+}
+
+.chart__legendbar {
+  width: 22px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-rule-soft);
+  box-shadow: inset 0 0 0 1px var(--color-rule-soft);
+}
+
+.chart__legendbar::after {
+  content: "";
+  display: block;
+  width: 45%;
+  height: 100%;
+  background: var(--color-ink-2);
+}
+
+.chart__legenddot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot-tone, var(--color-ink-2));
+}
+
+.chart__legendnotch {
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--color-muted);
+}
+
+.chart__legendtoday {
+  width: 1px;
+  height: 12px;
+  background: var(--color-ink-2);
+}
+
+/* the calendar under the chart — the same meetings in words */
+.chart__agenda {
+  display: grid;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart__agendaitem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  min-width: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+}
+
+.chart__agendadate {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__agendatitle {
+  color: var(--color-ink);
+  font-size: var(--text-small);
+}
+
+.chart__agendaplace {
+  margin-left: auto;
+  flex: 0 1 auto;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+/* under the chart, the same thing in words */
+.chart__list {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart__note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-small);
+}
+
+

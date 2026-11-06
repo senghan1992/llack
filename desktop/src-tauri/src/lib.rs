@@ -1,296 +1,245 @@
-//! Llack desktop shell.
+//! Llack 데스크톱 셸.
 //!
-//! Thin by design: window and tray lifecycle, the Tauri command surface, and
-//! the background realtime task. All the logic those wrap lives in
-//! `llack-core`, which has no webview dependency and is unit-tested.
+//! 화면은 프론트엔드(React)가 그리고, 이 셸은 그 밑에서 네 가지만 한다.
+//!   · 네이티브 창을 만들고 마지막 위치/크기를 기억한다.
+//!   · OS 알림을 띄운다(웹뷰 알림이 아니라 OS 알림 — 포커스 설정을 따른다).
+//!   · 메시지의 링크를 기본 브라우저로 연다.
+//!   · 셸이 직접 API 를 부를 때 쓰는 HTTP 클라이언트.
+//!
+//! 에이전트 · 스크린캡처 · 키체인 · 딥링크 · 트레이 · 미니앱 패널은 없다.
+//! 필요하면 여기 아니라 프론트엔드에 두는 게 맞다.
 
-mod agent_commands;
+mod api;
 mod commands;
-mod keychain;
-mod realtime_task;
+mod error;
 mod state;
-mod tray;
 
-use std::sync::Arc;
+use std::time::Duration;
 
-use tauri::{Emitter, Manager, WindowEvent};
+use serde::Deserialize;
+use tauri::{AppHandle, Listener, Manager, WindowEvent};
+use tauri_plugin_notification::NotificationExt;
+use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 
-use crate::keychain::KeychainTokenStore;
+use crate::api::DEFAULT_API_BASE;
 use crate::state::AppState;
 
-/// The default server, overridable at runtime by the user and at build time by
-/// an integrator shipping a pre-configured binary to their company.
-const DEFAULT_SERVER_URL: &str = match option_env!("LLACK_DEFAULT_SERVER_URL") {
-    Some(url) => url,
-    None => "http://localhost:8000",
-};
+/// 프론트엔드가 네이티브 알림을 요청할 때 쓰는 이벤트 이름.
+const NOTIFY_EVENT: &str = "llack://notify";
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// 창 상태가 저장되는 파일 이름(앱 설정 디렉터리 아래).
+const WINDOW_STATE_FILE: &str = "window-state.json";
+
+/// 앱이 뜰 때 하는 연결 확인의 상한 시간.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
+
+/// 앱을 띄운다.
 pub fn run() {
+    if let Err(err) = try_run() {
+        eprintln!("Llack 데스크톱 셸을 실행하지 못했습니다: {err:?}");
+        std::process::exit(1);
+    }
+}
+
+/// 앱을 띄우되, 실패는 에러로 돌려준다.
+fn try_run() -> anyhow::Result<()> {
     init_tracing();
 
     tauri::Builder::default()
-        // Must be registered first: it intercepts the second launch before any
-        // window is created.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            // A second launch should surface the running window, not start a
-            // second copy of a chat client.
-            tray::reveal_main_window(app);
-        }))
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."));
-
-            let tokens = KeychainTokenStore::shared();
-            let state = Arc::new(AppState::new(data_dir.clone(), tokens.clone())?);
-
-            // The agent is built here rather than in `AppState::new` because
-            // its approval notifier needs an `AppHandle`, which does not exist
-            // until setup. A failure is logged and swallowed: a machine with no
-            // writable data directory should still be a working chat client
-            // without an agent panel, not a client that refuses to launch.
-            match llack_core::agent::AgentEngine::open(
-                data_dir,
-                home_dir(),
-                tokens,
-                Arc::new(agent_commands::PanelNotifier::new(app.handle().clone())),
-                llack_core::agent::HostCapabilities {
-                    // Screen capture and input synthesis are compiled in only
-                    // when the `screen-control` feature is on; without it the
-                    // three tools are absent from the catalog entirely.
-                    screen_control: cfg!(feature = "screen-control"),
-                    ..llack_core::agent::HostCapabilities::desktop()
-                },
-            ) {
-                Ok(engine) => state.install_agent(Arc::new(engine)),
-                Err(error) => {
-                    tracing::warn!(%error, "the agent panel is unavailable");
-                }
+            let api_base =
+                std::env::var("LLACK_API_BASE").unwrap_or_else(|_| DEFAULT_API_BASE.to_string());
+            let mut state = AppState::new(api_base);
+            if let Ok(dir) = app.path().app_config_dir() {
+                state = state.with_store(dir.join(WINDOW_STATE_FILE));
             }
-
             app.manage(state);
 
-            tray::build(app.handle())?;
-
-            // `llack://` links (invitations, deep links into a message) arrive
-            // here; the UI decides how to route them.
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
-                let handle = app.handle().clone();
-                app.deep_link().on_open_url(move |event| {
-                    let urls: Vec<String> = event.urls().iter().map(ToString::to_string).collect();
-                    let _ = handle.emit("llack://deep-link", serde_json::json!({ "urls": urls }));
-                    tray::reveal_main_window(&handle);
-                });
-            }
-
-            app.handle().emit(
-                "llack://ready",
-                serde_json::json!({
-                    "default_server_url": DEFAULT_SERVER_URL,
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "platform": std::env::consts::OS,
-                }),
-            )?;
+            let handle = app.handle().clone();
+            restore_window(&handle);
+            listen_for_notifications(&handle);
+            probe_api(&handle);
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            commands::app_info,
+            commands::notify,
+            commands::set_window_theme,
+            commands::open_external,
+            commands::save_file,
+        ])
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                // Closing the window hides it instead of quitting, so
-                // notifications keep arriving. Quit is on the tray menu.
-                if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.hide();
+            // Only the main window's geometry is remembered. A room window
+            // that opens and closes must not move the workspace window.
+            if window.label() != "main" {
+                return;
+            }
+            let state = window.state::<AppState>();
+            let scale = window.scale_factor().unwrap_or(1.0);
+
+            match event {
+                WindowEvent::Resized(size) => {
+                    let mut saved = state.window_state();
+                    saved.width = size.width as f64 / scale;
+                    saved.height = size.height as f64 / scale;
+                    state.set_window_state(saved);
                 }
+                WindowEvent::Moved(position) => {
+                    let mut saved = state.window_state();
+                    saved.x = Some((position.x as f64 / scale).round() as i32);
+                    saved.y = Some((position.y as f64 / scale).round() as i32);
+                    state.set_window_state(saved);
+                }
+                WindowEvent::CloseRequested { .. } => state.save_window_state(),
+                WindowEvent::Destroyed => state.save_window_state(),
+                _ => {}
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            // connection & auth
-            commands::bootstrap,
-            commands::login,
-            commands::register,
-            commands::logout,
-            commands::current_user,
-            commands::update_me,
-            commands::update_my_status,
-            commands::upload_avatar,
-            commands::remove_avatar,
-            commands::list_workspace_files,
-            commands::activity_threads,
-            commands::activity_mentions,
-            commands::list_sessions,
-            commands::revoke_session,
-            commands::list_workspace_members,
-            commands::update_workspace_member_role,
-            commands::remove_workspace_member,
-            commands::update_installation,
-            commands::probe_link_app,
-            commands::list_audit,
-            commands::download_audit_csv,
-            commands::get_retention,
-            commands::update_retention,
-            commands::update_notifications,
-            commands::save_message,
-            commands::unsave_message,
-            commands::list_saved,
-            commands::mark_saved_done,
-            commands::reopen_saved,
-            commands::resend_invite,
-            commands::file_thumbnail,
-            commands::media_token,
-            commands::list_commands,
-            commands::run_command,
-            commands::message_action,
-            commands::open_app_home,
-            commands::list_my_apps,
-            commands::register_app,
-            commands::update_manifest,
-            commands::submit_app,
-            commands::review_app,
-            commands::list_pending_apps,
-            commands::rotate_app_secret,
-            commands::test_webhook,
-            commands::list_deliveries,
-            commands::list_app_tokens,
-            commands::create_app_token,
-            commands::revoke_app_token,
-            commands::get_smtp_settings,
-            commands::update_smtp_settings,
-            commands::test_smtp,
-            commands::forgot_password,
-            commands::reset_password,
-            commands::change_password,
-            commands::create_invites,
-            commands::accept_invite,
-            commands::list_invites,
-            commands::reset_member_password,
-            commands::revoke_invite,
-            commands::create_workspace,
-            // workspaces
-            commands::list_workspaces,
-            commands::select_workspace,
-            commands::list_workspace_users,
-            // channels
-            commands::cached_channels,
-            commands::refresh_channels,
-            commands::browse_channels,
-            commands::create_channel,
-            commands::open_dm,
-            commands::update_channel,
-            commands::channel_members,
-            commands::add_channel_members,
-            commands::remove_channel_member,
-            commands::set_channel_member_role,
-            commands::revoke_other_sessions,
-            commands::delete_file,
-            commands::join_channel,
-            commands::leave_channel,
-            commands::update_membership,
-            commands::mark_read,
-            // messages
-            commands::cached_history,
-            commands::refresh_history,
-            commands::load_older_messages,
-            commands::thread_replies,
-            commands::send_message,
-            commands::edit_message,
-            commands::set_pinned,
-            commands::channel_pins,
-            commands::delete_message,
-            commands::toggle_reaction,
-            commands::typing,
-            // outbox
-            commands::pending_messages,
-            commands::drain_outbox,
-            commands::retry_failed_messages,
-            commands::discard_pending_message,
-            // search
-            commands::search,
-            commands::search_messages,
-            // files
-            commands::upload_file,
-            commands::download_file,
-            commands::file_preview,
-            // mini-apps
-            commands::list_installed_apps,
-            commands::list_available_apps,
-            commands::install_app,
-            commands::add_link_app,
-            commands::uninstall_app,
-            commands::open_app_panel,
-            // shell
-            commands::set_presence,
-            commands::reconnect,
-            commands::cache_stats,
-            commands::prune_cache,
-            // agent — the whole IPC surface the panel has
-            agent_commands::agent_provider_status,
-            agent_commands::agent_provider_connect,
-            agent_commands::agent_provider_set_model,
-            agent_commands::agent_provider_disconnect,
-            agent_commands::agent_provider_request,
-            agent_commands::agent_provider_abort,
-            agent_commands::agent_tools,
-            agent_commands::agent_sessions,
-            agent_commands::agent_open_session,
-            agent_commands::agent_focus,
-            agent_commands::agent_tool_call,
-            agent_commands::agent_resolve_approval,
-            agent_commands::agent_cancel,
-            agent_commands::agent_pick_root,
-            agent_commands::agent_verify_audit,
-            agent_commands::agent_mcp_list,
-            agent_commands::agent_mcp_add,
-            agent_commands::agent_mcp_remove,
-            agent_commands::agent_mcp_set_enabled,
-            agent_commands::agent_mcp_tools,
-            agent_commands::agent_mcp_refresh,
-            agent_commands::agent_artifact_put,
-            agent_commands::agent_memories_list,
-            agent_commands::agent_memory_add,
-            agent_commands::agent_memory_delete,
-            agent_commands::agent_skills_list,
-            agent_commands::agent_skill_read,
-            agent_commands::agent_skill_save,
-            agent_commands::agent_skill_delete,
-            agent_commands::agent_native_dialogs,
-            agent_commands::agent_audit_entries,
-        ])
-        .run(tauri::generate_context!())
-        .expect("could not start Llack");
+        .run(tauri::generate_context!())?;
+
+    Ok(())
 }
 
+/// 로그를 stderr 로 보낸다. `RUST_LOG` 로 조정한다.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, EnvFilter};
-
-    let filter = EnvFilter::try_from_env("LLACK_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("info,llack=debug,llack_core=debug"));
-    let _ = fmt().with_env_filter(filter).with_target(true).try_init();
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,llack_lib=debug"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 
-/// The user's home directory, for the agent's path policy.
-///
-/// Duplicated from `state.rs` rather than shared, because the two want
-/// different things from a missing value: `state` uses it per upload, this uses
-/// it once at startup. Both treat `None` as "the home-relative rules do not
-/// fire", which is safe — the absolute deny rules are unaffected.
-fn home_dir() -> Option<std::path::PathBuf> {
-    #[cfg(windows)]
-    {
-        std::env::var_os("USERPROFILE").map(std::path::PathBuf::from)
+/// 마지막에 닫았을 때의 위치/크기로 창을 되살린다.
+fn restore_window(handle: &AppHandle) {
+    let Some(window) = handle.get_webview_window("main") else {
+        return;
+    };
+
+    let saved = handle.state::<AppState>().window_state();
+    if saved.width > 0.0 && saved.height > 0.0 {
+        let size = tauri::LogicalSize::new(saved.width, saved.height);
+        if let Err(err) = window.set_size(size) {
+            warn!(?err, "창 크기를 복원하지 못했습니다");
+        }
     }
-    #[cfg(not(windows))]
-    {
-        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    if let (Some(x), Some(y)) = (saved.x, saved.y) {
+        let position = tauri::LogicalPosition::new(x, y);
+        if let Err(err) = window.set_position(position) {
+            warn!(?err, "창 위치를 복원하지 못했습니다");
+        }
     }
+}
+
+/// 프론트엔드가 `llack://notify` 이벤트를 밀어 넣으면 OS 알림으로 바꾼다.
+/// `notify` 명령을 부르는 것과 같은 결과지만, 알림 제목이 비어 있을 때
+/// 채널 이름을 API 에서 물어본다.
+fn listen_for_notifications(handle: &AppHandle) {
+    let handle = handle.clone();
+    let listener = handle.clone();
+    listener.listen(NOTIFY_EVENT, move |event| {
+        let payload: NotifyEvent = match serde_json::from_str(event.payload()) {
+            Ok(payload) => payload,
+            Err(err) => {
+                warn!(?err, "알림 이벤트를 읽지 못했습니다");
+                return;
+            }
+        };
+
+        let handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let title = resolve_title(&handle, &payload).await;
+            if let Err(err) =
+                show_notification(&handle, &title, &payload.body, payload.sound.as_deref())
+            {
+                warn!(?err, "네이티브 알림을 표시하지 못했습니다");
+            }
+        });
+    });
+}
+
+/// 앱이 뜰 때 백엔드 연결을 한 번 확인한다.
+fn probe_api(handle: &AppHandle) {
+    let handle = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(client) = handle.state::<AppState>().client() else {
+            return;
+        };
+        let base = client.base_url().to_string();
+        match tokio::time::timeout(PROBE_TIMEOUT, client.health()).await {
+            Ok(Ok(())) => info!(%base, "API 서버에 연결되어 있습니다"),
+            Ok(Err(err)) => warn!(?err, %base, "API 서버에 연결하지 못했습니다"),
+            Err(_) => warn!(%base, "API 서버가 응답하지 않습니다"),
+        }
+    });
+}
+
+/// 알림 제목을 정한다. 프론트엔드가 준 제목을 우선하고, 없으면 채널 이름을 쓴다.
+async fn resolve_title(handle: &AppHandle, payload: &NotifyEvent) -> String {
+    if let Some(title) = payload
+        .title
+        .as_deref()
+        .filter(|title| !title.trim().is_empty())
+    {
+        return title.to_string();
+    }
+
+    let label = match (payload.channel.as_deref(), payload.channel_id.as_deref()) {
+        (Some(channel), _) => Some(channel.to_string()),
+        (None, Some(channel_id)) => lookup_channel_label(handle, channel_id).await,
+        _ => None,
+    };
+
+    label.unwrap_or_else(|| "Llack".to_string())
+}
+
+/// 채널 id 로 채널 이름을 물어본다. 못 물어봐도 알림 자체는 계속 나간다.
+async fn lookup_channel_label(handle: &AppHandle, channel_id: &str) -> Option<String> {
+    let client = handle.state::<AppState>().client()?;
+    match client.channel_label(channel_id).await {
+        Ok(label) => Some(label),
+        Err(err) => {
+            warn!(?err, "채널 이름을 확인하지 못했습니다");
+            None
+        }
+    }
+}
+
+/// OS 알림을 띄운다.
+fn show_notification(
+    handle: &AppHandle,
+    title: &str,
+    body: &str,
+    sound: Option<&str>,
+) -> Result<(), tauri_plugin_notification::Error> {
+    let mut builder = handle.notification().builder().title(title).body(body);
+
+    if let Some(sound) = sound.filter(|sound| !sound.trim().is_empty()) {
+        builder = builder.sound(sound);
+    }
+
+    builder.show()
+}
+
+/// 프론트엔드가 `llack://notify` 로 밀어 넣는 payload.
+#[derive(Debug, Deserialize)]
+struct NotifyEvent {
+    /// 알림 제목. 비어 있으면 채널 이름으로 대신한다.
+    #[serde(default)]
+    title: Option<String>,
+    /// 알림 본문.
+    #[serde(default)]
+    body: String,
+    /// 화면에 보여줄 채널 이름(`#일반`).
+    #[serde(default)]
+    channel: Option<String>,
+    /// 채널 id. 이름 대신 id 로 올 때 API 에서 이름을 물어본다.
+    #[serde(default)]
+    channel_id: Option<String>,
+    /// 알림음 이름.
+    #[serde(default)]
+    sound: Option<String>,
 }

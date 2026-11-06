@@ -1,226 +1,264 @@
 # Llack
 
-사내 협업 OS — 채팅, 파일 공유, 그리고 팀이 만든 앱을 하나의 창에서 쓰는 데스크톱 애플리케이션.
+한빛 팀을 위한 사내 메신저. 채널, 직접 메시지, 스레드를 한 화면에서 돌리는
+데스크톱 앱입니다.
 
-- **데스크톱**: Rust (Tauri 2) + React/TypeScript
-- **백엔드**: FastAPI + SQLAlchemy 2 + WebSocket
-- **미니앱 플랫폼**: 매니페스트 기반, 스코프 권한, 샌드박스 패널
-
-Slack/Teams 를 대체하려는 것이 아니라, **매일 쓰면서 불편했던 지점들을 구조적으로 다르게**
-만든 초안입니다. 어디를 어떻게 다르게 했는지는 [설계 의도](#설계-의도) 를 보세요.
-
----
-
-> **윈도우에서 확인하시려면 → [docs/WINDOWS.md](docs/WINDOWS.md)**
-> 설치 없이 보시려면 → **[docs/WEB.md](docs/WEB.md)** (`make demo` 로 파일 하나면 끝납니다)
-> 코드 가져오기부터 데스크톱 창 띄우기까지 단계별로 정리해 두었습니다.
-> 윈도우에는 `make` 가 없으므로 `.\llack.ps1` 스크립트를 쓰세요.
-
-## 배포하기 — 딱 이것만 하면 됩니다
-
-팀에게 주소 하나를 공유하기까지, 순서대로 여섯 가지입니다.
-(자세한 설명이 필요해지면 그때 [docs/DEPLOY.md](docs/DEPLOY.md) 를 여세요.)
-
-**1. 서버 한 대를 준비하세요.** Docker 가 설치된 리눅스 서버면 됩니다 (2 vCPU / 4GB 권장).
-
-**2. 코드를 올리고 시크릿 키를 만드세요.**
-
-```bash
-git clone <이 저장소> && cd llack
-cp .env.example .env
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"
-# 출력된 값을 .env 의 LLACK_SECRET_KEY= 에 붙여넣기
-```
-
-키가 비어 있거나 개발용 값이면 서버가 스스로 기동을 거부하니, 잊어도 사고로 이어지지 않습니다.
-
-**3. 띄우세요.**
-
-```bash
-docker compose up -d --build
-```
-
-이 한 줄로 전부 뜹니다: 웹 화면(nginx) · API · Postgres · Redis · 파일 저장소.
-마이그레이션도 부팅 때 자동으로 적용됩니다.
-
-**4. HTTPS 를 연결하세요.** 사내 표준 프록시가 있다면 그것으로 `서버:80` 을 가리키면 되고,
-없다면 [Caddy](https://caddyserver.com) 두 줄이 가장 쉽습니다 (인증서 자동 발급):
-
-```
-llack.우리회사.com {
-    reverse_proxy 127.0.0.1:80
-}
-```
-
-브라우저 알림과 클립보드는 HTTPS 에서만 동작하므로 이 단계는 건너뛰지 마세요.
-
-**5. 첫 관리자 계정을 만드세요.** 기본값이 "초대 없이는 가입 불가"라서 첫 사람만 예외 절차가 필요합니다:
-
-```bash
-# ① .env 에서 LLACK_REQUIRE_INVITE=false 로 바꾸고
-docker compose up -d api
-# ② 접속해서 계정 만들기 → 화면 안내대로 워크스페이스 만들기
-# ③ .env 를 LLACK_REQUIRE_INVITE=true 로 되돌리고
-docker compose up -d api
-```
-
-**6. 팀을 초대하세요.** 사이드바 하단 톱니(환경설정) → **구성원 초대** → 이메일 입력 →
-링크 복사 → 전달. 받은 사람은 링크로 접속해 가입하면 자동으로 팀에 합류합니다.
-
-끝입니다. 이후 기억할 것은 세 가지뿐입니다:
-
-- **백업**: 상태는 도커 볼륨 두 개(`postgres-data`, `minio-data`)가 전부입니다.
-- **메일**: 환경설정 → **메일 (SMTP)** 에 회사 메일 서버 정보를 넣고 테스트 메일로
-  확인하세요. 그러면 비밀번호 분실 시 코드가 가입 이메일로 갑니다. 아직 안 잡았으면
-  환경설정 → 구성원 초대 → **임시 비밀번호 발급** (관리자) 으로 대신할 수 있습니다.
-- **잘 도는지 확인**: `curl https://주소/health` → `{"status":"ok"}`.
+- **프런트엔드** React 19 + TypeScript + Vite, 데스크톱 셸은 **Tauri 2 (Rust)**
+- **백엔드** **FastAPI** (Python 3.12, async SQLAlchemy 2.0), 실시간은 WebSocket
+- **디자인** 자체 디자인 시스템. 토큰은 `desktop/src/styles/tokens.css` 한 곳에 있고,
+  규칙은 [DESIGN.md](DESIGN.md)에 잠가 두었습니다.
 
 ---
 
-## 5분 만에 띄워보기 (macOS / Linux)
+## 처음부터 실행하기
 
-외부 의존성이 필요 없습니다. SQLite + 프로세스 내 pub/sub + 로컬 파일 저장으로 그대로 돌아갑니다.
-
-```bash
-make setup          # Python venv, npm 의존성, SDK 빌드
-make seed           # 마이그레이션 + 시드 데이터 (사람 4명, 채널 5개, 앱 1개)
-make dev            # http://localhost:8000/docs
-```
-
-다른 터미널에서:
+### 1. 백엔드
 
 ```bash
-make ui             # http://localhost:1420 — 브라우저에서 UI 확인
-# 또는
-make desktop        # 실제 데스크톱 앱 (아래 시스템 요구사항 참고)
+cd backend
+uv venv                                   # 처음 한 번
+uv pip install --python .venv/bin/python -e ".[dev]"
+.venv/bin/python scripts/seed.py          # 데모 데이터 (한빛 워크스페이스)
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-로그인: `alice@example.com` / `llack-dev-password`
+`scripts/seed.py`는 멱등이라 여러 번 실행해도 안전합니다. 만들어지는 계정:
 
-프로덕션과 같은 경로(Postgres + Redis + S3)로 돌리려면:
-
-```bash
-make compose-up     # Postgres, Redis, MinIO, API
-```
-
----
-
-## 현재 상태
-
-| 영역 | 상태 | 검증 |
+| 이름 | 이메일 | 비밀번호 |
 | --- | --- | --- |
-| 백엔드 API (80+ 엔드포인트) | 동작 | pytest 169개 통과 |
-| 실시간 게이트웨이 (WebSocket) | 동작 | 종단 검증 17항목 통과 |
-| 미니앱 플랫폼 + 권한 경계 | 동작 | 종단 검증 25항목 통과 |
-| Rust 코어 (API/캐시/동기화/에이전트) | 동작 | cargo test 240개 통과 |
-| Tauri 셸 (창·트레이·알림·패널) | 코드 완성 | 이 환경에서는 링크 불가 (아래 참고) |
-| React UI | 동작 | tsc 통과 · 헤드리스 브라우저 스모크 92검사 (`make smoke-ui`) |
-| 미니앱 SDK + 예제 앱 | 동작 | 로드 및 동작 확인 |
+| 김현진 | hyunjin@hanbit.co.kr | `hanbit2026` |
+| 박지민 | jimin@hanbit.co.kr | `hanbit2026` |
+| 이채원 | chaewon@hanbit.co.kr | `hanbit2026` |
+| 최수아 | sua@hanbit.co.kr | `hanbit2026` |
+| 정우진 | woojin@hanbit.co.kr | `hanbit2026` |
 
-**Tauri 셸에 대하여**: 이 개발 환경(Amazon Linux 2023)에는 `webkit2gtk` 패키지가 없어
-데스크톱 바이너리를 링크할 수 없습니다. Rust 로직 전체를 의존성 없는 `llack-core` 크레이트로
-분리해 둔 이유가 이것입니다 — 어디서든 빌드·테스트됩니다. 셸 자체는 macOS / Windows /
-Ubuntu 에서 `make desktop` 으로 빌드하세요. 필요한 시스템 패키지는
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#데스크톱-빌드-요구사항) 에 적어두었습니다.
+시드에는 채널과 메시지, **팀 달력** 의 일정 다섯 개, 그리고 **프로젝트 보드**
+(프로젝트 세 개와 카드 열두 개)가 들어 있습니다.
 
----
-
-## 설계 의도
-
-Slack/Teams 를 쓰면서 걸렸던 것들을 어떻게 다르게 만들었는지, 그리고 **왜** 그 선택이
-구조적으로 다른지입니다.
-
-### 1. 스레드가 채널을 가리지 않는다
-
-Slack 의 스레드는 오버레이라서 열면 읽던 채널이 사라집니다. Llack 은 스레드를
-**오른쪽에 도킹된 패널**로 띄웁니다. 채널과 스레드를 동시에 봅니다.
-
-### 2. 검색이 하나다
-
-Slack 은 사람 찾기 · 채널 찾기 · 메시지 찾기가 서로 다른 UI 입니다.
-Llack 은 `⌘K` 하나에서 **채널 · 사람 · 앱 · 메시지 본문**을 한 번에 검색하고,
-결과에서 바로 행동합니다 (참여 · DM 열기 · 패널 열기 · 이동).
-카테고리를 먼저 고를 필요가 없습니다.
-
-### 3. 사내 앱이 일급 시민이다
-
-Teams 의 앱은 탭 안에 들어갑니다. Llack 은 **좌측 독에 워크스페이스와 같은 층위**로
-앱을 놓고, 채널 옆에 분할 패널로 띄웁니다. 배포 현황을 보면서 그 채널에서 이야기할 수 있습니다.
-
-팀이 앱을 만드는 비용도 낮췄습니다. API 키도, OAuth 도, 앱 전용 DB 도 필요 없습니다:
-매니페스트 하나 + 정적 HTML 하나면 됩니다. 상태 저장은 SDK 의 `llack.storage` 를 쓰세요.
-[예제 앱](examples/apps/standup) 이 전체 모양을 한 파일에 담고 있습니다.
-
-### 4. 오프라인에서 쓴 메시지가 사라지지 않는다
-
-메시지를 보낼 때 클라이언트가 먼저 ULID 와 `client_msg_id` 를 붙여 **로컬 아웃박스**에
-넣습니다. 연결이 없으면 큐에 남고, 복구되면 순서대로 전송합니다.
-서버가 `client_msg_id` 를 멱등키로 취급하므로 **재전송이 중복 게시가 되지 않습니다** —
-응답만 유실된 경우에도 그렇습니다.
-
-### 5. 이벤트 유실을 조용히 넘기지 않는다
-
-WebSocket 프레임마다 단조 증가 `seq` 가 붙습니다. 클라이언트가 번호 점프를 감지하면
-"내 화면이 불완전하다"는 사실을 알고 해당 채널을 다시 불러옵니다.
-구멍 난 대화 기록을 그럴듯하게 보여주지 않습니다.
-
-### 6. 알림 설정이 실제로 지켜진다
-
-`all` / `mentions` / `nothing` 과 음소거를 서버가 팬아웃 시점에 판단합니다.
-음소거한 채널에서 멘션당해도 데스크톱 알림이 오지 않고, 배지에는 멘션만 반영됩니다.
-클라이언트가 받아놓고 걸러내는 방식이 아닙니다.
-
----
-
-## 저장소 구조
-
-```
-llack/
-├── backend/                 FastAPI 백엔드
-│   ├── app/
-│   │   ├── core/            설정, DB, 보안, ULID, 오류, 로깅
-│   │   ├── models/          SQLAlchemy 2.0 모델
-│   │   ├── schemas/         Pydantic v2 요청·응답
-│   │   ├── services/        도메인 로직 (라우터가 얇은 이유)
-│   │   ├── realtime/        이벤트 버스, 연결 허브, 프레즌스
-│   │   └── api/v1/          라우터 (auth, channels, messages, apps, …)
-│   ├── alembic/             마이그레이션
-│   ├── scripts/             시드, 종단 검증
-│   └── tests/               169개
-│
-├── desktop/                 데스크톱 클라이언트
-│   ├── core/                ★ 순수 Rust: API·실시간·캐시·동기화·에이전트 (240개 테스트)
-│   ├── src-tauri/           얇은 Tauri 셸: 창, 트레이, 알림, IPC
-│   └── src/                 React UI
-│
-├── packages/llack-app-sdk/  미니앱 SDK (TypeScript)
-├── examples/apps/standup/   예제 미니앱 (참조 구현)
-└── docs/                    설계 문서
-```
-
-## 문서
-
-- [docs/WINDOWS.md](docs/WINDOWS.md) — 윈도우에서 실행하기 (전송 · 설치 · 확인 · 문제 해결)
-- [docs/DEPLOY.md](docs/DEPLOY.md) — 배포: 무엇이 뜨는지, 첫 부팅, 운영 루틴, 정직한 한계
-- [docs/WEB.md](docs/WEB.md) — 설치 없이 보기: 서버 없는 데모 한 파일, 또는 SSH 터널 + 브라우저 모드
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 시스템 구조, 데이터 모델, 실시간 프로토콜, 배포
-- [docs/APP_PLATFORM.md](docs/APP_PLATFORM.md) — 미니앱 플랫폼: 매니페스트, 스코프, 보안 모델
-- [docs/AGENT.md](docs/AGENT.md) — 에이전트 패널: 도구, 승인 등급, 감사 로그, **없는 것**
-- [docs/ROADMAP.md](docs/ROADMAP.md) — 이 초안에 없는 것과 다음에 할 것
-
-## 주요 명령
+기본 저장소는 SQLite(`backend/llack.db`)입니다. Postgres로 바꾸려면 환경 변수만
+바꾸면 됩니다.
 
 ```bash
-make help           # 전체 명령
-make test           # 백엔드 169개 + Rust 240개
-make smoke          # 실행 중인 서버에 대한 종단 검증
-make smoke-ui       # 헤드리스 브라우저로 UI 흐름 92검사
-make lint           # ruff + tsc + clippy
-make reset-db       # DB 초기화 후 재시드
+export DATABASE_URL="postgresql+asyncpg://user:pass@localhost/llack"
 ```
 
-윈도우는 같은 명령을 `.\llack.ps1 <명령>` 으로 실행합니다 (`.\llack.ps1 help`).
+### 2. 데스크톱 앱
 
-## 라이선스
+```bash
+cd desktop
+npm install
+npm run app:dev        # Tauri 창으로 실행
+```
 
-사내 사용을 전제로 한 비공개 코드입니다.
+브라우저로만 확인하려면 `npm run dev` (http://127.0.0.1:1420) 후 백엔드 주소는
+`VITE_API_BASE`로 지정합니다.
+
+```bash
+VITE_API_BASE=http://127.0.0.1:8000 npm run dev
+```
+
+### 3. 빌드
+
+```bash
+cd desktop
+npm run build           # 프런트엔드 번들
+npm run app:build       # 데스크톱 설치 파일 (deb, dmg, msi)
+```
+
+---
+
+## 구조
+
+```
+backend/
+  app/
+    core/         설정, DB 세션, 보안(ARGON2 + JWT), 에러 봉투, ID 발급
+    models/       SQLAlchemy 모델 (user, workspace, channel, message, file, schedule)
+    schemas/      Pydantic 응답 모델
+    api/v1/       라우터 (auth, workspaces, channels, messages, schedule, search, realtime)
+    realtime/     WebSocket 허브, 이벤트 발행, presence
+    services/     도메인 로직
+  scripts/seed.py 데모 워크스페이스
+  tests/          103개 테스트
+desktop/
+  src/
+    styles/       tokens.css (토큰 한 곳), base.css, app.css
+    lib/          API 클라이언트, WebSocket, 포맷, 달력 계산, 마크다운
+    store/        zustand 상태 관리
+    components/   화면 조각 (채널 · 스레드 · 일정 · 프로젝트 보드)
+  src-tauri/      Rust 데스크톱 셸 (창, 알림, 외부 링크)
+docs/API.md        API 계약 (프런트엔드와 백엔드가 함께 읽는 문서)
+docs/FILES.md     파일 저장 규칙 (어디에 저장되고, 무엇이 저장되며, 언제 사라지는지)
+DESIGN.md          잠긴 디자인 시스템
+```
+
+---
+
+## 기능
+
+**메시지** 실시간 전송, 편집, 삭제(소프트 삭제), 스레드(답글), 반응, 고정,
+멘션, 코드 블록, 파일 첨부, 날짜 구분선, 작성자 묶기, 읽지 않은 개수.
+**내 메시지는 오른쪽 말풍선**에 놓여 남의 말과 구분됩니다.
+
+**채널** 공개/비공개, 초대, 나가기, 주제, 멤버 목록. 새 채널은 이름과 주제에
+**함께할 사람**까지 고르고 만들 수 있습니다. 채널을 우클릭하면 방 열기,
+사람 추가, 채널 설정, 방 나가기가 뜹니다. 채널 머리글의 사람 그림에서도
+방에 데려올 수 있습니다. **직접 메시지** 1:1 대화와
+presence(온라인 · 바쁨 · 방해 금지 · 자리 비움 · 곧 돌아오겠습니다 · 오프라인).
+레일의 개인 대화를 우클릭하면 메뉴가 열리고, 그 안에서 **대화 삭제** 를
+할 수 있습니다 — 그 대화와 안의 메시지가 사라집니다.
+
+**내 상태** 왼쪽 아래 이름을 누르면 **상태 변경 ›** 서브메뉴에서 상태를
+고릅니다(온라인 · 바쁨 · 방해 금지 · 잠시 자리 비움 · 곧 돌아오겠습니다).
+
+**찾기** 워크스페이스 전체 메시지 검색(⌘K 팔레트), 채널과 사람으로의 빠른 이동.
+
+**일정** 팀 달력을 왼쪽 레일의 **일정** 에서 엽니다. 월 단위 달력에서 날짜를
+고르면 그날의 일정이 나오고, **일정 추가** 로 회의를 등록합니다. 제목 · 날짜와
+시간 · 장소 · 설명 · 참석자 · 연결할 채널을 넣을 수 있고, 다른 사람은
+**참석 / 미정 / 불참** 으로 답합니다. 만든 사람(과 관리자)만 고치거나 지울 수
+있고, 비공개 일정은 만든 사람과 초대한 사람만 봅니다. 일정을 만들면 팀
+화면에 실시간으로 반영됩니다.
+
+**프로젝트** 팀이 하는 일을 왼쪽 레일의 **프로젝트** 에서 봅니다. 왼쪽은
+프로젝트 목록이고, 오른쪽은 그 프로젝트의 **보드** — 카드가 네 칸으로
+흘러갑니다: **요청 → 할 일 → 진행 중 → 완료**. 카드를 끌어 옮기거나 카드
+옆의 › 메뉴로 옮길 수 있습니다. 프로젝트에는 이름과 **설명**을 쓰고,
+**사람**을 올려 명단을 만듭니다 — 명단에 올라간 프로젝트는 **내
+프로젝트** 에서 따로 보입니다. 카드는 담당자와 마감일을 가질 수 있고,
+카드에는 **의견**이 붙습니다. 프로젝트는 그 이야기를 나누는 **채널**을
+가리킬 수 있고, 그 채널의 머리글에서 바로 보드로 건너갈 수 있습니다.
+
+목록의 프로젝트 옆에 붙는 **내 할일** 숫자는 내가 맡은 아직 끝나지 않은
+카드 수입니다.
+
+**로드맵** — 보드 위에는 **모든 카드** 칩과 그 프로젝트의 **로드맵** 칩들이
+나란히 있습니다. 할 일은 최대 하나의 로드맵에 속합니다 — 할 일을 만들거나 고칠
+때 로드맵을 고릅니다. 로드맵을 지우면 그 안의 할 일은 보드에 그대로 남고
+연결만 끊어집니다. 새 로드맵을 만드는 길은 없습니다 — 로드맵은 팀이 정해
+주는 것이고, 앱은 고르는 것과 지우는 것만 합니다.
+
+**마일스톤** 은 “언제까지 내놓나” 입니다 — 제목과 시작일 · 종료일, 자신의 색, 설명,
+그리고 그것을 이루는 카드들을 가집니다. 카드가 붙어 있으면 진행률은 그 카드들
+중 끝난 카드의 몫으로 나오고, 카드가 없으면 직접 적어 둔 퍼센트가 보입니다.
+한 카드는 하나의 마일스톤에만 속합니다.
+
+**프로젝트 차트** 프로젝트 머리글의 기간을 누르면 그 프로젝트의
+**간트 차트** 가 모달로 열립니다. 시간축은 그 프로젝트가 차지하는 달이고,
+막대는 마일스톤의 기간과 진행률입니다. 아래로 갈수록 **카드 마감일** 은 점으로,
+**팀 일정** 은 눈금으로 표시됩니다 — 회의와 마감일이 어느 달에 몰려 있는지
+한 번에 보입니다. 차트 아래에는 같은 내용을 말로 옮긴 목록이 붙습니다:
+마일스톤의 기간 · 진행률 · 붙어 있는 카드, 그리고 그 기간의 팀 일정.
+
+**팀** 워크스페이스 초대: 관리자가 이메일로 초대 코드를 만들고, 팀원은 그 코드로
+들어옵니다. 멤버 권한(owner/admin/member).
+
+**조직 관리** 회사는 하나가 아니라 여러 조직으로 이루어집니다. 왼쪽 레일의
+**조직 관리** 에서 부서와 팀을 임의로 늘어놓고(깊이는 제한이 없습니다),
+사람을 배치하고, 각 조직의 **관리자**를 정합니다. 워크스페이스의 최초 관리자는
+생성할 때 한 명만 지정되고, 그 사람이 워크스페이스 관리자를 더 임명하거나
+조직을 계층으로 나눠 각 계층의 관리자를 두게 됩니다. 조직 관리자는 자신이
+맡은 조직과 그 아래 조직만 볼 수 있습니다 — 남의 조직은 건드릴 수 없습니다.
+
+**파일** 이미지와 PDF 를 넘어 문서까지 공유합니다 — `.txt` `.csv` `.md`,
+`.doc` `.docx` `.xls` `.xlsx` `.ppt` `.pptx`, 한글 `.hwp` `.hwpx`,
+`.odt` `.ods` `.odp`, 그리고 `.zip` `.gz`. 업로드된 파일의 형식은 **바이트가
+증명하는 것**으로 기록되고(브라우저가 말한 종류는 믿지 않습니다), 이미지는
+그대로 열어 보고 나머지는 내려받습니다. 기본 제한은 50 MB(`MAX_UPLOAD_BYTES`).
+**어디에 저장되고 무엇이 저장될 수 있는지는 백엔드가 정합니다** — 워크스페이스가
+자신의 파일을 소유하고, 워크스페이스마다 몫이 있고, 아무 메시에도 붙지 않은
+업로드는 하루 뒤에 사라집니다. 규칙 전체는
+[docs/FILES.md](docs/FILES.md) 에 있습니다.
+
+**화면** 라이트와 다크, 키보드 내비게이션, 화면이 좁을 때 접히는 사이드바,
+로딩/빈 화면/오류 상태를 모두 갖춥니다. **자리 비움** 은 내 메뉴에서 직접
+바꿉니다 — 팀에 곧바로 알려집니다.
+
+**설정** 앱 전체가 쓰는 것을 한곳에서 고치는 모달입니다. **알림**(데스크톱
+알림과 미리보기) · **외관**(화면 모드 — 밝게/어둡게/시스템 — 와 시간 표기) ·
+**계정 및 조직**(내 프로필과 소속, 로그아웃) · **파일 및 링크**(다운로드
+폴더, 파일을 열 때의 방식, 이미지 미리보기). 이름·직함·아바타·역할은 서버에,
+나머지는 이 기기에 남습니다.
+
+---
+
+## API
+
+전체 계약은 [docs/API.md](docs/API.md)에 있습니다. REST는 `/api/v1` 아래에 있고,
+실시간 이벤트는 `ws://127.0.0.1:8000/api/v1/ws?token=<access_token>` 입니다.
+
+```bash
+# 로그인
+curl -s localhost:8000/api/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"hyunjin@hanbit.co.kr","password":"hanbit2026"}'
+
+# 채널 목록
+curl -s localhost:8000/api/v1/workspaces/<workspace_id>/channels \
+  -H "authorization: Bearer <access_token>"
+```
+
+---
+
+## 디자인
+
+- 토큰은 `desktop/src/styles/tokens.css` 한 곳에만 있습니다. 색, 글꼴, 크기,
+  시간 값은 전부 여기서 나옵니다.
+- 폰트는 Latin용 Schibsted Grotesk / Instrument Sans, 한글용 Pretendard Variable,
+  시각 정보용 DM Mono.
+- 라이트와 다크는 별개의 파레토가 아니라 다크에서 파생된 한 쌍입니다.
+- 규칙, 간격 단계, 모서리 반경, 대비 기준은 [DESIGN.md](DESIGN.md)를 보세요.
+
+---
+
+## 확인하는 방법
+
+**브라우저로** — 프런트엔드만 띄우면 바로 들어갑니다. 셸만의 기능(알림,
+외부 링크, 창 상태)은 웹에서는 조용히 넘어갑니다.
+
+```bash
+make dev        # API  (127.0.0.1:8000)
+make dev-web    # 웹  (127.0.0.1:1420)
+```
+
+**실제 데스크톱 앱으로** — 데스크톱 셸까지 포함한 진짜 바이너리를 띄우고
+스크린샷을 남깁니다. 화면이 없는 서버·컨테이너에서도 됩니다.
+
+```bash
+apt-get install -y xvfb ffmpeg xdotool   # 한 번
+make desktop-headless                    # 로그인 화면까지 자동 캡처
+```
+
+```
+scripts/desktop-headless.sh [--shot out.png] [--login] [--stop]
+```
+
+- Xvfb 위에 실제 `llack` 바이너리를 띄우고 창만 잘라서 PNG로 저장합니다.
+- `--login`은 데모 계정(`hyunjin@hanbit.co.kr` / `hanbit2026`)으로 로그인합니다.
+- 앱 프로필은 `/tmp/llack-headless-home`에 격리되므로 매번 로그인 화면에서
+  시작하고, 평소 쓰는 프로필·창 상태는 건드리지 않습니다.
+- 창을 직접 조작하려면 `DISPLAY=:99`로 접속해 xdotool을 쓰세요.
+
+---
+
+## 개발 명령
+
+```bash
+cd backend
+.venv/bin/pytest -q                  # 103 passed
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+
+cd ../desktop
+npm run typecheck
+npm run test
+npm run build
+```
+
+---
+
+## 배포
+
+`backend/Dockerfile`은 백엔드 이미지입니다. SQLite는 단일 인스턴스 배포용이고,
+여러 인스턴스로 갈 때는 Postgres를 쓰세요. 데스크톱 앱은 CI에서
+`npm run app:build`로 배포합니다.

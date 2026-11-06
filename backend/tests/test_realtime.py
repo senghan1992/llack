@@ -1,352 +1,548 @@
-"""The WebSocket gateway: fan-out, auth, typing, presence and read sync."""
+"""The WebSocket contract, exercised against a real server."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from contextlib import asynccontextmanager
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
 
+import httpx
 import pytest
-from starlette.testclient import TestClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed
 
-from app.main import app
-from tests.conftest import Actor
-from tests.test_channels import _join_workspace
+from app.core.ids import MEMBER_PREFIX, new_id
+from app.models.workspace import WorkspaceMembership
 
-
-class Socket:
-    """Thin wrapper that reads typed frames with a timeout."""
-
-    def __init__(self, ws) -> None:  # noqa: ANN001
-        self._ws = ws
-
-    def send(self, type_: str, **data) -> None:  # noqa: ANN003
-        self._ws.send_text(json.dumps({"type": type_, "data": data}))
-
-    def recv(self) -> dict:
-        return json.loads(self._ws.receive_text())
-
-    def wait_for(self, type_: str, *, max_frames: int = 20) -> dict:
-        """Read frames until one matches, so unrelated events do not fail a test."""
-        for _ in range(max_frames):
-            frame = self.recv()
-            if frame["type"] == type_:
-                return frame
-        raise AssertionError(f"never received a {type_!r} frame")
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+API = "/api/v1"
 
 
-@asynccontextmanager
-async def gateway_client():  # noqa: ANN201
-    """A sync TestClient whose app gets a connection pool of its own.
-
-    The client runs the app on a worker-thread event loop. asyncpg connections
-    belong to the loop that opened them, so the pool is emptied on the way in
-    (the HTTP fixtures filled it from the test loop) and on the way out (the
-    portal loop filled it). SQLite never cared; Postgres does.
-    """
-    from app.core.db import dispose_engine
-
-    await dispose_engine()
-    try:
-        with TestClient(app) as client:
-            yield client
-    finally:
-        await dispose_engine()
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
-@asynccontextmanager
-async def connect(actor: Actor, workspace_id: str):  # noqa: ANN201
-    """Open an authenticated gateway connection and consume `hello`."""
-    # Starlette's WebSocket test client is sync, so it runs in a worker thread
-    # alongside the async HTTP client.
-    async with gateway_client() as client:
-        token = actor.tokens["access_token"]
-        with client.websocket_connect(
-            f"/api/v1/ws?token={token}&workspace_id={workspace_id}"
-        ) as ws:
-            socket = Socket(ws)
-            hello = socket.recv()
-            assert hello["type"] == "hello"
-            assert hello["data"]["user_id"] == actor.id
-            assert hello["seq"] == 1
-            yield socket
+@pytest.fixture(scope="module")
+def live_server(tmp_path_factory) -> dict:
+    """Start uvicorn in a subprocess with its own database."""
+    workdir = tmp_path_factory.mktemp("live")
+    db_path = workdir / "live.db"
+    port = _free_port()
+    env = dict(os.environ)
+    env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_path}"
+    env["SECRET_KEY"] = "live-secret-key"
+    env["UPLOAD_DIR"] = str(workdir / "uploads")
 
-
-async def test_handshake_rejects_a_bad_token(workspace: dict) -> None:
-    async with gateway_client() as client:
-        with (
-            pytest.raises(Exception),  # noqa: B017, PT011
-            client.websocket_connect("/api/v1/ws?token=not-a-real-token") as ws,
-        ):
-            ws.receive_text()
-
-
-async def test_hello_reports_the_users_workspaces(alice: Actor, workspace: dict) -> None:
-    async with gateway_client() as client:
-        token = alice.tokens["access_token"]
-        with client.websocket_connect(
-            f"/api/v1/ws?token={token}&workspace_id={workspace['id']}"
-        ) as ws:
-            hello = Socket(ws).recv()
-            assert hello["data"]["workspace_ids"] == [workspace["id"]]
-            assert hello["data"]["protocol_version"] == 1
-            assert hello["data"]["heartbeat_seconds"] > 0
-
-
-async def test_own_presence_is_echoed_for_multi_device_sync(
-    alice: Actor, workspace: dict
-) -> None:
-    """A user's other devices need to see their own presence change."""
-    async with connect(alice, workspace["id"]) as socket:
-        presence = socket.wait_for("presence.updated")
-        assert presence["data"] == {"user_id": alice.id, "presence": "active"}
-
-
-async def test_ping_pong_and_monotonic_seq(alice: Actor, workspace: dict) -> None:
-    async with connect(alice, workspace["id"]) as socket:
-        seqs = []
-        for _ in range(3):
-            socket.send("ping")
-            seqs.append(socket.wait_for("pong")["seq"])
-        assert seqs == sorted(seqs)
-        assert len(set(seqs)) == 3
-
-
-async def test_unknown_command_returns_an_error_frame(alice: Actor, workspace: dict) -> None:
-    async with connect(alice, workspace["id"]) as socket:
-        socket.send("no-such-command")
-        error = socket.wait_for("error")
-        assert error["data"]["code"] == "unknown_command"
-
-
-async def test_malformed_frame_returns_an_error_and_keeps_the_socket_open(
-    alice: Actor, workspace: dict
-) -> None:
-    async with gateway_client() as client:
-        token = alice.tokens["access_token"]
-        with client.websocket_connect(
-            f"/api/v1/ws?token={token}&workspace_id={workspace['id']}"
-        ) as ws:
-            socket = Socket(ws)
-            socket.recv()  # hello
-            ws.send_text("{not json")
-            error = socket.wait_for("error")
-            assert error["data"]["code"] == "bad_frame"
-            # Still alive.
-            socket.send("ping")
-            assert socket.wait_for("pong")
-
-
-async def test_subscribe_only_admits_channels_the_user_belongs_to(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
-    await _join_workspace(alice, bob, workspace)
-    mine = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels",
-            json={"name": "내 채널", "member_ids": [bob.id]},
-        )
-    ).json()
-    not_mine = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels",
-            json={"name": "남의 채널", "kind": "private"},
-        )
-    ).json()
-
-    async with connect(bob, workspace["id"]) as socket:
-        socket.send("subscribe", channel_ids=[mine["id"], not_mine["id"]])
-        confirmed = socket.wait_for("subscribed")
-        # The private channel Bob is not in is silently dropped.
-        assert confirmed["data"]["channel_ids"] == [mine["id"]]
-
-
-# ── Event fan-out ───────────────────────────────────────────────────────────
-#
-# The gateway tests above cover the socket protocol. These cover *routing*:
-# which topics an action publishes to, and what the payload looks like. They
-# subscribe to the event bus directly, which keeps everything in one event loop
-# (the sync WebSocket test client runs its own, so it cannot observe events
-# published by the async HTTP client).
-
-
-class Collector:
-    """Collects events published to a set of bus topics."""
-
-    def __init__(self) -> None:
-        self.events: list[tuple[str, dict]] = []
-
-    async def __call__(self, topic: str, payload: dict) -> None:
-        self.events.append((topic, payload))
-
-    def types(self) -> list[str]:
-        return [payload["type"] for _, payload in self.events]
-
-    def first(self, type_: str) -> dict:
-        for _, payload in self.events:
-            if payload["type"] == type_:
-                return payload
-        raise AssertionError(f"no {type_!r} event was published; got {self.types()}")
-
-
-@asynccontextmanager
-async def watching(*topics: str):  # noqa: ANN201
-    from app.realtime.bus import get_bus
-
-    bus = get_bus()
-    await bus.start()
-    collector = Collector()
-    for topic in topics:
-        await bus.subscribe(topic, collector)
-    try:
-        yield collector
-    finally:
-        for topic in topics:
-            await bus.unsubscribe(topic, collector)
-
-
-async def test_posting_publishes_message_created_to_the_channel_topic(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
-    from app.realtime.bus import channel_topic
-
-    await _join_workspace(alice, bob, workspace)
-    channel = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels",
-            json={"name": "실시간", "member_ids": [bob.id]},
-        )
-    ).json()
-
-    async with watching(channel_topic(channel["id"])) as events:
-        posted = await alice.post(
-            f"/channels/{channel['id']}/messages", json={"body": "실시간으로 도착"}
-        )
-        assert posted.status_code == 201
-        await asyncio.sleep(0)
-
-        event = events.first("message.created")
-        assert event["workspace_id"] == workspace["id"]
-        assert event["data"]["message"]["id"] == posted.json()["id"]
-        assert event["data"]["message"]["body"] == "실시간으로 도착"
-        assert event["data"]["message"]["author"]["id"] == alice.id
-
-
-async def test_a_mention_notifies_only_those_who_asked_for_it(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
-    """Bob sets notifications to mentions-only, so plain traffic is silent."""
-    from app.realtime.bus import user_topic
-
-    await _join_workspace(alice, bob, workspace)
-    channel = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels",
-            json={"name": "알림", "member_ids": [bob.id]},
-        )
-    ).json()
-    await bob.patch(
-        f"/channels/{channel['id']}/membership", json={"notification_level": "mentions"}
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        cwd=BACKEND_ROOT,
+        env=env,
     )
 
-    async with watching(user_topic(bob.id)) as events:
-        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "그냥 잡담"})
-        await asyncio.sleep(0)
-        assert "notification" not in events.types()
+    base_url = f"http://127.0.0.1:{port}"
+    for _ in range(150):
+        if process.poll() is not None:
+            pytest.fail("the server exited during startup")
+        try:
+            if httpx.get(f"{base_url}{API}/health", timeout=1.0).status_code == 200:
+                break
+        except httpx.HTTPError:
+            time.sleep(0.1)
+    else:
+        process.terminate()
+        pytest.fail("the server did not start in time")
 
-        await alice.post(
-            f"/channels/{channel['id']}/messages", json={"body": f"<@{bob.id}> 확인 부탁"}
+    try:
+        yield {"base_url": base_url, "db_path": db_path, "port": port}
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
+async def _add_member(live_server: dict, workspace_id: str, user_id: str) -> None:
+    engine = create_async_engine(f"sqlite+aiosqlite:///{live_server['db_path']}")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        session.add(
+            WorkspaceMembership(
+                id=new_id(MEMBER_PREFIX),
+                workspace_id=workspace_id,
+                user_id=user_id,
+                role="member",
+            )
         )
-        await asyncio.sleep(0)
-        notification = events.first("notification")
-        assert notification["data"]["channel_id"] == channel["id"]
-        assert "확인 부탁" in notification["data"]["body"]
+        await session.commit()
+    await engine.dispose()
 
 
-async def test_a_muted_channel_sends_no_notification(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
-    from app.realtime.bus import user_topic
+async def _collect(websocket, seconds: float = 1.5) -> list[dict]:
+    """Drain every event that arrives within ``seconds``."""
+    events: list[dict] = []
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while True:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            return events
+        try:
+            raw = await asyncio.wait_for(websocket.recv(), timeout=remaining)
+        except TimeoutError:
+            return events
+        events.append(json.loads(raw))
 
-    await _join_workspace(alice, bob, workspace)
-    channel = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels",
-            json={"name": "음소거", "member_ids": [bob.id]},
+
+async def _wait_for(websocket, event_type: str, deadline_seconds: float = 5.0) -> dict:
+    """Read events until one of ``event_type`` shows up."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + deadline_seconds
+    while True:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise AssertionError(f"no {event_type} event arrived")
+        raw = await asyncio.wait_for(websocket.recv(), timeout=remaining)
+        payload = json.loads(raw)
+        if payload.get("type") == event_type:
+            return payload
+
+
+async def test_websocket_delivers_hello_and_new_messages(live_server: dict) -> None:
+    async with httpx.AsyncClient(base_url=live_server["base_url"]) as http:
+        first = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "hyunjin@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "김현진",
+                    "workspace_name": "한빛",
+                },
+            )
+        ).json()
+        workspace_id = first["workspace"]["id"]
+        channel_id = (
+            await http.post(
+                f"{API}/workspaces/{workspace_id}/channels",
+                headers={"Authorization": f"Bearer {first['access_token']}"},
+                json={"name": "general", "topic": "팀 공지"},
+            )
+        ).json()["id"]
+
+        second = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "jimin@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "박지민",
+                    "workspace_name": "디자인팀",
+                },
+            )
+        ).json()
+        await _add_member(live_server, workspace_id, second["user"]["id"])
+
+        url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+        async with connect(f"{url}?token={first['access_token']}") as author_socket:
+            hello = json.loads(await asyncio.wait_for(author_socket.recv(), timeout=5))
+            assert hello["type"] == "hello"
+            assert hello["user"]["id"] == first["user"]["id"]
+
+            async with connect(f"{url}?token={second['access_token']}") as guest_socket:
+                guest_hello = json.loads(await asyncio.wait_for(guest_socket.recv(), timeout=5))
+                assert guest_hello["type"] == "hello"
+
+                posted = await http.post(
+                    f"{API}/channels/{channel_id}/messages",
+                    headers={"Authorization": f"Bearer {first['access_token']}"},
+                    json={"body": "배포 준비 끝났습니다."},
+                )
+                assert posted.status_code == 200
+
+                event = await _wait_for(guest_socket, "message.created")
+                message = event["message"]
+                assert message["id"] == posted.json()["id"]
+                assert message["body"] == "배포 준비 끝났습니다."
+                assert message["parent_id"] is None
+                assert message["author"]["name"] == "김현진"
+                assert message["author"]["id"] == first["user"]["id"]
+                assert message["reactions"] == []
+
+
+async def test_websocket_replies_carry_the_parent_id(live_server: dict) -> None:
+    async with httpx.AsyncClient(base_url=live_server["base_url"]) as http:
+        owner = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "chaewon@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "이채원",
+                    "workspace_name": "프론트",
+                },
+            )
+        ).json()
+        workspace_id = owner["workspace"]["id"]
+        headers = {"Authorization": f"Bearer {owner['access_token']}"}
+        channel_id = (
+            await http.post(
+                f"{API}/workspaces/{workspace_id}/channels",
+                headers=headers,
+                json={"name": "engineering"},
+            )
+        ).json()["id"]
+        root_id = (
+            await http.post(
+                f"{API}/channels/{channel_id}/messages",
+                headers=headers,
+                json={"body": "이거 어떠세요?"},
+            )
+        ).json()["id"]
+
+        url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+        async with connect(f"{url}?token={owner['access_token']}") as socket:
+            assert json.loads(await asyncio.wait_for(socket.recv(), timeout=5))["type"] == "hello"
+
+            reply = await http.post(
+                f"{API}/channels/{channel_id}/messages",
+                headers=headers,
+                json={"body": "답변입니다", "parent_id": root_id},
+            )
+            assert reply.status_code == 200
+
+            event = await _wait_for(socket, "message.created")
+            assert event["message"]["parent_id"] == root_id
+            assert event["message"]["id"] == reply.json()["id"]
+
+
+async def test_websocket_typing_and_presence(live_server: dict) -> None:
+    async with httpx.AsyncClient(base_url=live_server["base_url"]) as http:
+        owner = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "sua@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "최수아",
+                    "workspace_name": "기획",
+                },
+            )
+        ).json()
+        workspace_id = owner["workspace"]["id"]
+        headers = {"Authorization": f"Bearer {owner['access_token']}"}
+        channel_id = (
+            await http.post(
+                f"{API}/workspaces/{workspace_id}/channels",
+                headers=headers,
+                json={"name": "general"},
+            )
+        ).json()["id"]
+
+        guest = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "woojin@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "정우진",
+                    "workspace_name": "데브옵스",
+                },
+            )
+        ).json()
+        await _add_member(live_server, workspace_id, guest["user"]["id"])
+
+        url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+        async with connect(f"{url}?token={owner['access_token']}") as owner_socket:
+            assert (
+                json.loads(await asyncio.wait_for(owner_socket.recv(), timeout=5))["type"]
+                == "hello"
+            )
+
+            async with connect(f"{url}?token={guest['access_token']}") as guest_socket:
+                assert (
+                    json.loads(await asyncio.wait_for(guest_socket.recv(), timeout=5))["type"]
+                    == "hello"
+                )
+
+                presence = await _wait_for(owner_socket, "presence")
+                assert presence["user_id"] == guest["user"]["id"]
+                assert presence["presence"] == "online"
+
+                await guest_socket.send(
+                    json.dumps({"type": "typing", "channel_id": channel_id, "on": True})
+                )
+                typing = await _wait_for(owner_socket, "typing")
+                assert typing["channel_id"] == channel_id
+                assert typing["user_id"] == guest["user"]["id"]
+                assert typing["name"] == "정우진"
+                assert typing["on"] is True
+
+                await guest_socket.send(json.dumps({"type": "ping"}))
+                pong = json.loads(await asyncio.wait_for(guest_socket.recv(), timeout=5))
+                assert pong == {"type": "pong"}
+
+
+async def test_websocket_rejects_a_bad_token(live_server: dict) -> None:
+    url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+    with pytest.raises(ConnectionClosed) as error:
+        async with connect(f"{url}?token=not-a-real-token") as socket:
+            await asyncio.wait_for(socket.recv(), timeout=5)
+    closed = error.value
+    code = closed.rcvd.code if closed.rcvd is not None else closed.code
+    assert code == 4401
+
+
+async def test_websocket_requires_a_token(live_server: dict) -> None:
+    url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+    with pytest.raises(ConnectionClosed) as error:
+        async with connect(url) as socket:
+            await asyncio.wait_for(socket.recv(), timeout=5)
+    closed = error.value
+    code = closed.rcvd.code if closed.rcvd is not None else closed.code
+    assert code == 4401
+
+
+async def test_presence_goes_offline_when_the_last_socket_closes(live_server: dict) -> None:
+    async with httpx.AsyncClient(base_url=live_server["base_url"]) as http:
+        owner = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "presence@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "정우진",
+                    "workspace_name": "데브옵스",
+                },
+            )
+        ).json()
+        workspace_id = owner["workspace"]["id"]
+
+        guest = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "watcher@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "김현진",
+                    "workspace_name": "한빛",
+                },
+            )
+        ).json()
+        await _add_member(live_server, workspace_id, guest["user"]["id"])
+
+        url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+        async with connect(f"{url}?token={guest['access_token']}") as watcher:
+            assert json.loads(await asyncio.wait_for(watcher.recv(), timeout=5))["type"] == "hello"
+
+            async with connect(f"{url}?token={owner['access_token']}") as socket:
+                assert (
+                    json.loads(await asyncio.wait_for(socket.recv(), timeout=5))["type"] == "hello"
+                )
+                online = await _wait_for(watcher, "presence")
+                assert online["user_id"] == owner["user"]["id"]
+                assert online["presence"] == "online"
+
+            offline = await _wait_for(watcher, "presence")
+            assert offline["user_id"] == owner["user"]["id"]
+            assert offline["presence"] == "offline"
+
+
+async def test_a_second_socket_keeps_the_user_online(live_server: dict) -> None:
+    async with httpx.AsyncClient(base_url=live_server["base_url"]) as http:
+        owner = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "twosockets@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "이채원",
+                    "workspace_name": "프론트",
+                },
+            )
+        ).json()
+        workspace_id = owner["workspace"]["id"]
+
+        watcher = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "watcher2@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "박지민",
+                    "workspace_name": "디자인",
+                },
+            )
+        ).json()
+        await _add_member(live_server, workspace_id, watcher["user"]["id"])
+
+        url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+        async with connect(f"{url}?token={watcher['access_token']}") as watcher_socket:
+            assert (
+                json.loads(await asyncio.wait_for(watcher_socket.recv(), timeout=5))["type"]
+                == "hello"
+            )
+
+            async with connect(f"{url}?token={owner['access_token']}") as first:
+                assert (
+                    json.loads(await asyncio.wait_for(first.recv(), timeout=5))["type"] == "hello"
+                )
+                online = await _wait_for(watcher_socket, "presence")
+                assert online["presence"] == "online"
+
+                async with connect(f"{url}?token={owner['access_token']}") as second:
+                    assert (
+                        json.loads(await asyncio.wait_for(second.recv(), timeout=5))["type"]
+                        == "hello"
+                    )
+                    # the second socket announces the user as online again
+                    again = await _wait_for(watcher_socket, "presence")
+                    assert again["presence"] == "online"
+
+                    await first.close()
+
+                    # the remaining socket keeps the user online
+                    events = await _collect(watcher_socket, 1.5)
+                    assert not [
+                        event
+                        for event in events
+                        if event.get("type") == "presence" and event.get("presence") == "offline"
+                    ]
+
+
+async def test_read_event_clears_the_unread_counter(live_server: dict) -> None:
+    async with httpx.AsyncClient(base_url=live_server["base_url"]) as http:
+        owner = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "reader@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "최수아",
+                    "workspace_name": "기획",
+                },
+            )
+        ).json()
+        workspace_id = owner["workspace"]["id"]
+        headers = {"Authorization": f"Bearer {owner['access_token']}"}
+        channel_id = (
+            await http.post(
+                f"{API}/workspaces/{workspace_id}/channels",
+                headers=headers,
+                json={"name": "general"},
+            )
+        ).json()["id"]
+
+        other = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "writer@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "박지민",
+                    "workspace_name": "디자인",
+                },
+            )
+        ).json()
+        await _add_member(live_server, workspace_id, other["user"]["id"])
+        posted = await http.post(
+            f"{API}/channels/{channel_id}/messages",
+            headers={"Authorization": f"Bearer {other['access_token']}"},
+            json={"body": "읽어주세요"},
         )
-    ).json()
-    await bob.patch(f"/channels/{channel['id']}/membership", json={"is_muted": True})
+        message_id = posted.json()["id"]
 
-    async with watching(user_topic(bob.id)) as events:
-        await alice.post(
-            f"/channels/{channel['id']}/messages", json={"body": f"<@{bob.id}> 봐주세요"}
+        url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+        async with connect(f"{url}?token={owner['access_token']}") as socket:
+            assert json.loads(await asyncio.wait_for(socket.recv(), timeout=5))["type"] == "hello"
+
+            channels = (
+                await http.get(f"{API}/workspaces/{workspace_id}/channels", headers=headers)
+            ).json()
+            assert channels[0]["unread_count"] == 1
+
+            await socket.send(
+                json.dumps({"type": "read", "channel_id": channel_id, "message_id": message_id})
+            )
+            unread = await _wait_for(socket, "unread")
+            assert unread["channel_id"] == channel_id
+            assert unread["count"] == 0
+
+
+async def test_websocket_carries_a_changed_profile(live_server: dict) -> None:
+    """A new face or a new colour reaches the rest of the team at once."""
+    async with httpx.AsyncClient(base_url=live_server["base_url"]) as http:
+        owner = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "profilepick@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "이채원",
+                    "workspace_name": "프론트",
+                },
+            )
+        ).json()
+        workspace_id = owner["workspace"]["id"]
+        headers = {"Authorization": f"Bearer {owner['access_token']}"}
+        await http.post(
+            f"{API}/workspaces/{workspace_id}/channels",
+            headers=headers,
+            json={"name": "general"},
         )
-        await asyncio.sleep(0)
-        assert "notification" not in events.types()
 
+        guest = (
+            await http.post(
+                f"{API}/auth/signup",
+                json={
+                    "email": "profilemate@hanbit.co.kr",
+                    "password": "hanbit2026",
+                    "name": "김민",
+                    "workspace_name": "백엔드",
+                },
+            )
+        ).json()
+        await _add_member(live_server, workspace_id, guest["user"]["id"])
 
-async def test_reactions_and_edits_publish_to_the_channel(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
-    from app.realtime.bus import channel_topic
+        url = f"ws://127.0.0.1:{live_server['port']}{API}/ws"
+        async with connect(f"{url}?token={owner['access_token']}") as owner_socket:
+            assert (
+                json.loads(await asyncio.wait_for(owner_socket.recv(), timeout=5))["type"]
+                == "hello"
+            )
 
-    await _join_workspace(alice, bob, workspace)
-    channel = (
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels",
-            json={"name": "반응", "member_ids": [bob.id]},
-        )
-    ).json()
-    message = (
-        await alice.post(f"/channels/{channel['id']}/messages", json={"body": "원본"})
-    ).json()
+            async with connect(f"{url}?token={guest['access_token']}") as guest_socket:
+                assert (
+                    json.loads(await asyncio.wait_for(guest_socket.recv(), timeout=5))["type"]
+                    == "hello"
+                )
+                await _wait_for(owner_socket, "presence")
 
-    async with watching(channel_topic(channel["id"])) as events:
-        await bob.put(f"/messages/{message['id']}/reactions", json={"emoji": "👀"})
-        await alice.patch(f"/messages/{message['id']}", json={"body": "수정됨"})
-        await alice.delete(f"/messages/{message['id']}")
-        await asyncio.sleep(0)
+                changed = await http.patch(
+                    f"{API}/me",
+                    headers={"Authorization": f"Bearer {guest['access_token']}"},
+                    json={"avatar_color": "#295e90", "title": "데브옵스"},
+                )
+                assert changed.status_code == 200
+                assert changed.json()["avatar_color"] == "#295e90"
 
-        assert events.first("reaction.added")["data"]["emoji"] == "👀"
-        assert events.first("message.updated")["data"]["message"]["body"] == "수정됨"
-        assert events.first("message.deleted")["data"]["message_id"] == message["id"]
-
-
-async def test_a_public_channel_is_announced_workspace_wide_but_a_private_one_is_not(
-    alice: Actor, bob: Actor, workspace: dict
-) -> None:
-    from app.realtime.bus import workspace_topic
-
-    await _join_workspace(alice, bob, workspace)
-
-    async with watching(workspace_topic(workspace["id"])) as events:
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels", json={"name": "공개", "kind": "public"}
-        )
-        await asyncio.sleep(0)
-        assert events.first("channel.created")["data"]["channel"]["name"] == "공개"
-
-    async with watching(workspace_topic(workspace["id"])) as events:
-        await alice.post(
-            f"/workspaces/{workspace['id']}/channels", json={"name": "비밀", "kind": "private"}
-        )
-        await asyncio.sleep(0)
-        # A private channel must not be advertised to the whole workspace.
-        assert "channel.created" not in events.types()
-
-
-async def test_installing_an_app_is_announced_to_the_workspace(
-    alice: Actor, workspace: dict
-) -> None:
-    from app.realtime.bus import workspace_topic
-    from tests.test_apps import _publish
-
-    app_row = await _publish(alice, workspace)
-
-    async with watching(workspace_topic(workspace["id"])) as events:
-        await alice.post(
-            f"/workspaces/{workspace['id']}/apps/{app_row['id']}/install", json={}
-        )
-        await asyncio.sleep(0)
-        event = events.first("app.installed")
-        assert event["data"]["installation"]["app"]["slug"] == "standup"
+                updated = await _wait_for(owner_socket, "user.updated")
+                assert updated["user"]["id"] == guest["user"]["id"]
+                assert updated["user"]["avatar_color"] == "#295e90"
+                assert updated["user"]["title"] == "데브옵스"

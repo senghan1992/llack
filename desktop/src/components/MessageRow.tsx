@@ -1,464 +1,688 @@
-import { useMemo, useState } from "react";
-
-import { formatBytes, formatTime } from "@/lib/format";
-import { api } from "@/lib/ipc";
-import { renderMessage } from "@/lib/markdown";
-import type { Message } from "@/lib/types";
-import { useApp } from "@/store/app";
-
-import { AttachmentImage, isPreviewableImage } from "./AttachmentImage";
-import { Avatar } from "./Avatar";
-import { EmojiPicker } from "./EmojiPicker";
-import { MessageBlocks, isInlineVideo } from "./MessageBlocks";
-import { SaveMenu } from "./SaveMenu";
-import { VideoAttachment } from "./VideoAttachment";
 import {
-  IconBookmark,
-  IconEdit,
-  IconFile,
-  IconImage,
-  IconPin,
-  IconReply,
-  IconShare,
-  IconSmile,
-  IconTrash,
-} from "./Icon";
-import { ShareMessage } from "./ShareMessage";
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type MouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  Copy,
+  CornerUpLeft,
+  Image as ImageIcon,
+  MessageSquare,
+  MoreHorizontal,
+  Paperclip,
+  Pencil,
+  Pin,
+  Smile,
+  Trash2,
+} from "lucide-react";
+import { Avatar } from "./Avatar";
+import { Menu } from "./Menu";
+import { formatBytes, formatTime } from "../lib/format";
+import { fileUrl } from "../lib/api";
+import { fetchFile, saveFile } from "../lib/desktop";
+import { useSettings } from "../lib/settings";
+import { QUICK_REACTIONS, renderBody } from "../lib/markdown";
+import { useStore, type ReplyScope } from "../store/useStore";
+import type { FileRef, Member, Message, Reaction } from "../lib/types";
 
-const QUICK_REACTIONS = ["👍", "🎉", "👀", "✅"];
-
-interface MessageRowProps {
+interface Props {
   message: Message;
   grouped: boolean;
-  /** Thread replies render slightly tighter and without the reply affordance. */
-  inThread?: boolean;
+  own: boolean;
+  onOpenThread: (message: Message) => void;
+  onReact: (message: Message, emoji: string) => void;
+  onEdit: (message: Message, body: string) => void;
+  onDelete: (message: Message) => void;
+  onPin: (message: Message) => void;
+  /** Where an answer to this message is written. */
+  replyScope?: ReplyScope;
+  hideThread?: boolean;
+  /** Put the avatar on the name line instead of in a column of its own. */
+  flat?: boolean;
 }
 
-export function MessageRow({ message, grouped, inThread = false }: MessageRowProps) {
-  const me = useApp((state) => state.me);
-  const people = useApp((state) => state.people);
-  const channels = useApp((state) => state.channels);
-  const presence = useApp((state) => state.presence);
-  const toggleReaction = useApp((state) => state.toggleReaction);
-  const openThread = useApp((state) => state.openThread);
-  const editMessage = useApp((state) => state.editMessage);
-  const deleteMessage = useApp((state) => state.deleteMessage);
-  const openChannel = useApp((state) => state.openChannel);
-  const revealMessage = useApp((state) => state.revealMessage);
+/** A quoted message is a line, never a paragraph. */
+function snippet(body: string, limit = 60): string {
+  const flat = body.replace(/\s+/g, " ").trim();
+  return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+}
 
+/** The people behind a reaction, in the order they pressed it. */
+function reactorNames(ids: string[], members: Member[]): string[] {
+  return ids
+    .map((id) => members.find((member) => member.user.id === id)?.user.name)
+    .filter((name): name is string => Boolean(name));
+}
+
+/** The gap between a message's words and the tools that act on them. */
+const TOOL_GAP = 8;
+
+/** One line of a message's words. */
+interface Line {
+  /** The middle of the line, vertically. */
+  mid: number;
+  /** The right edge of the line's ink. */
+  right: number;
+}
+
+/**
+ * The last line of ink in an element: where it sits and where its words
+ * end. Measured from the last character that is not whitespace, so a
+ * trailing space or a final line break cannot push the tools away from
+ * the words they belong to.
+ */
+function lastInkLine(el: HTMLElement): Line | null {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+  for (let n = nodes.length - 1; n >= 0; n--) {
+    const node = nodes[n];
+    const text = node.nodeValue ?? "";
+    for (let i = text.length - 1; i >= 0; i--) {
+      if (!/\S/.test(text[i])) continue;
+      const range = document.createRange();
+      range.setStart(node, i);
+      range.setEnd(node, i + 1);
+      const rect = range.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+      return {
+        mid: (rect.top + rect.bottom) / 2,
+        right: rect.right,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * The first line of a message's words: where it sits vertically. Only the
+ * band is wanted here, so the bands of the laid-out text are enough.
+ */
+function firstLineBand(el: HTMLElement): number | null {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  let top = Infinity;
+  let mid = 0;
+  for (const rect of Array.from(range.getClientRects())) {
+    if (rect.height <= 0 || rect.width <= 0) continue;
+    if (rect.top < top) {
+      top = rect.top;
+      mid = (rect.top + rect.bottom) / 2;
+    }
+  }
+  return Number.isFinite(top) ? mid : null;
+}
+
+/**
+ * The end of a message that carries no words: where its files stop. A
+ * picture still has an edge the tools can stand against.
+ */
+function lastFileEdge(row: HTMLElement): Line | null {
+  const files = row.querySelectorAll<HTMLElement>(".msg__file");
+  const last = files[files.length - 1];
+  if (!last) return null;
+  const rect = last.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return null;
+  return {
+    mid: (rect.top + rect.bottom) / 2,
+    right: rect.right,
+  };
+}
+
+/** Where a message's tools sit, relative to the row that holds them. */
+interface Spot {
+  left: number;
+  top: number;
+}
+
+/**
+ * The tools belong to the message they act on, so they stand against it,
+ * on the side that faces the middle of the conversation: just past the last
+ * word for someone else's message, just before the bubble for your own. The
+ * words are measured, because where they end depends on the width of the
+ * pane and on the length of the message.
+ *
+ * Where the pane is too narrow to hold them beside the message, they float
+ * above the row instead — still on the message's own side of the pane.
+ */
+function measureSpot(row: HTMLElement, tools: HTMLElement, own: boolean): Spot {
+  const rowBox = row.getBoundingClientRect();
+  const style = getComputedStyle(row);
+  const contentLeft = rowBox.left + (parseFloat(style.paddingLeft) || 0);
+  const contentRight = rowBox.right - (parseFloat(style.paddingRight) || 0);
+  const width = tools.offsetWidth;
+  const height = tools.offsetHeight;
+  const body = row.querySelector<HTMLElement>(".msg__body");
+  const bubble = row.querySelector<HTMLElement>(".msg__bubble");
+
+  // Where the tools would sit if the pane had room for them there.
+  let left: number;
+  let band: number;
+  if (own) {
+    // Your own words travel in a bubble against the right of the pane, so
+    // the tools stand on the paper to the bubble's left. While the message
+    // is being edited the bubble still holds the textarea, so they wait
+    // there too.
+    const bubbleBox = bubble ? bubble.getBoundingClientRect() : null;
+    const first = body ? firstLineBand(body) : null;
+    left = bubbleBox ? bubbleBox.left - TOOL_GAP - width : contentRight - width;
+    band = first != null ? first - height / 2 : bubbleBox?.top ?? rowBox.top;
+  } else {
+    // Just past the last word, so the tools never cover them. A message
+    // with nothing but files ends at its last file instead.
+    const last = body ? lastInkLine(body) : null;
+    const edge = last ?? lastFileEdge(row);
+    left = edge ? edge.right + TOOL_GAP : contentLeft;
+    band = edge ? edge.mid - height / 2 : rowBox.top;
+  }
+
+  if (left < contentLeft || left + width > contentRight) {
+    // No room beside the message: the tools float above the row, at the
+    // edge their own message reaches.
+    const edge = own ? contentRight - width : left;
+    return {
+      left: Math.round(
+        Math.min(Math.max(edge, contentLeft), contentRight - width) - rowBox.left,
+      ),
+      top: -13,
+    };
+  }
+  return { left: Math.round(left - rowBox.left), top: Math.round(band - rowBox.top) };
+}
+
+export function MessageRow({
+  message,
+  grouped,
+  own,
+  onOpenThread,
+  onReact,
+  onEdit,
+  onDelete,
+  onPin,
+  replyScope = "channel",
+  hideThread = false,
+  flat = false,
+}: Props) {
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
   const [editing, setEditing] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [pickingEmoji, setPickingEmoji] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(message.body);
-  const refreshChannel = useApp((state) => state.refreshChannel);
-  const reportError = useApp((state) => state.reportError);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const rowRef = useRef<HTMLElement>(null);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  const setReplyTo = useStore((s) => s.setReplyTo);
+  const members = useStore((s) => s.members);
+  const toast = useStore((s) => s.toast);
+  const settings = useSettings();
+  const [tip, setTip] = useState<{
+    emoji: string;
+    anchor: HTMLButtonElement;
+    left: number;
+    top: number;
+    below: boolean;
+  } | null>(null);
 
-  const togglePin = async () => {
-    try {
-      await api.setPinned(message.id, !message.is_pinned);
-      await refreshChannel(message.channel_id);
-    } catch (error) {
-      reportError(error, "고정 상태를 바꾸지 못했습니다.");
-    }
-  };
+  const deleted = Boolean(message.deleted_at);
 
-  const html = useMemo(
-    () =>
-      renderMessage(message.body, {
-        userName: (id) => people.get(id)?.display_name,
-        channelName: (id) =>
-          channels.find((channel) => channel.id === id)?.name ?? undefined,
-        viewerId: me?.id,
-      }),
-    [message.body, people, channels, me?.id],
-  );
-
-  const author = message.author;
-  const isMine = author?.id === me?.id;
-  const mentionsMe = me
-    ? message.mentions_everyone || message.mentioned_user_ids.includes(me.id)
-    : false;
-
-  // "김앨리스 님이 참여했습니다" — a line of context, not a person speaking.
-  if (message.kind === "system") {
-    return (
-      <article className="message message-system" data-message-id={message.id}>
-        <div className="message-gutter" />
-        <div className="message-content">
-          <span>{message.body}</span>
-          <time dateTime={message.created_at}>
-            {formatTime(message.created_at, me?.timezone)}
-          </time>
-        </div>
-      </article>
-    );
-  }
-
-  if (message.deleted_at) {
-    return (
-      <article className="message message-deleted" data-message-id={message.id}>
-        <div className="message-gutter" />
-        <div className="message-content">
-          <em>삭제된 메시지입니다.</em>
-          {/* The replies outlive their root. Without this the thread was
-              unreachable — the data stayed, the door vanished. */}
-          {!inThread && message.reply_count > 0 ? (
-            <button
-              type="button"
-              className="thread-summary"
-              onClick={() => void openThread(message.id)}
-            >
-              답글 {message.reply_count}개
-            </button>
-          ) : null}
-        </div>
-      </article>
-    );
-  }
-
-  const submitEdit = async (event: React.FormEvent) => {
+  /**
+   * 파일을 눌렀을 때. 설정이 “폴더에 저장”이고 폴더가 있으면 그곳에
+   * 내려받아 넣고, 그렇지 않으면 원래 위치에서 열린다.
+   */
+  const openFile = async (event: MouseEvent<HTMLAnchorElement>, file: FileRef) => {
+    const folder = settings.downloadFolder;
+    if (settings.fileOpen !== "save" || !folder) return;
     event.preventDefault();
-    const next = draft.trim();
-    setEditing(false);
-    if (next && next !== message.body) {
-      await editMessage(message.id, next);
-    } else {
-      setDraft(message.body);
+    try {
+      const bytes = await fetchFile(fileUrl(file.url));
+      await saveFile(folder, file.name, bytes);
+      toast(`${file.name} 저장했습니다`);
+    } catch {
+      toast("파일을 저장하지 못했습니다");
     }
   };
+
+  // The quote names the message it answers; clicking it walks back to it.
+  // In a thread the root is already right above, so quoting it is noise.
+  const quote =
+    replyScope === "thread" && message.reply_to_id === message.parent_id
+      ? null
+      : message.reply_to;
+  const jumpToQuote = () => {
+    if (!quote) return;
+    const node = document.getElementById(quote.id);
+    if (!node) return;
+    // The scroller is walked by hand: the browser's own scrollIntoView can
+    // settle on the window instead of the list the message lives in.
+    const scroller = node.closest<HTMLElement>(".scroll");
+    if (scroller) {
+      const box = node.getBoundingClientRect();
+      const view = scroller.getBoundingClientRect();
+      const top =
+        scroller.scrollTop +
+        (box.top - view.top) -
+        (scroller.clientHeight - box.height) / 2;
+      scroller.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    } else {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    node.classList.add("msg--pointed");
+    window.setTimeout(() => node.classList.remove("msg--pointed"), 1400);
+  };
+
+  /**
+   * The tools are placed against the message they act on, so they follow its
+   * words rather than the row's far edge. The measurement waits for the
+   * pointer: one row at a time, and only when the tools are about to show.
+   */
+  const placeTools = useCallback(() => {
+    const row = rowRef.current;
+    const tools = toolsRef.current;
+    if (!row || !tools) return;
+    const spot = measureSpot(row, tools, own);
+    tools.style.left = `${spot.left}px`;
+    tools.style.top = `${spot.top}px`;
+    tools.style.right = "auto";
+    // Only now do they belong where they are: the reveal waits for this,
+    // so they never appear at the row's far edge first.
+    tools.dataset.placed = "true";
+  }, [own]);
+
+  // A row under the pointer is watched: when its words move — the pane
+  // narrowed, an edit made them longer — the tools move with them.
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const observer = new ResizeObserver(() => {
+      if (row.matches(":hover")) placeTools();
+    });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [placeTools]);
+
+  // Who pressed it: a reaction is a number until you ask who.
+  const nameOf = (reaction: Reaction): string => {
+    const names = reactorNames(reaction.user_ids, members);
+    if (!names.length) return `${reaction.count}명이 반응했습니다`;
+    if (names.length > 5) return `${names.slice(0, 5).join(", ")} 외 ${names.length - 5}명`;
+    return names.join(", ");
+  };
+
+  const showTip = (
+    event: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLButtonElement>,
+    reaction: Reaction,
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    // The list scrolls: there may be no room above the chip.
+    const below = rect.top < 120;
+    setTip({
+      emoji: reaction.emoji,
+      anchor: event.currentTarget,
+      left: rect.left + rect.width / 2,
+      top: below ? rect.bottom + 8 : rect.top - 8,
+      below,
+    });
+  };
+
+  // The tip names who pressed the reaction as it stands now, not as it stood
+  // when the pointer landed on the chip: pressing it again, or joining it,
+  // shows up in the open tip at once.
+  const tipReaction = tip
+    ? message.reactions.find((reaction) => reaction.emoji === tip.emoji)
+    : undefined;
+
+  // Chips shift when a reaction is added or removed, so the tip is measured
+  // again whenever the reaction set changes.
+  useLayoutEffect(() => {
+    const anchor = tip?.anchor;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const below = rect.top < 120;
+    const left = rect.left + rect.width / 2;
+    const top = below ? rect.bottom + 8 : rect.top - 8;
+    setTip((prev) =>
+      prev && (prev.left !== left || prev.top !== top || prev.below !== below)
+        ? { ...prev, left, top, below }
+        : prev,
+    );
+  }, [tip?.anchor, message.reactions]);
 
   return (
     <article
-      className={[
-        "message",
-        grouped ? "is-grouped" : "",
-        mentionsMe ? "is-mention" : "",
-        message.kind === "app" ? "is-app" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      data-message-id={message.id}
+      ref={rowRef}
+      onPointerEnter={placeTools}
+      className={`msg${grouped ? " msg--grouped" : ""}${flat ? " msg--flat" : ""}${own ? " msg--mine" : ""}`}
+      id={message.id}
     >
-      <div className="message-gutter">
-        {grouped ? (
-          <time className="message-hover-time" dateTime={message.created_at}>
-            {formatTime(message.created_at, me?.timezone)}
-          </time>
-        ) : author ? (
-          <Avatar
-            id={author.id}
-            name={author.display_name}
-            avatarUrl={author.avatar_url}
-            size={28}
-            presence={author.is_bot ? undefined : presence.get(author.id)}
-            isBot={author.is_bot}
-          />
-        ) : (
-          <Avatar id={message.id} name="?" size={28} />
-        )}
-      </div>
+      {flat || own ? null : (
+        <div className="msg__gutter">
+          {grouped ? (
+            <span className="msg__stamp" aria-hidden="true">
+              {formatTime(message.created_at)}
+            </span>
+          ) : (
+            <Avatar user={message.author} size="md" title={message.author.name} />
+          )}
+        </div>
+      )}
 
-      <div className="message-content">
-        {!grouped ? (
-          <header className="message-header">
-            <strong>{author?.display_name ?? "알 수 없는 사용자"}</strong>
-            {author?.is_bot ? <span className="tag-bot">앱</span> : null}
-            <time dateTime={message.created_at}>
-              {formatTime(message.created_at, me?.timezone)}
-            </time>
-            {message.is_pinned ? (
-              <span className="tag-pin">
-                <IconPin size={11} />
-                고정
-              </span>
+      <div className="msg__stack">
+        {!grouped && !own ? (
+          <div className="msg__head">
+            {flat ? (
+              <Avatar user={message.author} size="md" title={message.author.name} />
             ) : null}
-          </header>
+            <button type="button" className="msg__author">
+              {message.author.name}
+            </button>
+            <time className="msg__time" dateTime={message.created_at}>
+              {formatTime(message.created_at)}
+            </time>
+            {message.edited_at ? <span className="msg__edited">수정됨</span> : null}
+          </div>
         ) : null}
 
-        {editing ? (
-          <form className="message-edit" onSubmit={submitEdit}>
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              rows={Math.min(10, draft.split("\n").length + 1)}
-              autoFocus
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  setEditing(false);
-                  setDraft(message.body);
-                }
-                // Same contract as the composer: Enter saves, Shift+Enter
-                // newlines. Enter-as-newline here while Enter-sends there
-                // meant every edit ended with a stray blank line.
-                if (event.key === "Enter" && !event.shiftKey) {
-                  void submitEdit(event);
-                }
-              }}
-            />
-            <div className="message-edit-actions">
-              <button type="submit">저장</button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditing(false);
-                  setDraft(message.body);
+        <div
+          className={`msg__bubble${own && !deleted && !editing ? " msg__bubble--mine" : ""}`}
+        >
+          {deleted ? (
+            <p className="msg__body msg__deleted">삭제된 메시지입니다.</p>
+          ) : editing ? (
+            <div className="u-mt-1">
+              <textarea
+                className="field__input u-h-auto u-minh-72 u-full u-py-2"
+                value={draft}
+                autoFocus
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    onEdit(message, draft);
+                    setEditing(false);
+                  }
+                  if (event.key === "Escape") {
+                    setDraft(message.body);
+                    setEditing(false);
+                  }
                 }}
-              >
-                취소
-              </button>
-              <span className="hint">Enter 로 저장 · Shift+Enter 줄바꿈 · Esc 취소</span>
-            </div>
-          </form>
-        ) : (
-          <div
-            className="message-body"
-            // Safe: `renderMessage` escapes all user input before building tags.
-            dangerouslySetInnerHTML={{ __html: html }}
-            onClick={(event) => {
-              const target = event.target as HTMLElement;
-              if (target.classList.contains("code-copy")) {
-                const code = target.parentElement?.querySelector("pre")?.textContent ?? "";
-                void navigator.clipboard?.writeText(code).then(() => {
-                  target.textContent = "복사됨";
-                  window.setTimeout(() => {
-                    target.textContent = "복사";
-                  }, 1_500);
-                });
-                return;
-              }
-              const channelId = target.dataset.channelId;
-              const messageId = target.dataset.messageId;
-              if (channelId) {
-                event.preventDefault();
-                if (messageId) void revealMessage(channelId, messageId);
-                else void openChannel(channelId);
-              }
-            }}
-          />
-        )}
-
-        {message.edited_at ? <span className="message-edited">(수정됨)</span> : null}
-
-        <MessageBlocks message={message} />
-
-        {message.attachments.length > 0 ? (
-          <ul className="attachments">
-            {message.attachments.map((file) => (
-              <li key={file.id}>
-                {/* The image, when it loads, sits above the chip; the chip
-                    stays as the download affordance and as the whole story
-                    when the preview cannot load. */}
-                {isPreviewableImage(file) ? (
-                  <AttachmentImage
-                    file={file}
-                    gallery={message.attachments.filter(isPreviewableImage)}
-                  />
-                ) : null}
-                {isInlineVideo(file) && file.scan_status !== "infected" ? (
-                  <VideoAttachment file={file} />
-                ) : null}
+                aria-label="메시지 수정"
+              />
+              <div className="u-mt-2 u-row u-row--center u-gap-2">
                 <button
                   type="button"
-                  className="attachment"
+                  className="btn btn--primary btn--sm"
                   onClick={() => {
-                    void api.downloadFile(file.id, file.filename).catch(() => {
-                      /* surfaced by the store's banner on the next action */
-                    });
+                    onEdit(message, draft);
+                    setEditing(false);
                   }}
-                  title={`${file.filename} 내려받기`}
                 >
-                  <span className="attachment-icon">
-                    {file.mime_type.startsWith("image/") ? (
-                      <IconImage size={14} />
-                    ) : (
-                      <IconFile size={14} />
-                    )}
+                  저장
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--sm"
+                  onClick={() => {
+                    setDraft(message.body);
+                    setEditing(false);
+                  }}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {quote ? (
+                <button
+                  type="button"
+                  className="msg__quote"
+                  onClick={jumpToQuote}
+                  title="원문으로 이동"
+                >
+                  <CornerUpLeft size={12} aria-hidden="true" />
+                  <span className="msg__quote-name">
+                    {quote.deleted ? "삭제된 메시지" : quote.author_name}
                   </span>
-                  <span className="attachment-name">{file.filename}</span>
-                  <span className="attachment-size">{formatBytes(file.size_bytes)}</span>
-                  {file.scan_status === "pending" ? (
-                    <span className="attachment-scan is-pending" title="바이러스 검사 중">
-                      검사 중
-                    </span>
-                  ) : file.scan_status === "infected" ? (
-                    <span className="attachment-scan is-infected" title="악성 코드가 발견되어 차단됨">
-                      차단됨
-                    </span>
-                  ) : file.scan_status === "clean" ? (
-                    <span className="attachment-scan is-clean" title="바이러스 검사 통과">
-                      안전
-                    </span>
+                  {!quote.deleted && quote.body ? (
+                    <span className="msg__quote-body">{snippet(quote.body)}</span>
                   ) : null}
                 </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+              ) : null}
+              <div
+                className="msg__body"
+                dangerouslySetInnerHTML={{ __html: renderBody(message.body) }}
+              />
+            </>
+          )}
 
-        {message.reactions.length > 0 ? (
-          <ul className="reactions">
-            {message.reactions.map((reaction) => (
-              <li key={reaction.emoji}>
-                <button
-                  type="button"
-                  className={reaction.me ? "reaction is-mine" : "reaction"}
-                  onClick={() => void toggleReaction(message.id, reaction.emoji)}
-                  title={reaction.user_ids
-                    .map((id) => people.get(id)?.display_name ?? "사용자")
-                    .join(", ")}
+          {own && !deleted && !editing ? (
+            <div className="msg__when">
+              <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
+              {message.edited_at ? <span className="msg__edited">수정됨</span> : null}
+            </div>
+          ) : null}
+        </div>
+
+        {message.attachments.length ? (
+          <div className="msg__files">
+            {message.attachments.map((file) =>
+              settings.imagePreview && file.mime.startsWith("image/") ? (
+                <a
+                  key={file.id}
+                  className="msg__file"
+                  href={fileUrl(file.url)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  onClick={(event) => void openFile(event, file)}
                 >
-                  <span>{reaction.emoji}</span>
-                  <span>{reaction.count}</span>
-                </button>
-              </li>
-            ))}
-            <li>
+                  <img src={fileUrl(file.url)} alt={file.name} />
+                </a>
+              ) : (
+                <a
+                  key={file.id}
+                  className="msg__file u-row u-row--center u-gap-2 u-px-3 u-py-2 u-small"
+                  href={fileUrl(file.url)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  onClick={(event) => void openFile(event, file)}
+                >
+                  {file.mime.startsWith("image/") ? (
+                    <ImageIcon size={13} aria-hidden="true" />
+                  ) : (
+                    <Paperclip size={13} aria-hidden="true" />
+                  )}
+                  <span className="u-truncate">{file.name}</span>
+                  <span className="u-tiny u-muted">{formatBytes(file.size)}</span>
+                </a>
+              ),
+            )}
+          </div>
+        ) : null}
+
+        {message.reactions.length ? (
+          <div className="msg__reactions">
+            {message.reactions.map((reaction) => (
               <button
+                key={reaction.emoji}
                 type="button"
-                className="reaction reaction-add"
-                onClick={() => setPickingEmoji(true)}
-                title="다른 반응 추가"
-                aria-label="다른 반응 추가"
+                className={`reaction${reaction.me ? " reaction--mine" : ""}`}
+                onClick={() => onReact(message, reaction.emoji)}
+                onMouseEnter={(event) => showTip(event, reaction)}
+                onMouseLeave={() => setTip(null)}
+                onFocus={(event) => showTip(event, reaction)}
+                onBlur={() => setTip(null)}
+                aria-pressed={reaction.me}
+                aria-describedby={tipReaction && tip?.emoji === reaction.emoji ? "reactiontip" : undefined}
+                aria-label={`${reaction.emoji} ${reaction.count}명 반응: ${nameOf(reaction)}`}
               >
-                <IconSmile size={13} />
+                <span aria-hidden="true">{reaction.emoji}</span>
+                <span className="reaction__count">{reaction.count}</span>
               </button>
-            </li>
-          </ul>
-        ) : null}
-
-        {saving ? (
-          <div className="emoji-anchor">
-            <SaveMenu message={message} onClose={() => setSaving(false)} />
+            ))}
           </div>
         ) : null}
 
-        {pickingEmoji ? (
-          <div className="emoji-anchor">
-            <EmojiPicker
-              label="반응 추가"
-              onClose={() => setPickingEmoji(false)}
-              onPick={(emoji) => {
-                setPickingEmoji(false);
-                void toggleReaction(message.id, emoji);
-              }}
-            />
-          </div>
-        ) : null}
-
-        {!inThread && message.reply_count > 0 ? (
-          <button
-            type="button"
-            className="thread-summary"
-            onClick={() => void openThread(message.id)}
-          >
+        {message.reply_count > 0 && !hideThread ? (
+          <button type="button" className="msg__thread" onClick={() => onOpenThread(message)}>
+            <MessageSquare size={13} aria-hidden="true" />
             답글 {message.reply_count}개
           </button>
         ) : null}
       </div>
 
-      <div className="message-actions" role="group" aria-label="메시지 작업">
-        {QUICK_REACTIONS.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => void toggleReaction(message.id, emoji)}
-            title={`${emoji} 반응`}
-          >
-            {emoji}
-          </button>
-        ))}
+      <div
+        ref={toolsRef}
+        className="msg__tools"
+        role="group"
+        aria-label="메시지 동작"
+        onFocus={placeTools}
+      >
         <button
           type="button"
-          onClick={() => setPickingEmoji((open) => !open)}
-          title="다른 이모지로 반응"
-          aria-label="다른 이모지로 반응"
-          aria-expanded={pickingEmoji}
+          className="iconbtn"
+          aria-label="반응 추가"
+          aria-expanded={Boolean(emojiAnchor)}
+          onClick={(event) => setEmojiAnchor(event.currentTarget)}
         >
-          <IconSmile size={13} />
+          <Smile size={15} aria-hidden="true" />
         </button>
-        {!inThread ? (
+        <button
+          type="button"
+          className="iconbtn"
+          aria-label="스레드로 답글"
+          onClick={() => onOpenThread(message)}
+        >
+          <MessageSquare size={15} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="iconbtn"
+          aria-label="이 메시지에 답장"
+          onClick={() => setReplyTo(message, replyScope)}
+        >
+          <CornerUpLeft size={15} aria-hidden="true" />
+        </button>
+        {own && !deleted ? (
           <button
             type="button"
-            onClick={() => void openThread(message.id)}
-            title="스레드에서 답글"
-            aria-label="스레드에서 답글"
+            className="iconbtn msg__tools--danger"
+            aria-label="메시지 삭제"
+            onClick={() => onDelete(message)}
           >
-            <IconReply size={13} />
+            <Trash2 size={15} aria-hidden="true" />
           </button>
         ) : null}
         <button
+          ref={moreRef}
           type="button"
-          onClick={() => setSharing(true)}
-          title="다른 대화로 공유"
-          aria-label="다른 대화로 공유"
+          className="iconbtn"
+          aria-label="더 보기"
+          aria-expanded={Boolean(menuAnchor)}
+          onClick={(event) => setMenuAnchor(event.currentTarget)}
         >
-          <IconShare size={13} />
+          <MoreHorizontal size={15} aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          onClick={() => setSaving((open) => !open)}
-          title={message.is_saved ? "나중에 볼 항목에서 빼기" : "나중에 보기 (리마인더 설정 가능)"}
-          aria-label={message.is_saved ? "저장 해제" : "나중에 보기"}
-          aria-expanded={saving}
-          className={message.is_saved ? "is-on" : ""}
-        >
-          <IconBookmark size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={() => void togglePin()}
-          title={message.is_pinned ? "고정 해제" : "채널에 고정"}
-          aria-label={message.is_pinned ? "고정 해제" : "채널에 고정"}
-          className={message.is_pinned ? "is-on" : ""}
-        >
-          <IconPin size={13} />
-        </button>
-        {isMine ? (
-          <>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              title="수정"
-              aria-label="수정"
-            >
-              <IconEdit size={13} />
-            </button>
-            {/*
-              Two clicks to delete, no dialog: the first click turns the
-              button into its own confirmation, and looking away resets it.
-              The trash sits one slot from edit, and there is no undo.
-            */}
-            {confirmingDelete ? (
-              <button
-                type="button"
-                className="is-confirm-delete"
-                onClick={() => void deleteMessage(message.id)}
-                onMouseLeave={() => setConfirmingDelete(false)}
-                onBlur={() => setConfirmingDelete(false)}
-                title="한 번 더 누르면 삭제됩니다"
-                aria-label="삭제 확인"
-              >
-                삭제?
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                title="삭제"
-                aria-label="삭제"
-              >
-                <IconTrash size={13} />
-              </button>
-            )}
-          </>
-        ) : null}
       </div>
 
-      {sharing ? (
-        <ShareMessage message={message} onClose={() => setSharing(false)} />
+      {emojiAnchor ? (
+        <Menu
+          anchor={emojiAnchor}
+          onClose={() => setEmojiAnchor(null)}
+          className="emoji"
+          width={280}
+        >
+          <div className="emoji__grid" role="menu" aria-label="반응 선택">
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                className="emoji__item"
+                onClick={() => {
+                  onReact(message, emoji);
+                  setEmojiAnchor(null);
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </Menu>
       ) : null}
+
+      {menuAnchor ? (
+        <Menu anchor={menuAnchor} onClose={() => setMenuAnchor(null)} align="right" width={200}>
+          {!deleted ? (
+            <button
+              type="button"
+              className="menu__item"
+              onClick={() => {
+                setMenuAnchor(null);
+                setDraft(message.body);
+                setEditing(true);
+              }}
+            >
+              <Pencil size={14} aria-hidden="true" />
+              텍스트 수정
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="menu__item"
+            onClick={() => {
+              setMenuAnchor(null);
+              onPin(message);
+            }}
+          >
+            <Pin size={14} aria-hidden="true" />
+            {message.pinned ? "고정 해제" : "고정하기"}
+          </button>
+          <button
+            type="button"
+            className="menu__item"
+            onClick={() => {
+              setMenuAnchor(null);
+              void navigator.clipboard?.writeText(message.body);
+            }}
+          >
+            <Copy size={14} aria-hidden="true" />
+            본문 복사
+          </button>
+          {own ? (
+            <>
+              <div className="menu__sep" />
+              <button
+                type="button"
+                className="menu__item menu__item--danger"
+                onClick={() => {
+                  setMenuAnchor(null);
+                  onDelete(message);
+                }}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+                삭제
+              </button>
+            </>
+          ) : null}
+        </Menu>
+      ) : null}
+
+      {tip && tipReaction
+        ? createPortal(
+            <div
+              id="reactiontip"
+              className={`reactiontip${tip.below ? " reactiontip--below" : ""}`}
+              role="tooltip"
+              style={{ left: tip.left, top: tip.top }}
+            >
+              {nameOf(tipReaction)}
+            </div>,
+            document.body,
+          )
+        : null}
     </article>
   );
 }

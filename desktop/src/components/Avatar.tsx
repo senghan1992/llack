@@ -1,57 +1,35 @@
-import { colorForId, initials } from "@/lib/format";
-import type { Presence } from "@/lib/types";
-import { useApp } from "@/store/app";
+import { colorFor, initials } from "../lib/format";
+import { readableOn } from "../lib/color";
+import { presenceLabel } from "../lib/presence";
+import type { Presence, User } from "../lib/types";
 
-interface AvatarProps {
-  id: string;
-  name: string;
-  avatarUrl?: string | null;
-  size?: number;
-  presence?: Presence;
-  isBot?: boolean;
+interface Props {
+  user: Pick<User, "id" | "name" | "avatar_color">;
+  size?: "sm" | "md" | "lg";
+  presence?: Presence | null;
+  title?: string;
 }
 
-export function Avatar({ id, name, avatarUrl, size = 36, presence, isBot }: AvatarProps) {
-  // Uploaded avatars are stored as server-relative paths (`/api/v1/users/…`)
-  // so the same row works behind any hostname; the tab resolves them against
-  // its origin and the desktop shell against the configured server.
-  const serverUrl = useApp((state) => state.serverUrl);
-  const src = avatarUrl && avatarUrl.startsWith("/") ? `${serverUrl}${avatarUrl}` : avatarUrl;
+export function Avatar({ user, size = "md", presence, title }: Props) {
+  // The tile may be any colour the person (or an older record) carries, so
+  // it is darkened here until the initials on it are certainly readable.
+  const color = readableOn(user.avatar_color || colorFor(user.id));
+  const classes = ["avatar"];
+  if (size === "sm") classes.push("avatar--sm");
+  if (size === "lg") classes.push("avatar--lg");
+
   return (
-    <span className="avatar" style={{ width: size, height: size }}>
-      {src ? (
-        <img src={src} alt="" width={size} height={size} />
-      ) : (
+    <span className="avatar-wrap u-row u-row--center" title={title ?? user.name}>
+      <span className={classes.join(" ")} style={{ ["--avatar-bg" as string]: color }} aria-hidden="true">
+        {initials(user.name)}
+      </span>
+      {presence ? (
         <span
-          className={isBot ? "avatar-fallback is-bot" : "avatar-fallback"}
-          style={{
-            background: colorForId(id),
-            fontSize: Math.max(11, size * 0.4),
-          }}
-        >
-          {initials(name)}
-        </span>
-      )}
-      {presence && presence !== "offline" ? (
-        <span
-          className={`presence-dot presence-${presence}`}
-          title={presenceLabel(presence)}
+          className={`presence presence--${presence}`}
+          role="img"
           aria-label={presenceLabel(presence)}
         />
       ) : null}
     </span>
   );
-}
-
-function presenceLabel(presence: Presence): string {
-  switch (presence) {
-    case "active":
-      return "온라인";
-    case "away":
-      return "자리 비움";
-    case "dnd":
-      return "방해 금지";
-    default:
-      return "오프라인";
-  }
 }
