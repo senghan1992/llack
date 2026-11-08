@@ -31,6 +31,7 @@ import {
 } from "./components/Dialogs";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { watchTheme } from "./lib/theme";
+import { isWriting } from "./lib/keys";
 import { currentRoomId, roomTitle, setRoomTitle } from "./lib/popout";
 import { useStore } from "./store/useStore";
 import type { Message } from "./lib/types";
@@ -68,6 +69,8 @@ export default function App() {
   const wide = useStore((s) => s.wide);
   const splitEnabled = useStore((s) => s.splitEnabled);
   const setWide = useStore((s) => s.setWide);
+  const railCollapsed = useStore((s) => s.railCollapsed);
+  const setRailCollapsed = useStore((s) => s.setRailCollapsed);
   const closeBoard = useStore((s) => s.closeBoard);
   const expandBoard = useStore((s) => s.expandBoard);
   const besideBoard = useStore((s) => s.besideBoard);
@@ -82,6 +85,7 @@ export default function App() {
   const closeThread = useStore((s) => s.closeThread);
   const clearScreen = useStore((s) => s.clearScreen);
   const openChannel = useStore((s) => s.openChannel);
+  const stepRoom = useStore((s) => s.stepRoom);
   const setTyping = useStore((s) => s.setTyping);
   const reportError = useStore((s) => s.reportError);
   const toast = useStore((s) => s.toast);
@@ -122,10 +126,35 @@ export default function App() {
         event.preventDefault();
         setDialog("palette");
       }
+      // The rail folds out of the way with the same key every other app
+      // uses for it — the conversation takes the room.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        setRailCollapsed(!railCollapsed);
+      }
+      // The rooms walk with Alt and the arrow keys — the way every other
+      // chat app moves between them. With Shift it walks the unread rooms
+      // only. The hand never leaves the keyboard. A sheet is open, so the
+      // keys belong to the sheet, not to the rooms behind it.
+      if (
+        event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !dialog &&
+        !isWriting(event.target)
+      ) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          void stepRoom(1, event.shiftKey);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          void stepRoom(-1, event.shiftKey);
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setDialog]);
+  }, [setDialog, setRailCollapsed, railCollapsed, stepRoom, dialog]);
 
   const channel = useMemo(
     () => channels.find((c) => c.id === activeId) ?? null,
@@ -230,6 +259,7 @@ export default function App() {
         onToggleRail={() => setRailOpen((open) => !open)}
         onOpenSettings={() => setDialog("channelSettings")}
         onClearScreen={roomId ? undefined : clearScreen}
+        onExpandChat={board ? closeBoard : undefined}
       />
 
       <div className="conversation">
@@ -335,7 +365,7 @@ export default function App() {
     <div
       className={`app${threadRoot ? " app--thread" : ""}${railOpen ? " app--rail" : ""}${
         board ? " app--split" : ""
-      }${roomId ? " app--room" : ""}`}
+      }${roomId ? " app--room" : ""}${railCollapsed ? " app--rail-collapsed" : ""}`}
     >
       {roomId ? null : <Rail />}
 

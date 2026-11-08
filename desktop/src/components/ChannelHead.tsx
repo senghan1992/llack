@@ -3,6 +3,7 @@ import {
   FolderKanban,
   Hash,
   Lock,
+  Maximize2,
   Menu as MenuIcon,
   Pin,
   Search,
@@ -30,6 +31,9 @@ interface Props {
   /** Leave the workspace with nothing selected. A room window is one
    *  conversation, so it has nothing to clear and gets no key. */
   onClearScreen?: () => void;
+  /** The board sits beside this conversation — the conversation may take
+   *  the whole window instead. */
+  onExpandChat?: () => void;
   /** A narrow pane — the bar keeps only what it needs to. */
   compact?: boolean;
 }
@@ -47,6 +51,7 @@ export function ChannelHead({
   onToggleRail,
   onOpenSettings,
   onClearScreen,
+  onExpandChat,
   compact = false,
 }: Props) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -98,7 +103,8 @@ export function ChannelHead({
           <button
             type="button"
             className="iconbtn"
-            aria-label="이 대화에서 검색"
+            aria-label="메시지 검색"
+            title="메시지 검색"
             onClick={onOpenSearch}
           >
             <Search size={16} aria-hidden="true" />
@@ -111,6 +117,17 @@ export function ChannelHead({
           >
             <Pin size={16} aria-hidden="true" />
           </button>
+          {onExpandChat ? (
+            <button
+              type="button"
+              className="iconbtn"
+              aria-label="대화를 전체 화면으로"
+              title="대화를 전체 화면으로"
+              onClick={onExpandChat}
+            >
+              <Maximize2 size={16} aria-hidden="true" />
+            </button>
+          ) : null}
           {onClearScreen ? (
             <button
               type="button"

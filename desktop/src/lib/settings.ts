@@ -37,6 +37,8 @@ export interface Settings {
   imagePreview: boolean;
   /** 일정과 프로젝트를 대화 옆에 붙여 놓을까 — 화면을 나누는 방식. */
   splitView: boolean;
+  /** 좌측 레일을 아이콘만 남은 띠로 접을까. */
+  railCollapsed: boolean;
 }
 
 const KEY = "llack.settings";
@@ -52,6 +54,7 @@ const DEFAULTS: Settings = {
   downloadFolder: null,
   imagePreview: true,
   splitView: true,
+  railCollapsed: false,
 };
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -86,6 +89,8 @@ function read(): Settings {
     downloadFolder: typeof stored.downloadFolder === "string" ? stored.downloadFolder : null,
     imagePreview: typeof stored.imagePreview === "boolean" ? stored.imagePreview : DEFAULTS.imagePreview,
     splitView: typeof stored.splitView === "boolean" ? stored.splitView : DEFAULTS.splitView,
+    railCollapsed:
+      typeof stored.railCollapsed === "boolean" ? stored.railCollapsed : DEFAULTS.railCollapsed,
   };
 }
 

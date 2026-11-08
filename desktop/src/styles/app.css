@@ -11,8 +11,11 @@
 /* ══ shell ═══════════════════════════════════════════════════════════ */
 
 .app {
+  /* the rail's own column — the fold takes its room back for the
+     conversation */
+  --rail-col: var(--rail-w);
   display: grid;
-  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  grid-template-columns: var(--rail-col) minmax(0, 1fr);
   grid-template-rows: 100%;
   position: relative;
   height: 100dvh;
@@ -21,7 +24,7 @@
   overflow: clip;
 }
 
-.app--thread { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--thread-w); }
+.app--thread { grid-template-columns: var(--rail-col) minmax(0, 1fr) var(--thread-w); }
 
 /* The conversation pane is a sheet laid over the rail: it lifts a little and
    casts a soft shadow to its left, so the two halves are not one flat plane. */
@@ -60,7 +63,7 @@
 
 /* In a split window the thread is a sheet over the board: the conversation
    keeps its place, and so does the board under it. */
-.app--split.app--thread { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
+.app--split.app--thread { grid-template-columns: var(--rail-col) minmax(0, 1fr); }
 .app--split .thread {
   position: absolute;
   inset: 0 0 0 auto;
@@ -132,6 +135,22 @@
   gap: var(--space-xs);
   padding: var(--space-sm) var(--space-sm) var(--space-2xs);
 }
+
+/* the workspace key and the rail's own shape — the key that folds it */
+.rail__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+}
+
+.rail__toggle {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+}
+
+.rail__toggle:hover { color: var(--color-ink); }
+.rail__toggle:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 
 /* the moulded workspace key — raised, lit from above, with a real rim */
 .wkey {
@@ -376,6 +395,95 @@
   white-space: nowrap;
   color: var(--color-muted);
   font-size: var(--text-tiny);
+}
+
+/* ══ the folded rail ══════════════════════════════════════════════════
+   The rail folds to a strip of icons, so the conversation keeps the room.
+   The fold is the reader's own — the key in the rail, or ⌘B — and it stays
+   the next time the app opens. On a wide window the rail comes back *over*
+   the conversation while the pointer is on it: it never pushes the
+   conversation aside.
+
+   Below 52rem the rail is already an overlay with a key of its own, so
+   the fold does not apply there. */
+
+@media (min-width: 52.1rem) {
+  /* the rail's column gives its room to the conversation */
+  .app--rail-collapsed { --rail-col: var(--rail-w-collapsed); }
+
+  /* only the strip is seen; the rest of the rail is clipped away */
+  .app--rail-collapsed .rail {
+    width: var(--rail-w);
+    clip-path: inset(0 calc(100% - var(--rail-w-collapsed)) 0 0);
+    transition: clip-path var(--dur-short) var(--ease-out);
+  }
+
+  /* the rail, open over the conversation */
+  .app--rail-collapsed .rail--peek {
+    clip-path: inset(0);
+    z-index: var(--z-raised);
+    box-shadow: var(--shadow-e3);
+  }
+
+  /* the strip: the marks stay, the words go */
+  .rail--collapsed .wkey { width: auto; }
+  .rail--collapsed .wkey__name,
+  .rail--collapsed .wkey__chev,
+  .rail--collapsed .rail__search span,
+  .rail--collapsed .rail__search .kbd,
+  .rail--collapsed .row__name,
+  .rail--collapsed .rail__grouptitle,
+  .rail--collapsed .rail__add,
+  .rail--collapsed .me__text,
+  .rail--collapsed .me .wkey__chev {
+    display: none;
+  }
+
+  /* the search is a key of its own now */
+  .rail--collapsed .rail__search {
+    justify-self: start;
+    width: auto;
+  }
+
+  /* the workspace key and the fold key stack in the narrow strip */
+  .rail--collapsed .rail__brand {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  /* the groups are told apart by a rule, not by a word */
+  .rail--collapsed .rail__group {
+    margin-top: var(--space-xs);
+    padding-top: var(--space-2xs);
+    border-top: 1px solid var(--color-rule-soft);
+  }
+  .rail--collapsed .rail__group:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  /* an unread room keeps its mark: a dot on the glyph */
+  .rail--collapsed .row { position: relative; }
+  .rail--collapsed .row__count {
+    position: absolute;
+    top: 1px;
+    left: 28px;
+    width: 7px;
+    height: 7px;
+    min-width: 0;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--color-accent);
+    color: transparent;
+    font-size: 0;
+  }
+
+  /* the foot: the face above the key */
+  .rail--collapsed .rail__foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* ══ avatars & presence ═════════════════════════════════════════════ */
@@ -3208,6 +3316,25 @@
 
 .projitem--on:hover { background: var(--surface-selected); }
 
+/* The empty board in a side pane: the list of projects is gone, so the
+   board itself offers them — a way to pick one without leaving the pane. */
+.proj__pick {
+  display: grid;
+  gap: var(--space-2xs);
+  width: 100%;
+  max-width: 22rem;
+  /* Many projects must not push the pane out of the window. */
+  max-height: min(18rem, 50vh);
+  overflow-y: auto;
+  margin-top: var(--space-xs);
+  text-align: left;
+}
+
+.proj__pick .projitem {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--surface-raise);
+}
+
 .projitem__top {
   display: flex;
   align-items: baseline;
@@ -4664,6 +4791,24 @@
   overflow: auto;
 }
 
+/* The chart's own first line — where the project stands, before a single
+   mark is read. It sits above the grid, so it never takes the grid's
+   minimum width. */
+.chart__summary {
+  margin: 0;
+}
+
+.chart__summarylabel {
+  color: var(--color-muted);
+}
+
+/* A deadline that has passed is the one thing that changes hue — and it
+   is the app's own late ink, which keeps its ground on the paper
+   (the amber of the warning does not: it reads at 2.4:1 on the canvas). */
+.chart__fact--late {
+  color: var(--error-ink);
+}
+
 .chart__grid {
   display: grid;
   gap: var(--space-2xs);
@@ -4686,6 +4831,9 @@
   gap: var(--space-2xs);
 }
 
+/* The time axis is one trough: every mark of every row sits in the same
+   channel, so the plot reads as one instrument instead of a bar chart
+   with stray hairlines under it. */
 .chart__overlay {
   position: absolute;
   top: 0;
@@ -4693,6 +4841,28 @@
   /* the label column and the gap before the track */
   left: calc(148px + var(--space-sm));
   right: 0;
+  z-index: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  box-shadow: var(--recess);
+  pointer-events: none;
+}
+
+/* the marks stand above the trough they are drawn in */
+.chart__body .chart__row {
+  position: relative;
+  z-index: 1;
+}
+
+/* today's rule is over everything — it is the one mark that cuts
+   through every row at once */
+.chart__todaylayer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(148px + var(--space-sm));
+  right: 0;
+  z-index: 2;
   pointer-events: none;
 }
 
@@ -4721,7 +4891,7 @@
   display: flex;
   align-items: center;
   padding-left: var(--space-2xs);
-  border-left: 1px solid var(--color-rule-soft);
+  border-left: 1px solid var(--color-rule);
   color: var(--color-muted);
   font-family: var(--font-outlier);
   font-size: var(--text-mono);
@@ -4735,6 +4905,23 @@
   min-width: 0;
   color: var(--color-ink);
   font-size: var(--text-small);
+}
+
+/* The name of the row gives way; the number it holds does not. */
+.chart__labelname {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* the number the row holds, in the app's own label face */
+.chart__labelnum {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: var(--space-2xs);
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .chart__label--quiet {
@@ -4755,16 +4942,35 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: var(--color-rule-soft);
+  background: var(--color-rule);
 }
 
-/* today — a line in ink, not a colour of its own */
+/* today — a rule in ink over a soft band. The band says which moment it
+   is before the eye counts pixels; the rule says it runs through every
+   row at once. */
+.chart__todayband {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  transform: translateX(-50%);
+  background: color-mix(in oklab, var(--color-ink) 7%, transparent);
+}
+
 .chart__today {
   position: absolute;
-  top: -6px;
-  bottom: -6px;
-  width: 1px;
-  background: var(--color-ink-2);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-ink);
+}
+
+/* A mark on the chart is a button: it does nothing when it is clicked,
+   but it can be pointed at and it can hold the keyboard's focus. */
+.chart__mark {
+  padding: 0;
+  cursor: default;
 }
 
 /* the period of a milestone — its colour, and the progress inside it */
@@ -4786,29 +4992,95 @@
   background: var(--ms-color, var(--color-accent));
 }
 
-/* the deadline of a card — a dot on the day it falls */
-.chart__track--dots { height: 22px; }
-
+/* the deadline of a card — a dot on the day it falls. The dot stays 8px;
+   the button around it is wider, so the pointer can find it. */
 .chart__dotmark {
   position: absolute;
   top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%, -50%);
+}
+
+.chart__dotmark::before {
+  content: "";
+  position: absolute;
+  top: var(--space-2xs);
+  left: var(--space-2xs);
   width: 8px;
   height: 8px;
-  margin-left: -4px;
-  transform: translateY(-50%);
   border-radius: 50%;
   background: var(--dot-tone, var(--color-ink-2));
 }
 
-/* a meeting on the calendar — a tick, so it is not a deadline */
-.chart__notch {
+/* a meeting on the calendar — a post, so it never reads as the rule that
+   says today: it stands in its own row, and it is thicker than a hair.
+   The post stays 3×12; the button around it is wider, so the pointer can
+   find it. */
+.chart__post {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  margin-left: -1px;
-  border-radius: 1px;
-  background: var(--color-muted);
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%, -50%);
+}
+
+.chart__post::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--color-ink-2);
+}
+
+/* The focus ring belongs to the mark the reader sees, not to the wider
+   box the pointer can reach. It keeps a gap of the trough around the
+   mark — the way every other focus ring in the app keeps its distance —
+   so the ring is seen even on a mark of the signal colour. */
+.chart__mark:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.chart__dotmark:focus-visible,
+.chart__post:focus-visible {
+  outline: none;
+}
+
+.chart__dotmark:focus-visible::before,
+.chart__post:focus-visible::before {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* every row names the mark it draws beside the name */
+.chart__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+}
+
+.chart__glyph--dot::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-ink-2);
+}
+
+.chart__glyph--post::before {
+  content: "";
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-ink-2);
 }
 
 /* the legend says what the marks are, in the app's own hand */
@@ -4850,17 +5122,40 @@
   background: var(--dot-tone, var(--color-ink-2));
 }
 
-.chart__legendnotch {
-  width: 2px;
+.chart__legendpost {
+  width: 3px;
   height: 12px;
-  border-radius: 1px;
-  background: var(--color-muted);
+  border-radius: 2px;
+  background: var(--color-ink-2);
 }
 
+/* today — the band and the rule, as the chart draws them */
 .chart__legendtoday {
-  width: 1px;
+  position: relative;
+  width: 16px;
   height: 12px;
-  background: var(--color-ink-2);
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--color-ink) 7%, transparent);
+}
+
+.chart__legendtoday::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-ink);
+}
+
+/* the date of today, in the app's own hand */
+.chart__legenddate {
+  margin-left: var(--space-2xs);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
 }
 
 /* the calendar under the chart — the same meetings in words */
@@ -4916,6 +5211,55 @@
   margin: 0;
   color: var(--color-muted);
   font-size: var(--text-small);
+}
+
+/* The card that names a mark — the ink band, printed like the labels on
+   a shelf. It takes no pointer of its own, so the pointer can travel
+   from the mark to the card without losing either. */
+.charttip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  transform: translate(-50%, -100%);
+  /* the width is the content's own, so the tip does not change its size
+     when it is pushed against the edge of the window */
+  width: max-content;
+  max-width: 280px;
+  padding: var(--space-2xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: var(--surface-ink);
+  box-shadow: var(--shadow-e2);
+  color: var(--on-ink);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  text-align: left;
+  pointer-events: none;
+  animation: tip-in var(--dur-short) var(--ease-out);
+}
+
+.charttip--below { transform: translate(-50%, 0); }
+
+.charttip__title {
+  display: block;
+  font-weight: 600;
+}
+
+.charttip__meta {
+  display: block;
+  margin-top: var(--space-3xs);
+  color: var(--ink-on-dark);
+  font-size: var(--text-tiny);
+}
+
+/* the numbers on the ink band are set like the labels on a shelf */
+.charttip__num {
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* a deadline that has passed is the one thing that changes hue */
+.charttip__warn {
+  color: var(--color-warn);
 }
 
 

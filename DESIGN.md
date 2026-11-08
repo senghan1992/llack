@@ -140,6 +140,20 @@ A rung is told apart from the next by **elevation**, not by a hairline alone:
   the rail, and the settings gear beside it — the settings are one click away,
   without a menu. The profile keeps its own menu, and the gear opens the
   settings sheet where it stands.
+- **The rail can be folded to a strip.** The fold is the reader's own — the key
+  in the rail, or ⌘B — and it stays the next time the app opens. Folded, the
+  rail is a strip of marks: the workspace, the switches, the rooms as their
+  glyphs, the people as their faces, and a dot on the mark of a room that has
+  something unread. The conversation takes the room the rail gave up.
+- **The folded rail comes back over the conversation, never beside it.** The
+  pointer on the strip (or the keyboard inside it) opens the rail *over* the
+  pane, and leaving it folds the rail away again. A pane that moves under the
+  reader is a pane that was never asked for.
+- **The conversation may take the whole window.** The board's own header moves
+  it between the side pane and the whole main pane; the conversation's header
+  does the same. And the room that is already open, pressed again while the
+  board sits beside it, gives the conversation the whole window — the board
+  comes back through its own switch in the rail.
 - **The screen can be cleared.** A key in the channel header's tools groove
   empties the workspace: the rail stays, the pane shows an empty state, and
   nothing is selected at all — no room, no board, no thread. Picking a room in
@@ -236,6 +250,23 @@ A derived night, not an inversion: the same green at `oklch(70% 0.12 158)` on an
 `18.5%` canvas, a rail that sits a clear step below it, the same radius scale,
 the same rules. `--color-focus` stays brighter there — a focus ring must pop on
 a dark ground.
+
+## The keyboard
+
+The hand stays on the keyboard for the things it does all day.
+
+- **⌘K** opens the palette — every room, every person, every project and every
+  action in one list. The rooms you were in lately come first while the box is
+  empty; a word in the box puts them away.
+- **⌘B** folds the rail.
+- **Alt+↑/↓** walks the rooms in the rail's order; **Alt+Shift+↑/↓** walks the
+  rooms that have something unread. The walk stops at the ends — it never wraps
+  around. The keys keep out of the way while a word is being written, and
+  while a sheet is open.
+- **A half-written line belongs to its room.** It stays when the room changes,
+  when the composer goes away, and when the window is closed with the sentence
+  still in it. A thread's answer is its own answer and never shares the room's
+  line.
 
 ## Replies
 
@@ -406,11 +437,20 @@ in a smaller voice.
 - **A milestone is a bar of its own colour.** The bar spans the period, and
   the part of it that is done is filled. The colour is the company's, chosen
   in the milestone dialog; it rides on a custom property, never on a literal.
-- **A deadline is a dot, a meeting is a tick.** The card's 마감일 is a round
-  dot in the status tone; the team's 일정 is a vertical tick. They are never
-  the same mark, because one is a commitment and the other is a meeting.
-- **Today is a line in ink**, not a colour of its own. It runs through every
-  row at once, so the whole chart is read against one moment.
+- **The time axis is one trough.** Every mark of every row is drawn in the
+  same recessed channel, so the plot reads as one instrument — not a bar
+  chart with stray hairlines under it. The month rules run through the
+  channel and the marks stand above it.
+- **One mark language, and weight says what a mark is.** A **bar** is a
+  period of work (a milestone). A **post** is a meeting. A **dot** is a
+  card's 마감일. A **rule** over a soft band is today. The deadline is a
+  dot and the meeting is a post — they are never the same mark, because one
+  is a commitment and the other is a meeting.
+- **Every row names the mark it draws.** The row's label carries a small
+  glyph of its own mark, so a row says what it holds before it is read.
+- **Today is a rule in ink over a soft band.** It runs through every row at
+  once, so the whole chart is read against one moment. The band says which
+  moment it is before the eye counts pixels, and the legend names the date.
 - The legend says what the marks are, in the app's own hand — the board
   never asks the reader to guess what a shape means.
 - **Under the chart, the same thing in words.** The milestone list says the

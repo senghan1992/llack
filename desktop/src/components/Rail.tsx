@@ -10,6 +10,8 @@ import {
   Lock,
   LogOut,
   MessageSquare,
+  PanelLeft,
+  PanelRight,
   Plus,
   Search,
   Settings,
@@ -47,6 +49,8 @@ export function Rail() {
   const signOut = useStore((s) => s.signOut);
   const loadWorkspace = useStore((s) => s.loadWorkspace);
   const workspaceId = useStore((s) => s.workspaceId);
+  const railCollapsed = useStore((s) => s.railCollapsed);
+  const setRailCollapsed = useStore((s) => s.setRailCollapsed);
 
   const [workspaceAnchor, setWorkspaceAnchor] = useState<HTMLElement | null>(null);
   const [meAnchor, setMeAnchor] = useState<HTMLElement | null>(null);
@@ -54,6 +58,12 @@ export function Rail() {
   const statusItemRef = useRef<HTMLButtonElement>(null);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** The folded rail opens over the conversation while the pointer — or the
+      keyboard — is on it. It is a look, not a state: nothing is chosen
+      while it is open. */
+  const [peek, setPeek] = useState(false);
+  /** The strip itself: marks only, no words. */
+  const folded = railCollapsed && !peek;
 
   // One selection at a time. The board may sit *beside* the conversation, but
   // the rail still says where the eye is: the surface that was picked last.
@@ -95,23 +105,49 @@ export function Rail() {
   };
 
   return (
-    <nav className="rail" aria-label="채널과 대화">
+    <nav
+      className={`rail${folded ? " rail--collapsed" : ""}${peek ? " rail--peek" : ""}`}
+      aria-label="채널과 대화"
+      onMouseEnter={() => railCollapsed && setPeek(true)}
+      onMouseLeave={() => setPeek(false)}
+      onFocusCapture={() => railCollapsed && setPeek(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPeek(false);
+      }}
+    >
       <div className="rail__top">
-        <button
-          type="button"
-          className="wkey"
-          onClick={(event) => void openWorkspaceMenu(event.currentTarget)}
-          aria-haspopup="menu"
-          aria-expanded={Boolean(workspaceAnchor)}
-        >
-          <span className="wkey__mark" aria-hidden="true">
-            {(workspaceName || "L").slice(0, 1)}
-          </span>
-          <span className="wkey__name">{workspaceName || "워크스페이스"}</span>
-          <ChevronDown size={14} className="wkey__chev" aria-hidden="true" />
-        </button>
+        <div className="rail__brand">
+          <button
+            type="button"
+            className="wkey"
+            onClick={(event) => void openWorkspaceMenu(event.currentTarget)}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(workspaceAnchor)}
+          >
+            <span className="wkey__mark" aria-hidden="true">
+              {(workspaceName || "L").slice(0, 1)}
+            </span>
+            <span className="wkey__name">{workspaceName || "워크스페이스"}</span>
+            <ChevronDown size={14} className="wkey__chev" aria-hidden="true" />
+          </button>
+          {/* The rail's own shape: folded to a strip of icons, or open
+              again. The key stays in the same place in both. */}
+          <button
+            type="button"
+            className="iconbtn rail__toggle"
+            aria-label={railCollapsed ? "레일 펼치기" : "레일 접기"}
+            title={railCollapsed ? "레일 펼치기 (⌘B)" : "레일 접기 (⌘B)"}
+            onClick={() => setRailCollapsed(!railCollapsed)}
+          >
+            {railCollapsed ? (
+              <PanelRight size={16} aria-hidden="true" />
+            ) : (
+              <PanelLeft size={16} aria-hidden="true" />
+            )}
+          </button>
+        </div>
 
-        <button type="button" className="rail__search" onClick={() => setDialog("search")}>
+        <button type="button" className="rail__search" onClick={() => setDialog("palette")}>
           <Search size={14} aria-hidden="true" />
           <span>검색</span>
           <span className="kbd">⌘K</span>

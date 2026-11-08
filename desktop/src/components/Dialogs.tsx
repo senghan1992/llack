@@ -251,6 +251,7 @@ interface PaletteEntry {
 
 export function PaletteDialog() {
   const channels = useStore((s) => s.channels);
+  const recentRooms = useStore((s) => s.recentRooms);
   const members = useStore((s) => s.members);
   const projects = useStore((s) => s.projects);
   const enterChannel = useStore((s) => s.enterChannel);
@@ -304,6 +305,14 @@ export function PaletteDialog() {
     }));
 
     const actionEntries: PaletteEntry[] = [
+      {
+        key: "action-search",
+        label: "메시지 검색",
+        hint: "워크스페이스 전체",
+        group: "동작",
+        icon: <Search size={14} aria-hidden="true" />,
+        run: () => setDialog("search"),
+      },
       {
         key: "action-schedule",
         label: "일정 열기",
@@ -361,13 +370,49 @@ export function PaletteDialog() {
     return [...channelEntries, ...projectEntries, ...peopleEntries, ...actionEntries];
   }, [channels, projects, members, enterChannel, startDm, openSchedule, openProjects, openProject, setDialog]);
 
+  // The rooms you were in lately, newest first. A room that is gone —
+  // you left it, it was deleted — is passed over in silence.
+  const recentEntries = useMemo<PaletteEntry[]>(
+    () =>
+      recentRooms
+        .map((id) => channels.find((channel) => channel.id === id))
+        .filter((channel): channel is Channel => channel !== undefined)
+        .filter((channel) => channel.kind === "dm" || channel.is_member !== false)
+        .map((channel) => ({
+          key: `recent-${channel.id}`,
+          label: channel.kind === "dm" ? channel.name : `#${channel.name}`,
+          hint: channel.kind === "dm" ? "직접 메시지" : "채널",
+          group: "최근",
+          icon:
+            channel.kind === "dm" ? (
+              <Avatar
+                user={channel.dm_user ?? { id: channel.id, name: channel.name, avatar_color: null }}
+                size="sm"
+              />
+            ) : (
+              <Hash size={14} aria-hidden="true" />
+            ),
+          run: () => void enterChannel(channel.id),
+        })),
+    [recentRooms, channels, enterChannel],
+  );
+
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return entries.slice(0, 12);
+    // With nothing typed, the rooms you were in lately come first, and
+    // the rest of the list follows them. A word in the box puts the recent
+    // rooms away — what you asked for is what you get.
+    if (!term) return [...recentEntries, ...entries.slice(0, 12)];
     return entries.filter((entry) => entry.label.toLowerCase().includes(term)).slice(0, 20);
-  }, [entries, query]);
+  }, [entries, recentEntries, query]);
 
   useEffect(() => setCursor(0), [query]);
+
+  // The entry may open a dialog of its own — the palette steps aside only
+  // when it is still the one on the screen.
+  const closePalette = () => {
+    if (useStore.getState().dialog === "palette") setDialog(null);
+  };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "ArrowDown") {
@@ -383,7 +428,7 @@ export function PaletteDialog() {
       const entry = filtered[cursor];
       if (entry) {
         entry.run();
-        setDialog(null);
+        closePalette();
       }
     }
   };
@@ -426,7 +471,7 @@ export function PaletteDialog() {
                 onMouseEnter={() => setCursor(index)}
                 onClick={() => {
                   entry.run();
-                  setDialog(null);
+                  closePalette();
                 }}
               >
                 {entry.icon}

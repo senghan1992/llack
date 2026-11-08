@@ -54,6 +54,22 @@ export function dayLabel(iso: string): { rel: string; date: string } {
   return { rel: `${date} (${weekday(iso)})`, date: formatDate(iso) };
 }
 
+/**
+ * How long a deadline has left, in words — the badge never says only
+ * "red". "3일 남음", "오늘 마감이", "2일 지남".
+ */
+export function dueLabel(dueAt: string): { text: string; tone: "soon" | "late" | "plain" } {
+  const due = new Date(dueAt);
+  const now = new Date();
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const days = Math.round((dueDay - today) / 86_400_000);
+  if (days < 0) return { text: `${-days}일 지남`, tone: "late" };
+  if (days === 0) return { text: "오늘 마감이", tone: "soon" };
+  if (days <= 3) return { text: `${days}일 남음`, tone: "soon" };
+  return { text: `${due.getMonth() + 1}월 ${due.getDate()}일`, tone: "plain" };
+}
+
 export function isSameDay(a: string, b: string): boolean {
   const x = new Date(a);
   const y = new Date(b);

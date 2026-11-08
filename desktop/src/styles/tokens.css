@@ -149,6 +149,7 @@
 
   /* ── metrics ────────────────────────────────────────────────── */
   --rail-w: 264px; --thread-w: 400px; --header-h: 60px;
+  --rail-w-collapsed: 56px; /* the rail as a strip of icons */
   --control-h: 34px; --field-h: 38px; --hit-h: 44px;
   --avatar-sm: 22px; --avatar: 30px; --avatar-lg: 40px;
   /* where the message text starts inside a pane: the row's padding, the

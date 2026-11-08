@@ -18,7 +18,7 @@ interface Props {
 export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread }: Props) {
   const toast = useStore((s) => s.toast);
   const workspaceId = useStore((s) => s.workspaceId);
-  const [value, setValue] = useState("");
+  const setDraft = useStore((s) => s.setDraft);
   const [sending, setSending] = useState(false);
   const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
   const [files, setFiles] = useState<FileRef[]>([]);
@@ -30,6 +30,23 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
   useEffect(() => {
     if (channel?.id) inputRef.current?.focus();
   }, [channel?.id]);
+
+  // The room keeps its half-written line in the store: it belongs to the
+  // room, not to this composer, so it stays when the room changes, when
+  // the composer goes away (the schedule takes the whole pane), and when
+  // the window is closed with the sentence still in it. A thread's answer
+  // is its own answer — it does not share the room's line.
+  const inThread = Boolean(threadRoot);
+  const channelId = channel?.id ?? null;
+  const [typed, setTyped] = useState("");
+  // Only this room's own line is watched — the composer does not wake up
+  // for a half-written sentence in another room.
+  const draft = useStore((s) => (channelId ? s.drafts[channelId] ?? "" : ""));
+  const value = !inThread && channelId ? draft : typed;
+  const write = (next: string) => {
+    if (!inThread && channelId) setDraft(channelId, next);
+    else setTyped(next);
+  };
 
   useEffect(() => {
     const node = inputRef.current;
@@ -44,7 +61,7 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
     setSending(true);
     try {
       await onSend(body, files.map((f) => f.id));
-      setValue("");
+      write("");
       setFiles([]);
       onTyping(false);
     } finally {
@@ -61,7 +78,7 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
   };
 
   const onChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(event.target.value);
+    write(event.target.value);
     onTyping(true);
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => onTyping(false), 2500);
@@ -94,7 +111,7 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
     if (!node) return;
     const start = node.selectionStart ?? value.length;
     const next = `${value.slice(0, start)}${text}${value.slice(node.selectionEnd ?? start)}`;
-    setValue(next);
+    write(next);
     setEmojiAnchor(null);
     requestAnimationFrame(() => {
       node.focus();

@@ -17,7 +17,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { Menu } from "./Menu";
 import { MilestonePanel } from "./MilestonePanel";
 import { useStore } from "../store/useStore";
-import { periodLabel } from "../lib/format";
+import { dueLabel, periodLabel } from "../lib/format";
 import type { Task, TaskStatus } from "../lib/types";
 
 /** The four columns of a board, in the order the work moves through them. */
@@ -111,6 +111,9 @@ export function ProjectsView() {
   const deleteRoadmap = useStore((s) => s.deleteRoadmap);
   const reportError = useStore((s) => s.reportError);
 
+  /** The board beside the conversation — there the list of projects is gone. */
+  const inSidePane = useStore((s) => s.board === "projects");
+
   const [pendingRoadmap, setPendingRoadmap] = useState<string | null>(null);
   const [deletingRoadmap, setDeletingRoadmap] = useState(false);
   const [projectAnchor, setProjectAnchor] = useState<HTMLElement | null>(null);
@@ -183,6 +186,13 @@ export function ProjectsView() {
   const room = project?.channel_id
     ? channels.find((channel) => channel.id === project.channel_id) ?? null
     : null;
+
+  /**
+   * The projects one can pick. Beside the conversation the list is gone,
+   * so the pane offers them all — the filter belongs to the list that is
+   * not there.
+   */
+  const pickable = inSidePane ? projects : visible;
 
 
   /** A roadmap goes away — the tasks on it stay. */
@@ -369,10 +379,52 @@ export function ProjectsView() {
             <span className="empty__mark" aria-hidden="true">
               <ListChecks size={20} />
             </span>
-            <p className="empty__title">프로젝트를 골라 주세요</p>
-            <p className="empty__text">
-              왼쪽에서 고르면 그 프로젝트의 할 일과 마일스톤이 열립니다.
+            <p className="empty__title">
+              {pickable.length === 0
+                ? "프로젝트가 없습니다"
+                : "프로젝트를 골라 주세요"}
             </p>
+            <p className="empty__text">
+              {pickable.length === 0
+                ? "팀이 하는 일을 프로젝트로 등록해 보세요."
+                : inSidePane
+                  ? "여기서 고르면 그 프로젝트의 할 일과 마일스톤이 열립니다."
+                  : "왼쪽에서 고르면 그 프로젝트의 할 일과 마일스톤이 열립니다."}
+            </p>
+            {/* Beside the conversation there is no list on the left — the
+                empty board offers the projects themselves. */}
+            {inSidePane ? (
+              pickable.length ? (
+                <div className="proj__pick">
+                  {pickable.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="projitem"
+                      onClick={() => void selectProject(item.id)}
+                    >
+                      <span className="projitem__top">
+                        <span className="projitem__name u-truncate">{item.name}</span>
+                        {item.open_tasks > 0 ? (
+                          <span className="projitem__count">{item.open_tasks}</span>
+                        ) : null}
+                      </span>
+                      {item.description ? (
+                        <span className="projitem__purpose u-truncate">{item.description}</span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn--sm empty__action"
+                  onClick={() => setDialog("project", null)}
+                >
+                  프로젝트 등록
+                </button>
+              )
+            ) : null}
           </div>
         ) : (
           <>
@@ -453,7 +505,7 @@ export function ProjectsView() {
                 width={240}
               >
                 <div className="menu__label">프로젝트</div>
-                {visible.map((item) => (
+                {pickable.map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -763,17 +815,4 @@ function TaskCard({
       ) : null}
     </article>
   );
-}
-
-/** How long a deadline has left, in words — the badge never says only "red". */
-function dueLabel(dueAt: string): { text: string; tone: "soon" | "late" | "plain" } {
-  const due = new Date(dueAt);
-  const now = new Date();
-  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const days = Math.round((dueDay - today) / 86_400_000);
-  if (days < 0) return { text: `${-days}일 지남`, tone: "late" };
-  if (days === 0) return { text: "오늘 마감이", tone: "soon" };
-  if (days <= 3) return { text: `${days}일 남음`, tone: "soon" };
-  return { text: `${due.getMonth() + 1}월 ${due.getDate()}일`, tone: "plain" };
 }

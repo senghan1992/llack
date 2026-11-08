@@ -4,7 +4,7 @@ import { notify } from "../lib/desktop";
 import { formatDateLong, formatTime, mentionsUser } from "../lib/format";
 import { dateKey, monthKey, parseMonthKey } from "../lib/calendar";
 import { Realtime } from "../lib/ws";
-import { getSettings, subscribeSettings } from "../lib/settings";
+import { getSettings, setSettings, subscribeSettings } from "../lib/settings";
 import type {
   Bootstrap,
   Channel,
@@ -94,10 +94,20 @@ interface StoreState {
       reader's own setting. The width is the app's answer, this one is the
       reader's. */
   splitEnabled: boolean;
+  /** True when the rail is folded to a strip of icons. The conversation
+      takes the room, and the rail comes back over it on hover. */
+  railCollapsed: boolean;
   /** True when the main pane holds nothing: the reader cleared the screen
       for a meeting. Nothing is selected in the rail, and the pane shows an
       empty state instead of a conversation. */
   idle: boolean;
+  /** The rooms you were in lately, newest first. The palette opens on
+      them, and it forgets the ones that are gone. */
+  recentRooms: string[];
+  /** The half-written line of each room, by room id. It lives here, so it
+      stays when the room changes, when the composer goes away, and when
+      the window is closed with the sentence still in it. */
+  drafts: Record<string, string>;
   messages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
   loading: Record<string, boolean>;
@@ -181,11 +191,20 @@ interface StoreState {
   openChannel: (channelId: string) => Promise<void>;
   /** Open a room — a public one you are not in yet takes you in. */
   enterChannel: (channelId: string) => Promise<void>;
+  /** Walk to the next or the previous room, in the order the rail lists
+   *  them. With `onlyUnread`, only the rooms that have something unread in
+   *  them are walked. The walk stops at the ends — it never wraps around. */
+  stepRoom: (direction: 1 | -1, onlyUnread?: boolean) => Promise<void>;
+  /** Keep the half-written line of a room. */
+  setDraft: (channelId: string, body: string) => void;
   /** Leave the workspace with nothing selected: no room, no board, no
       thread. The rail stays; the main pane shows an empty state. */
   clearScreen: () => void;
   /** Say how wide the window is — the app measures it. */
   setWide: (wide: boolean) => void;
+  /** Fold the rail to a strip of icons, or open it again. The reader's
+      own choice, and it stays the next time the app opens. */
+  setRailCollapsed: (collapsed: boolean) => void;
   /** Put the side pane away and go back to the conversation. */
   closeBoard: () => void;
   /** Give the side pane the whole main pane. */
@@ -423,6 +442,58 @@ function toggleBoard(
   return { view: kind, board: null };
 }
 
+/** How many rooms the recent list keeps. */
+const RECENT_LIMIT = 8;
+
+/** The rooms the rail lists, in the order it lists them: the channels you
+ *  are in first, then the direct messages. */
+function railRooms(channels: Channel[]): Channel[] {
+  return [
+    ...channels.filter((c) => c.kind === "channel" && c.is_member !== false),
+    ...channels.filter((c) => c.kind === "dm"),
+  ];
+}
+
+/** The room the walk lands on: the next one in the rail's order, or the
+ *  previous one. The walk stops at the ends — it never wraps around. */
+function pickNeighbour(
+  rooms: Channel[],
+  activeId: string | null,
+  direction: 1 | -1,
+): Channel | null {
+  if (!rooms.length) return null;
+  const index = rooms.findIndex((room) => room.id === activeId);
+  if (index === -1) {
+    // The room that is open is not on the list — the walk starts at the
+    // near end of it.
+    return direction === 1 ? rooms[0] : rooms[rooms.length - 1];
+  }
+  const next = index + direction;
+  if (next < 0 || next >= rooms.length) return null;
+  return rooms[next];
+}
+
+/** The unread room the walk lands on — the next unread one after the room
+ *  that is open, or the previous unread one before it. */
+function pickUnread(
+  rooms: Channel[],
+  activeId: string | null,
+  direction: 1 | -1,
+): Channel | null {
+  if (!rooms.length) return null;
+  const index = rooms.findIndex((room) => room.id === activeId);
+  if (index === -1) {
+    const unread = rooms.filter((room) => room.unread_count > 0);
+    if (!unread.length) return null;
+    return direction === 1 ? unread[0] : unread[unread.length - 1];
+  }
+  for (let i = index + direction; i >= 0 && i < rooms.length; i += direction) {
+    const room = rooms[i];
+    if (room.unread_count > 0) return room;
+  }
+  return null;
+}
+
 let toastId = 0;
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -440,7 +511,10 @@ export const useStore = create<StoreState>((set, get) => ({
   board: null,
   wide: false,
   splitEnabled: getSettings().splitView,
+  railCollapsed: getSettings().railCollapsed,
   idle: false,
+  recentRooms: [],
+  drafts: {},
   messages: {},
   hasMore: {},
   loading: {},
@@ -564,6 +638,8 @@ export const useStore = create<StoreState>((set, get) => ({
       members: [],
       activeId: null,
       messages: {},
+      recentRooms: [],
+      drafts: {},
       threadRoot: null,
       replies: [],
       view: "channel",
@@ -609,6 +685,8 @@ export const useStore = create<StoreState>((set, get) => ({
         ? {
             activeId: null,
             messages: {},
+            recentRooms: [],
+            drafts: {},
             hasMore: {},
             loading: {},
             loadingMore: {},
@@ -659,19 +737,53 @@ export const useStore = create<StoreState>((set, get) => ({
     // keeps to one surface, has only room for one: the board gives way.
     // The organization is never a side board: it is a page of its own.
     const { wide, splitEnabled, view, board } = get();
+    // The room that is already open, pressed again, takes the whole
+    // window: the board beside it goes away, and the conversation is read
+    // at the width it deserves. The board comes back through its own
+    // switch in the rail.
+    if (board && get().activeId === channelId) {
+      set({ view: "channel", board: null, replyTo: null, idle: false });
+      get().markRead(channelId);
+      return;
+    }
     const beside =
       wide && splitEnabled
         ? board ?? (view === "schedule" || view === "projects" ? view : null)
         : null;
+    // The room you were in goes to the top of the recent list. The same
+    // room again does not sit there twice.
+    const recentRooms = [
+      channelId,
+      ...get().recentRooms.filter((id) => id !== channelId),
+    ].slice(0, RECENT_LIMIT);
     set({
       activeId: channelId,
       view: "channel",
       board: beside,
       replyTo: null,
       idle: false,
+      recentRooms,
     });
     if (!get().messages[channelId]) await get().loadMessages(channelId);
     get().markRead(channelId);
+  },
+
+  async stepRoom(direction, onlyUnread = false) {
+    const state = get();
+    const rooms = railRooms(state.channels);
+    const room = onlyUnread
+      ? pickUnread(rooms, state.activeId, direction)
+      : pickNeighbour(rooms, state.activeId, direction);
+    // Nothing at this end of the list: the walk stops here.
+    if (!room) return;
+    await get().openChannel(room.id);
+  },
+
+  setDraft(channelId, body) {
+    const drafts = { ...get().drafts };
+    if (body) drafts[channelId] = body;
+    else delete drafts[channelId];
+    set({ drafts });
   },
 
   clearScreen() {
@@ -699,6 +811,14 @@ export const useStore = create<StoreState>((set, get) => ({
       return;
     }
     set({ wide });
+  },
+
+  setRailCollapsed(collapsed) {
+    if (get().railCollapsed === collapsed) return;
+    // The rail's shape is the reader's own: it stays the next time the
+    // app opens.
+    setSettings({ railCollapsed: collapsed });
+    set({ railCollapsed: collapsed });
   },
 
   closeBoard() {
@@ -1008,6 +1128,9 @@ export const useStore = create<StoreState>((set, get) => ({
   async deleteProject(projectId) {
     await api.deleteProject(projectId);
     const projects = get().projects.filter((project) => project.id !== projectId);
+    // Whether the board was showing the project that goes away — asked
+    // before the state changes, because after it the board shows nothing.
+    const wasActive = get().activeProjectId === projectId;
     const tasks = { ...get().tasks };
     delete tasks[projectId];
     const roadmaps = { ...get().roadmaps };
@@ -1020,9 +1143,10 @@ export const useStore = create<StoreState>((set, get) => ({
       roadmaps,
       milestones,
       dialog: null,
-      activeProjectId: get().activeProjectId === projectId ? null : get().activeProjectId,
+      activeProjectId: wasActive ? null : get().activeProjectId,
     });
-    if (get().activeProjectId === projectId) {
+    // The board does not stay empty: the next project takes its place.
+    if (wasActive) {
       await get().selectProject(projects[0]?.id ?? null);
     }
     get().toast("프로젝트를 삭제했습니다");
@@ -1639,15 +1763,21 @@ export const useStore = create<StoreState>((set, get) => ({
 // The screen can be split only when this device says so. The setting is the
 // reader's own, so it is followed at once — and the split follows it.
 subscribeSettings(() => {
-  const next = getSettings().splitView;
   const state = useStore.getState();
-  if (state.splitEnabled === next) return;
-  if (!next && state.board) {
-    // The split is gone — the board takes the whole main pane.
-    useStore.setState({ splitEnabled: next, board: null, view: state.board });
-    return;
+  const next = getSettings().splitView;
+  if (state.splitEnabled !== next) {
+    if (!next && state.board) {
+      // The split is gone — the board takes the whole main pane.
+      useStore.setState({ splitEnabled: next, board: null, view: state.board });
+    } else {
+      useStore.setState({ splitEnabled: next });
+    }
   }
-  useStore.setState({ splitEnabled: next });
+  // The rail's shape is the reader's own too, and it is followed at once.
+  const rail = getSettings().railCollapsed;
+  if (state.railCollapsed !== rail) {
+    useStore.setState({ railCollapsed: rail });
+  }
 });
 
 realtime.onOpen = () => useStore.setState({ connected: true });
