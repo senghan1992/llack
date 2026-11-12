@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 21+ 용 시작 화면 (drawable 과 동일) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/llack_paper" />
+
+    <item
+        android:drawable="@drawable/llack_launch_mark"
+        android:gravity="center"
+        android:width="96dp"
+        android:height="96dp" />
+</layer-list>

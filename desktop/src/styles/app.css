@@ -192,6 +192,13 @@
   font-family: var(--font-display);
   font-size: var(--text-tiny);
   font-weight: var(--display-weight);
+  overflow: hidden;
+}
+
+.wkey__mark img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
 }
 
 .wkey__name {
@@ -2379,16 +2386,22 @@
 .gate__brand {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   margin-bottom: var(--space-lg);
+}
+
+.gate__brand-names {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
 }
 
 /* the brand tile wears the signal */
 .gate__mark {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   background: linear-gradient(180deg, var(--color-accent-lift), var(--color-accent));
   box-shadow: var(--sheen), var(--rim), var(--cast-small);
@@ -2396,6 +2409,13 @@
   font-family: var(--font-display);
   font-size: var(--text-lead);
   font-weight: var(--display-weight);
+  overflow: hidden;
+}
+
+.gate__mark img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
 }
 
 .gate__wordmark {
@@ -2403,6 +2423,15 @@
   font-size: var(--text-title);
   font-weight: var(--display-weight);
   letter-spacing: -0.025em;
+}
+
+.gate__byline {
+  font-family: var(--font-body);
+  font-size: var(--text-nano);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }
 
 .gate__title {

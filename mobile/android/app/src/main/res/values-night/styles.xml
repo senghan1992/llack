@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  앱은 밝은 테마만 지원하므로 다크 모드에서도 동일한 화면을 쓴다.
+  (검은 배경이 잠깐 보이면 Flutter 기본 스플래시와 같은 깜빡임으로 느껴진다)
+-->
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@color/llack_paper</item>
+    </style>
+</resources>

@@ -51,9 +51,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="Llack",
+    title="Atrium",
     version="0.1.0",
-    description="Company-internal messenger API.",
+    description="ArcheAI internal workspace & messenger API.",
     lifespan=lifespan,
 )
 

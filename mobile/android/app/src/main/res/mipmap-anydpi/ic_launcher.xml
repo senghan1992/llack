@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 26 미만에서 쓰는 아이콘.
+  기존 mipmap-*dpi/ic_launcher.png 는 Flutter 기본 로고라서 같은 이름의 리소스를 이.anydpi 로 대체한다.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/llack_paper" />
+
+    <item
+        android:drawable="@drawable/llack_launch_mark"
+        android:gravity="center"
+        android:width="72dp"
+        android:height="72dp" />
+</layer-list>

@@ -125,9 +125,9 @@ export function Rail() {
             aria-expanded={Boolean(workspaceAnchor)}
           >
             <span className="wkey__mark" aria-hidden="true">
-              {(workspaceName || "L").slice(0, 1)}
+              <img src="/brand/symbol-white.png" alt="" />
             </span>
-            <span className="wkey__name">{workspaceName || "워크스페이스"}</span>
+            <span className="wkey__name">{workspaceName || "ArcheAI"}</span>
             <ChevronDown size={14} className="wkey__chev" aria-hidden="true" />
           </button>
           {/* The rail's own shape: folded to a strip of icons, or open

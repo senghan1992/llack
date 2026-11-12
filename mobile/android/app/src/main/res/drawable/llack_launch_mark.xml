@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Llack 브랜드 마크: 초록 타일 위 흰색 "Ll".
+  Flutter 기본 로고 대신 앱 아이콘/시작 화면에 쓰인다.
+  (색은 llack_colors.dart 의 accent / accentInk 와 동일)
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 브랜드 타일 (radius 20) -->
+    <path
+        android:fillColor="#1C785C"
+        android:pathData="M38,18 L70,18 a20,20 0 0 1 20,20 L90,70 a20,20 0 0 1 -20,20 L38,90 a20,20 0 0 1 -20,-20 L18,38 a20,20 0 0 1 20,-20 z" />
+
+    <!-- "Ll" 글자 -->
+    <path
+        android:fillColor="#FAFCFB"
+        android:pathData="M32,34 h12 v28 h18 v12 h-30 z" />
+    <path
+        android:fillColor="#FAFCFB"
+        android:pathData="M70,34 h11 v40 h-11 z" />
+</vector>

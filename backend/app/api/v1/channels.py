@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, Response, status
 from sqlalchemy import select
 
 from app.api.deps import ChannelAccess, CurrentUser, DbSession
-from app.core.errors import forbidden, not_found
+from app.core.errors import forbidden, not_found, validation_error
 from app.models.channel import KIND_CHANNEL, KIND_DM
 from app.models.workspace import WorkspaceMembership
 from app.realtime import events
@@ -24,7 +24,9 @@ from app.services.members import is_channel_member, is_manager
 from app.services.messages import (
     DEFAULT_PAGE_SIZE,
     create_message,
-    list_messages,
+    list_messages_around,
+    list_messages_after,
+    list_messages_with_flags,
     list_pinned,
     mark_read,
     serialize_message,
@@ -198,11 +200,37 @@ async def read_messages(
     session: DbSession,
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1),
     before: str | None = Query(default=None),
+    after: str | None = Query(default=None),
+    around: str | None = Query(default=None),
 ) -> MessagePage:
-    messages, has_more = await list_messages(session, channel[0], limit, before)
+    """One page of a channel's messages.
+
+    ``before`` walks backwards through the history, ``after`` walks forward
+    (the opposite direction) and ``around`` returns a window with the given
+    message in the middle. The cursors are exclusive: the anchor message
+    itself is only part of the answer when ``around`` is used.
+    """
+    if around is not None and (before is not None or after is not None):
+        raise validation_error("around cannot be combined with before or after")
+    if before is not None and after is not None:
+        raise validation_error("before and after cannot be used together")
+
+    if around is not None:
+        messages, has_more, has_more_after = await list_messages_around(
+            session, channel[0], limit, around
+        )
+    elif after is not None:
+        messages, has_more, has_more_after = await list_messages_after(
+            session, channel[0], limit, after
+        )
+    else:
+        messages, has_more, has_more_after = await list_messages_with_flags(
+            session, channel[0], limit, before
+        )
     return MessagePage(
         messages=await serialize_messages(session, messages, user.id),
         has_more=has_more,
+        has_more_after=has_more_after,
     )
 
 

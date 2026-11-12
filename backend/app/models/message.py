@@ -33,6 +33,8 @@ class Message(Base):
         String(40), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     body: Mapped[str] = mapped_column(Text, default="")
+    # 삭제할 때 본문을 따로 보관한다. "실행 취소" 로 메시지를 되돌리기 위해 필요하다.
+    deleted_body: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     kind: Mapped[str] = mapped_column(String(16), default=KIND_TEXT)
     parent_id: Mapped[str | None] = mapped_column(
         String(40), ForeignKey("messages.id", ondelete="CASCADE"), nullable=True, index=True

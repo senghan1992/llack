@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  적응형(adaptive) 아이콘용 전경.
+  원형 마스크에 잘리지 않도록 안쪽 안전 영역(108 뷰포트 안쪽 약 66) 안에 타일을 둔다.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 브랜드 타일 (radius 13) -->
+    <path
+        android:fillColor="#1C785C"
+        android:pathData="M44,31 L64,31 a13,13 0 0 1 13,13 L77,64 a13,13 0 0 1 -13,13 L44,77 a13,13 0 0 1 -13,-13 L31,64 a13,13 0 0 1 13,-13 z" />
+
+    <!-- "Ll" 글자 -->
+    <path
+        android:fillColor="#FAFCFB"
+        android:pathData="M37,39 h8 v22 h15 v8 h-23 z" />
+    <path
+        android:fillColor="#FAFCFB"
+        android:pathData="M65,39 h7 v30 h-7 z" />
+</vector>

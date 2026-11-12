@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import not_found, validation_error
+from app.core.errors import AppError, VALIDATION_ERROR, not_found, validation_error
 from app.core.ids import MESSAGE_PREFIX, REACTION_PREFIX, READ_STATE_PREFIX, new_id
 from app.models.base import utcnow
 from app.models.channel import Channel
@@ -152,6 +152,139 @@ async def list_messages(
     return messages, has_more
 
 
+def _channel_message_query(channel: Channel):
+    """Top-level messages of a channel (the same set the pager walks)."""
+    return select(Message).where(
+        Message.channel_id == channel.id,
+        or_(Message.parent_id.is_(None), Message.inline.is_(True)),
+    )
+
+
+def _older_than(anchor: Message):
+    return or_(
+        Message.created_at < anchor.created_at,
+        and_(Message.created_at == anchor.created_at, Message.id < anchor.id),
+    )
+
+
+def _newer_than(anchor: Message):
+    return or_(
+        Message.created_at > anchor.created_at,
+        and_(Message.created_at == anchor.created_at, Message.id > anchor.id),
+    )
+
+
+async def _anchor_message(session: AsyncSession, channel: Channel, message_id: str) -> Message:
+    anchor = await session.get(Message, message_id)
+    if anchor is None or anchor.channel_id != channel.id:
+        raise not_found("message not found")
+    return anchor
+
+
+async def _has_older(session: AsyncSession, channel: Channel, message: Message) -> bool:
+    """Is there a message older than [message]?"""
+    found = await session.scalar(
+        _channel_message_query(channel).where(_older_than(message)).limit(1)
+    )
+    return found is not None
+
+
+async def _has_newer(session: AsyncSession, channel: Channel, message: Message) -> bool:
+    """Is there a message newer than [message]?"""
+    found = await session.scalar(
+        _channel_message_query(channel).where(_newer_than(message)).limit(1)
+    )
+    return found is not None
+
+
+async def list_messages_around(
+    session: AsyncSession,
+    channel: Channel,
+    limit: int = DEFAULT_PAGE_SIZE,
+    around: str | None = None,
+) -> tuple[list[Message], bool, bool]:
+    """Return a window of messages with [around] in the middle.
+
+    The window holds the anchor itself, up to ``limit // 2`` older messages
+    and the rest as newer ones, oldest first. The two flags say whether the
+    window can be extended further back or further forward.
+    """
+    if not around:
+        return await list_messages_with_flags(session, channel, limit, None)
+    page_size = max(1, min(limit, MAX_PAGE_SIZE))
+    anchor = await _anchor_message(session, channel, around)
+
+    older_count = page_size // 2
+    newer_count = max(0, page_size - older_count - 1)
+
+    older_rows = list(
+        await session.scalars(
+            _channel_message_query(channel)
+            .where(_older_than(anchor))
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(older_count + 1)
+        )
+    )
+    has_more = len(older_rows) > older_count
+    older = list(reversed(older_rows[:older_count]))
+
+    newer_rows = list(
+        await session.scalars(
+            _channel_message_query(channel)
+            .where(_newer_than(anchor))
+            .order_by(Message.created_at, Message.id)
+            .limit(newer_count + 1)
+        )
+    )
+    has_more_after = len(newer_rows) > newer_count
+    newer = newer_rows[:newer_count]
+
+    return older + [anchor] + newer, has_more, has_more_after
+
+
+async def list_messages_after(
+    session: AsyncSession,
+    channel: Channel,
+    limit: int = DEFAULT_PAGE_SIZE,
+    after: str | None = None,
+) -> tuple[list[Message], bool, bool]:
+    """Return the messages newer than [after], oldest first (exclusive)."""
+    if not after:
+        return await list_messages_with_flags(session, channel, limit, None)
+    page_size = max(1, min(limit, MAX_PAGE_SIZE))
+    anchor = await _anchor_message(session, channel, after)
+
+    rows = list(
+        await session.scalars(
+            _channel_message_query(channel)
+            .where(_newer_than(anchor))
+            .order_by(Message.created_at, Message.id)
+            .limit(page_size + 1)
+        )
+    )
+    has_more_after = len(rows) > page_size
+    messages = rows[:page_size]
+
+    has_more = False
+    if messages:
+        has_more = await _has_older(session, channel, messages[0])
+    return messages, has_more, has_more_after
+
+
+async def list_messages_with_flags(
+    session: AsyncSession,
+    channel: Channel,
+    limit: int = DEFAULT_PAGE_SIZE,
+    before: str | None = None,
+) -> tuple[list[Message], bool, bool]:
+    """The plain pager (newest page or one page back), with both flags."""
+    messages, has_more = await list_messages(session, channel, limit, before)
+    has_more_after = False
+    if messages:
+        has_more_after = await _has_newer(session, channel, messages[-1])
+    return messages, has_more, has_more_after
+
+
 async def list_thread_replies(
     session: AsyncSession, root: Message, limit: int = MAX_PAGE_SIZE
 ) -> list[Message]:
@@ -178,8 +311,31 @@ async def edit_message(session: AsyncSession, message: Message, body: str) -> Me
 
 
 async def delete_message(session: AsyncSession, message: Message) -> Message:
+    # 본문을 지우기 전에 따로 보관한다. 그래야 "실행 취소"로 메시지를 되돌릴 수 있다.
+    message.deleted_body = message.body
     message.deleted_at = utcnow()
     message.body = ""
+    await session.flush()
+    if message.parent_id:
+        await recompute_thread_stats(session, message.parent_id)
+    return message
+
+
+async def restore_message(session: AsyncSession, message: Message) -> Message:
+    """Bring a deleted message back, body and all.
+
+    Deleting is a soft delete: the body is emptied but kept in
+    ``deleted_body`` so the "실행 취소" of the mobile app can undo it for
+    real — on every device, not just on the one that pressed delete.
+    """
+    if message.deleted_at is None:
+        raise AppError(VALIDATION_ERROR, "이미 삭제되지 않은 메시지입니다", 400)
+    if message.deleted_body is None:
+        # 이 컬럼이 생기기 전에 삭제된 메시지는 본문이 남아있지 않다.
+        raise AppError(VALIDATION_ERROR, "이 메시지는 복구할 수 없습니다", 400)
+    message.body = message.deleted_body
+    message.deleted_body = None
+    message.deleted_at = None
     await session.flush()
     if message.parent_id:
         await recompute_thread_stats(session, message.parent_id)

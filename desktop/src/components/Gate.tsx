@@ -60,9 +60,12 @@ export function Gate() {
         <div className="gate__inner">
           <div className="gate__brand">
             <span className="gate__mark" aria-hidden="true">
-              L
+              <img src="/brand/symbol-white.png" alt="" />
             </span>
-            <span className="gate__wordmark">Llack</span>
+            <div className="gate__brand-names">
+              <span className="gate__wordmark">Atrium</span>
+              <span className="gate__byline">by ArcheAI</span>
+            </div>
           </div>
 
           <h1 className="gate__title">
@@ -112,7 +115,7 @@ export function Gate() {
                     className="field__input"
                     value={workspace}
                     autoComplete="organization"
-                    placeholder="예: 한빛"
+                    placeholder="예: ArcheAI"
                     onChange={(event) => setWorkspace(event.target.value)}
                     required
                   />
@@ -189,8 +192,15 @@ export function Gate() {
       </main>
 
       <aside className="gate__aside" aria-hidden="true">
-        <p className="gate__quote">팀의 하루가 모이는 한 곳.</p>
-        <p className="gate__attrib">채널과 직접 메시지, 스레드를 한 화면에서.</p>
+        <div className="u-mb-8">
+          <img
+            src="/brand/logo-white.png"
+            alt="ArcheAI"
+            style={{ width: "160px", height: "auto", opacity: 0.92, display: "block" }}
+          />
+        </div>
+        <p className="gate__quote">ArcheAI의 지성과 협업이 모이는 곳.</p>
+        <p className="gate__attrib">채널과 직접 메시지, 프로젝트와 일정을 한 화면에서.</p>
         <div className="u-mt-6 u-row u-gap-3">
           <span className="kbd kbd--on-ink">⌘K</span>
           <span className="u-small gate__note">채널과 사람으로 바로 이동</span>

@@ -54,6 +54,7 @@ class MessageOut(ORMModel):
 class MessagePage(BaseModel):
     messages: list[MessageOut]
     has_more: bool
+    has_more_after: bool = False
 
 
 class MessageCreate(BaseModel):

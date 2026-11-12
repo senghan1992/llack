@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ 시스템 스플래시 화면.
+  기본값으로는 앱 아이콘(=Flutter 기본 로고)이 뜨므로 Llack 마크로 명시한다.
+-->
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/llack_paper</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/llack_launch_mark</item>
+    </style>
+
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@color/llack_paper</item>
+    </style>
+</resources>

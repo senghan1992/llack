@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      앱이 시작되는 동안 보이는 테마.
+      Flutter 첫 프레임이 그려지면 자동으로 제거된다.
+    -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+
+    <!--
+      Flutter 엔진이 준비된 뒤의 테마.
+      windowBackground 를 종이색으로 맞춰 스플래시 → 앱 전환 시 흰 번쩍임을 없앤다.
+    -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@color/llack_paper</item>
+    </style>
+</resources>

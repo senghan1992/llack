@@ -48,21 +48,21 @@
   --color-rule: oklch(87.5% 0.02 140);
   --color-rule-soft: oklch(91.5% 0.014 120);
 
-  /* ── the one signal ─────────────────────────────────────────── */
-  --color-accent: oklch(47% 0.13 160);
-  --color-accent-lift: oklch(52% 0.12 158);
-  --color-accent-deep: oklch(38% 0.105 162);
+  /* ── the one signal · ArcheAI Signature Terracotta Orange ──── */
+  --color-accent: oklch(58% 0.18 38.5);
+  --color-accent-lift: oklch(63% 0.17 39);
+  --color-accent-deep: oklch(49% 0.18 37);
   /* The key catching more light under the pointer. The label on it must
      still hold 4.5:1, so the lift stops well short of the pale end. */
-  --color-accent-hover-top: oklch(53.5% 0.128 157);
-  --color-accent-hover-bottom: oklch(48.5% 0.134 159);
-  --color-accent-soft: oklch(91% 0.055 160);
-  --color-accent-ink: oklch(99% 0.006 160);
-  --color-focus: oklch(45% 0.14 160);
-  --accent-on-soft: oklch(32% 0.09 162);
-  --accent-ring: oklch(47% 0.13 160 / 0.16);
-  --accent-edge: oklch(47% 0.13 160 / 0.5);
-  --on-accent-soft: oklch(99% 0.006 160 / 0.45);
+  --color-accent-hover-top: oklch(65% 0.17 39);
+  --color-accent-hover-bottom: oklch(58% 0.18 38.5);
+  --color-accent-soft: oklch(93.5% 0.045 42);
+  --color-accent-ink: oklch(99% 0.005 38.5);
+  --color-focus: oklch(58% 0.18 38.5);
+  --accent-on-soft: oklch(42% 0.17 37);
+  --accent-ring: oklch(58% 0.18 38.5 / 0.18);
+  --accent-edge: oklch(58% 0.18 38.5 / 0.5);
+  --on-accent-soft: oklch(99% 0.005 38.5 / 0.45);
 
   /* ── surfaces · the ladder: frame, rail, canvas, raise, well ── */
   --surface-frame: oklch(92.2% 0.024 96);
@@ -84,9 +84,9 @@
   --edge-light: oklch(100% 0 0 / 0.4);
 
   /* ── the sign-in panel · a deep tray lit from one corner ─────── */
-  --gate-night-top: oklch(25% 0.055 163);
-  --gate-night-bottom: oklch(16% 0.032 168);
-  --gate-glow: oklch(44% 0.1 158 / 0.55);
+  --gate-night-top: oklch(25% 0.012 25);
+  --gate-night-bottom: oklch(17% 0.015 15);
+  --gate-glow: oklch(65% 0.18 38.5 / 0.45);
 
   /* ── the rail band, top to bottom ───────────────────────────── */
   --surface-rail-top: oklch(94.6% 0.028 100);
@@ -138,10 +138,10 @@
      travel in a bubble against the right of the column, theirs stay on the
      paper at the left. The bubble, its ink, its dim timestamp and the link
      colour inside it are one set. */
-  --bubble-mine: oklch(42% 0.115 161);
-  --bubble-mine-ink: oklch(98.5% 0.008 160);
-  --bubble-mine-dim: oklch(98.5% 0.008 160 / 0.74);
-  --bubble-mine-link: oklch(92% 0.06 158);
+  --bubble-mine: oklch(56% 0.18 38.5);
+  --bubble-mine-ink: oklch(98.5% 0.006 38.5);
+  --bubble-mine-dim: oklch(98.5% 0.006 38.5 / 0.74);
+  --bubble-mine-link: oklch(94% 0.04 40);
 
   /* ── radii · one per nesting level ──────────────────────────── */
   --radius-xs: 5px; --radius-sm: 8px; --radius-input: 10px;
@@ -217,18 +217,18 @@
   --color-rule: oklch(29% 0.018 166);
   --color-rule-soft: oklch(23% 0.016 166);
 
-  --color-accent: oklch(70% 0.12 158);
-  --color-accent-lift: oklch(76% 0.115 156);
-  --color-accent-deep: oklch(60% 0.11 160);
-  --color-accent-hover-top: oklch(78% 0.115 155);
-  --color-accent-hover-bottom: oklch(73% 0.12 157);
-  --color-accent-soft: oklch(31% 0.055 160);
-  --color-accent-ink: oklch(16% 0.02 168);
-  --color-focus: oklch(78% 0.14 158);
-  --accent-on-soft: oklch(86% 0.1 158);
-  --accent-ring: oklch(70% 0.12 158 / 0.26);
-  --accent-edge: oklch(70% 0.12 158 / 0.6);
-  --on-accent-soft: oklch(23% 0.03 160 / 0.5);
+  --color-accent: oklch(68% 0.17 38.5);
+  --color-accent-lift: oklch(74% 0.16 39.5);
+  --color-accent-deep: oklch(58% 0.18 37.5);
+  --color-accent-hover-top: oklch(76% 0.155 40);
+  --color-accent-hover-bottom: oklch(69% 0.165 38.5);
+  --color-accent-soft: oklch(29% 0.06 38.5);
+  --color-accent-ink: oklch(15% 0.015 20);
+  --color-focus: oklch(74% 0.17 38.5);
+  --accent-on-soft: oklch(86% 0.11 40);
+  --accent-ring: oklch(68% 0.17 38.5 / 0.28);
+  --accent-edge: oklch(68% 0.17 38.5 / 0.6);
+  --on-accent-soft: oklch(20% 0.02 20 / 0.5);
 
   --surface-frame: oklch(10.5% 0.011 168);
   --surface-rail: oklch(15% 0.014 168);
@@ -243,9 +243,9 @@
   --surface-groove: oklch(11.5% 0.014 168);
   --edge-light: oklch(100% 0 0 / 0.07);
 
-  --gate-night-top: oklch(19% 0.042 164);
-  --gate-night-bottom: oklch(10.5% 0.024 168);
-  --gate-glow: oklch(46% 0.095 158 / 0.6);
+  --gate-night-top: oklch(20% 0.012 25);
+  --gate-night-bottom: oklch(12% 0.015 15);
+  --gate-glow: oklch(65% 0.17 38.5 / 0.5);
 
   --surface-rail-top: oklch(17.5% 0.016 168);
   --surface-rail-bottom: oklch(13.5% 0.014 168);
@@ -285,10 +285,10 @@
 
   /* the bubble keeps its own pair at night: a deeper green so it still
      reads as a surface against the dark canvas, not as a signal. */
-  --bubble-mine: oklch(34% 0.095 162);
-  --bubble-mine-ink: oklch(93% 0.012 165);
-  --bubble-mine-dim: oklch(93% 0.012 165 / 0.7);
-  --bubble-mine-link: oklch(87% 0.095 158);
+  --bubble-mine: oklch(54% 0.175 38.5);
+  --bubble-mine-ink: oklch(96% 0.008 38.5);
+  --bubble-mine-dim: oklch(96% 0.008 38.5 / 0.74);
+  --bubble-mine-link: oklch(90% 0.06 40);
 
   --shadow-e1: 0 1px 2px oklch(4% 0.01 168 / 0.5);
   --shadow-e2: 0 1px 2px oklch(4% 0.01 168 / 0.45), 0 10px 24px -12px oklch(2% 0.01 168 / 0.7);

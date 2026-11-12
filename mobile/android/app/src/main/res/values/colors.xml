@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      네이티브 시작 화면용 색상.
+      mobile/lib/theme/llack_colors.dart 의 값과 반드시 동일하게 유지한다.
+      (Dart 테마 값을 네이티브 리소스에서 읽을 수 없으므로 여기에도 그대로 옮긴다)
+    -->
+    <color name="llack_paper">#FBF9F5</color>
+    <color name="llack_accent">#1C785C</color>
+    <color name="llack_accent_ink">#FAFCFB</color>
+</resources>

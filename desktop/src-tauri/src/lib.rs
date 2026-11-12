@@ -193,7 +193,7 @@ async fn resolve_title(handle: &AppHandle, payload: &NotifyEvent) -> String {
         _ => None,
     };
 
-    label.unwrap_or_else(|| "Llack".to_string())
+    label.unwrap_or_else(|| "Atrium".to_string())
 }
 
 /// 채널 id 로 채널 이름을 물어본다. 못 물어봐도 알림 자체는 계속 나간다.

@@ -91,6 +91,9 @@ async def ensure_columns() -> None:
             await connection.execute(
                 text(f"ALTER TABLE messages ADD COLUMN inline BOOLEAN NOT NULL DEFAULT {default}")
             )
+        if "deleted_body" not in present:
+            # 삭제된 메시지의 본문을 보관하는 칸 (메시지 복구에 필요).
+            await connection.execute(text("ALTER TABLE messages ADD COLUMN deleted_body TEXT"))
 
         def file_columns(sync_connection) -> set[str]:
             return {c["name"] for c in inspect(sync_connection).get_columns("files")}

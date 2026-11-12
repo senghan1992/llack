@@ -48,5 +48,11 @@ desktop/src-tauri/target/
 # 헤드리스 데스크톱 캡처 (scripts/desktop-headless.sh)
 desktop/headless.png
 
+# ── 모바일 빌드 산출물 ───────────────────────────────────────────────────
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins*
+
+
 # 리뷰 캡처 (한 번의 검사용 — 커밋하지 않는다)
 .impeccable/review/

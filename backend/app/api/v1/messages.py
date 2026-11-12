@@ -19,6 +19,7 @@ from app.services.messages import (
     get_message_or_404,
     list_thread_replies,
     remove_reaction,
+    restore_message,
     serialize_message,
     serialize_messages,
     set_pinned,
@@ -78,6 +79,24 @@ async def delete_message_route(
     await session.commit()
     await events.emit_message_deleted(session, channel, message)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{message_id}/restore", response_model=MessageOut)
+async def restore_message_route(
+    message_id: MessageId,
+    user: CurrentUser,
+    session: DbSession,
+) -> MessageOut:
+    """Undo a deletion: the message comes back with its body."""
+    message, channel, membership = await _load_message(session, user, message_id)
+    if not _can_modify(user, message, membership):
+        raise forbidden("only the author or an admin can restore this message")
+
+    await restore_message(session, message)
+    await session.commit()
+    # 다른 기기에서도 즉시 복구된 메시지가 보이도록 알린다.
+    await events.emit_message_updated(session, channel, message)
+    return await serialize_message(session, message, user.id)
 
 
 @router.post("/{message_id}/reactions", response_model=MessageOut)

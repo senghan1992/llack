@@ -186,8 +186,8 @@ export default function App() {
     return (
       <div className="u-col u-minh-screen u-place-center u-frame">
         <div className="u-col u-center u-gap-3">
-          <span className="gate__mark" aria-hidden="true">
-            L
+          <span className="gate__mark" aria-hidden="true" style={{ width: 44, height: 44 }}>
+            <img src="/brand/symbol-white.png" alt="" style={{ width: 26, height: 26 }} />
           </span>
           <p className="u-small u-muted">워크스페이스를 여는 중</p>
         </div>

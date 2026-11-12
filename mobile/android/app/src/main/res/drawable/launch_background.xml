@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Llack 시작 화면: 종이색(paper) 배경 + 가운데 브랜드 타일.
+  Flutter 기본 로고가 뜨던 것을 Llack 마크로 교체한다.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/llack_paper" />
+
+    <item
+        android:drawable="@drawable/llack_launch_mark"
+        android:gravity="center"
+        android:width="96dp"
+        android:height="96dp" />
+</layer-list>
