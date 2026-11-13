@@ -34,7 +34,7 @@ anywhere else in the stylesheet.
   --font-display: "Schibsted Grotesk", "Pretendard Variable", ui-sans-serif, sans-serif;
   --font-body: "Instrument Sans", "Pretendard Variable", ui-sans-serif, sans-serif;
   --font-outlier: "DM Mono", ui-monospace, monospace;
-  --radius-input: 10px; --radius-card: 14px; --radius-panel: 16px; --radius-pill: 999px;
+  --radius-input: 10px; --radius-field: 12px; --radius-card: 14px; --radius-panel: 16px; --radius-pill: 999px;
   --control-h: 34px; --rail-w: 264px; --thread-w: 400px; --header-h: 60px;
   --text-measure: 920px; /* where a line of message text ends */
   --agenda-measure: 720px; /* a day of events is a block, not a table row */
@@ -63,6 +63,10 @@ A rung is told apart from the next by **elevation**, not by a hairline alone:
   wears `--sheen` on its top edge and `--rim` on its bottom. Light falls on it.
 - A **recessed** surface — inputs, the search groove — wears `--recess`, so light
   leaves its top edge.
+- A **cut** surface — a field, a well — is cut *into* the panel it sits on: the
+  edge of the cut is drawn inside the shape (`inset`), never laid around it, so
+  the field reads as carved rather than laid on top. The cut is warm: a cold
+  grey line around a cream field reads as a borrowed form.
 - The canvas and the rail carry a fine **paper tooth** (`--tooth`). The paper is
   a material, not a flat fill.
 
@@ -180,7 +184,13 @@ A rung is told apart from the next by **elevation**, not by a hairline alone:
   never repaints it with a surface its label cannot stand on.
 - Secondary: outline on `--surface-raise`, same radius and height.
 - Icon buttons: 30px square, no chrome until hover.
-- A field is a well: recessed, 10px radius, and the focus ring is the accent.
+- A field is a **well**: cut into the surface it sits on, 40px high, 12px
+  radius, the light staying at its top edge and its foot deeper. The focus
+  ring is the accent — the cut's edge lights up and a soft halo answers it.
+- **The mark in a box is ours too.** The platform's own checkbox paints with
+  the operating system, and a grey plate inside a cream panel reads as
+  something borrowed. Ours is a small recessed square that fills with the
+  signal and carries a cut tick.
 - **A choice between several ways is a dropdown field**: a well like any other
   field, and the list that comes out of it is a raised surface — the chosen row
   wears the signal colour, the way the selected day wears it on the calendar.
@@ -198,6 +208,52 @@ A rung is told apart from the next by **elevation**, not by a hairline alone:
 - **The scrollbar belongs to the browser, not to us.** This is a desktop
   surface, scrolled with a wheel or a trackpad, so the bar never appears —
   the scroll itself is untouched. Only the bar is gone.
+
+## Dialogs
+
+A dialog is a **panel that hangs over the page**. It is not a rectangle with a
+border.
+
+- The page behind it is **pushed back, not hidden**: blurred, dimmed, and
+  darkened at the edges. The panel is the one lit thing in the room.
+- The panel is **centred** and carries a layered shadow — a contact shadow, a
+  body shadow and a long cast — with a lit top edge. A panel with one hairline
+  around it reads as a box drawn on the page.
+- It is built in three bands: the **head** (the subject, with the key that
+  closes it), the **body** (the content, and the only band that scrolls), and
+  the **foot** (a shelf a step below the panel, where the actions stand at the
+  edge of the sheet).
+- Every dialog in the app is the same shell, so a form is recognisable before
+  it is read: a new channel, an event, a card and an invite all arrive as the
+  same object.
+
+## Forms
+
+A form is a **sheet of rows**. The name of the thing on the left, the thing you
+fill in on the right, and a hairline between the rows. One row is one line, so
+the whole form is read at a glance instead of scrolled through. The row is the
+same shape the settings sheet uses — a name, and the control that changes it.
+
+- **The title is not a row.** It is the subject of the form: the name of the
+  thing written small and quiet above it, the thing itself written large in
+  the display face, and a rule under it that reads like the first line of a
+  note. The eye lands in one place.
+- **A label sits beside its control, never above it.** A wall of labels stacked
+  over their fields is the thing a form is trying not to be.
+- **The rare fields are folded, not gone.** A **더 보기** row says what is
+  inside it — "장소 · 설명 · 연결할 방" — so the reader knows the form can do
+  more without opening it to find out. Nothing is removed from the product; it
+  is only put away until it is wanted.
+- **The platform's own date and time fields are never used.** They paint with
+  the operating system, so they can never wear this app's material. A **day** is
+  a well that opens the month's grid under itself — the same grid the schedule
+  shows, so a day looks the same wherever it is picked. An **hour** is a well
+  that opens a list of times, like every other choice.
+- **The day is picked once.** A meeting names its day and its hours; it does not
+  name its end day. When the end falls after the start, the row says so.
+- **The keyboard is the control**, and it answers the way the dropdown answers:
+  the field keeps the focus, the arrows walk a marker through the days, Enter
+  takes the day under it, Escape closes the month and leaves the dialog open.
 
 ## Picking people
 

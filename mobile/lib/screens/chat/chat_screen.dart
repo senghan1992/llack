@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../../models/models.dart';
 import '../../providers/app_state.dart';
 import '../../theme/llack_colors.dart';
+import '../../theme/llack_theme.dart';
 import '../../theme/llack_typography.dart';
+import '../../widgets/app_snack_bar.dart';
 import '../../widgets/message_composer.dart';
 import '../../widgets/presence_badge.dart';
 import 'channel_info_dialog.dart';
@@ -91,6 +94,33 @@ class _ChatScreenState extends State<ChatScreen> {
 
   double _lastKeyboardInset = 0;
 
+  /// 채널별 임시저장 글.
+  ///
+  /// (코어에도 같은 내용을 `state.setDraft` 로 기록한다.
+  ///  코어에 남는 이유는 대화창이 새로 만들어져도(모바일은 채널마다 새 화면을 push 한다)
+  ///  작성 중인 글이 사라지지 않아야 하기 때문이다)
+  final Map<String, String> _drafts = {};
+
+  /// composer 를 다시 만들기 위한 값. (채널이 바뀌면 증가한다)
+  int _composerGeneration = 0;
+
+  /// composer 를 찾기 위한 키. (입력창 컨트롤러를 얻는 데 쓴다)
+  final GlobalKey _composerKey = GlobalKey(debugLabel: 'message-composer');
+
+  /// 채널을 바꾼 순간의 임시저장 글.
+  ///
+  /// (composer 가 처음 알리는 "빈 글" 때문에 지워지지 않도록 미리 잡아 둔다)
+  String _pendingDraft = '';
+
+  /// 임시저장을 복원하는 중인지 (복원할 때 "입력 중" 신호를 보내지 않기 위해)
+  bool _restoringDraft = false;
+
+  /// "최신 메시지" 버튼을 보여줄지 (과거를 보고 있을 때만)
+  bool _showJumpToLatest = false;
+
+  /// 프로그램이 스크롤하는 중인지 (버튼이 깜빡이지 않도록)
+  bool _autoScrolling = false;
+
   @override
   void initState() {
     super.initState();
@@ -133,6 +163,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _markReadIfUnread();
     }
     _wasAtBottom = atBottom;
+
+    // 과거를 보고 있으면 "최신 메시지" 버튼을 띄운다.
+    _updateJumpButton(atBottom);
 
     // 위쪽 끝에 가까우면 과거 메시지를 더 불러온다.
     if (position.pixels <= position.minScrollExtent + 80) {
@@ -278,6 +311,16 @@ class _ChatScreenState extends State<ChatScreen> {
     return p.maxScrollExtent - p.pixels <= 120;
   }
 
+  /// "최신 메시지" 버튼을 보여줄지 갱신한다.
+  ///
+  /// (최신 구간이 아니면 화면 아래에 버튼을 띄운다)
+  void _updateJumpButton(bool atBottom) {
+    if (!mounted) return;
+    final show = !atBottom && !_autoScrolling;
+    if (show == _showJumpToLatest) return;
+    setState(() => _showJumpToLatest = show);
+  }
+
   /// 화면이 그려진 뒤 스크롤 상태를 현재 데이터에 맞춘다.
   void _scheduleScrollSync() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -313,8 +356,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 최신 메시지가 보이도록 스크롤한다.
   Future<void> _scrollToBottom({bool animate = false}) async {
+    // 프로그램이 움직이는 동안에는 "최신 메시지" 버튼을 숨긴다. (깜빡임 방지)
+    _autoScrolling = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || !_scrollController.hasClients) return;
+      if (!mounted || !_scrollController.hasClients) {
+        _autoScrolling = false;
+        return;
+      }
       final p = _scrollController.position;
       if (animate) {
         await _scrollController.animateTo(
@@ -325,13 +373,18 @@ class _ChatScreenState extends State<ChatScreen> {
       } else {
         _scrollController.jumpTo(p.maxScrollExtent);
       }
-      if (!mounted || !_scrollController.hasClients) return;
+      if (!mounted || !_scrollController.hasClients) {
+        _autoScrolling = false;
+        return;
+      }
       // 리스트가 늦게 레이아웃되면 최대 스크롤 범위가 더 커질 수 있다.
       // 그래도 최신 구간에 붙어 있도록 한 번 더 보정한다.
       final pos = _scrollController.position;
       if (pos.maxScrollExtent - pos.pixels > 8) {
         _scrollController.jumpTo(pos.maxScrollExtent);
       }
+      _autoScrolling = false;
+      _updateJumpButton(_isNearBottom());
     });
   }
 
@@ -365,6 +418,99 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  // ── 임시저장 (draft) ─────────────────────────────────────────
+
+  /// 파일을 골라 워크스페이스에 올리고, (이름, 파일 id) 목록을 돌려준다.
+  ///
+  /// 취소하면 null, 업로드가 실패하면 사용자에게 알리고 null 을 돌려준다.
+  Future<List<(String, String)>?> _uploadAttachments(
+    BuildContext context,
+    AppState state,
+  ) async {
+    List<PlatformFile> picked;
+    try {
+      picked = await FilePicker.pickFiles();
+    } catch (_) {
+      picked = const [];
+    }
+    if (picked.isEmpty) return null;
+
+    final uploaded = <(String, String)>[];
+    for (final file in picked) {
+      final path = file.path;
+      if (path == null) continue;
+      try {
+        final ref = await state.uploadFile(path, fileName: file.name);
+        uploaded.add((file.name, ref.id));
+      } catch (e) {
+        if (!context.mounted) return null;
+        showAppSnackBar(context, '파일을 올리지 못했습니다: $e');
+        return null;
+      }
+    }
+    return uploaded;
+  }
+
+  /// composer 안의 입력 컨트롤러를 찾는다.
+  ///
+  /// MessageComposer 는 입력창을 자기 안에서 만들어서 밖에서 줄 수 없다.
+  /// (남의 파일을 고치지 않기 위해) 만들어진 입력창의 컨트롤러를 찾아 쓴다.
+  TextEditingController? _composerInputController() {
+    final ctx = _composerKey.currentContext;
+    if (ctx == null) return null;
+    return _findTextField(ctx)?.controller;
+  }
+
+  /// 하위 트리에서 첫 번째 [TextField] 를 찾는다.
+  ///
+  /// (composer 안에는 메시지 입력창 하나뿐이다)
+  TextField? _findTextField(BuildContext ctx) {
+    TextField? found;
+    ctx.visitChildElements((element) {
+      if (found != null) return;
+      final widget = element.widget;
+      if (widget is TextField) {
+        found = widget;
+        return;
+      }
+      found = _findTextField(element);
+    });
+    return found;
+  }
+
+  /// 입력창의 글자가 바뀔 때 채널별 임시저장으로 남긴다.
+  void _handleDraftChanged(String channelId, String text) {
+    _drafts[channelId] = text;
+    _state.setDraft(channelId, text);
+  }
+
+  /// composer 가 만들어진 뒤에 저장해 둔 임시저장 글을 되돌린다.
+  void _scheduleDraftRestore() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _restoreDraftIntoComposer();
+    });
+  }
+
+  /// 저장해 둔 임시저장 글을 입력창에 다시 넣는다.
+  ///
+  /// 채널을 바꿨다가 돌아왔을 때 쓰던 글자가 그대로 있어야 한다.
+  void _restoreDraftIntoComposer() {
+    final draft = _pendingDraft;
+    if (draft.isEmpty) return;
+
+    final controller = _composerInputController();
+    if (controller == null) return;
+    if (controller.text == draft) return;
+
+    // 복원하는 동안에는 "입력 중" 신호를 보내지 않는다.
+    // (글자를 되돌린 것인데 상대방에게 "입력 중" 으로 뜨면 이상하다)
+    _restoringDraft = true;
+    controller.text = draft;
+    controller.selection = TextSelection.collapsed(offset: draft.length);
+    _restoringDraft = false;
+  }
+
   // ── 메시지 삭제 / 되돌리기 ──────────────────────────────────────
   // (삭제 + "실행 취소" 는 스레드 화면과 공유하는 message_actions.dart 가 담당한다)
 
@@ -390,6 +536,16 @@ class _ChatScreenState extends State<ChatScreen> {
       _pendingRestoreDistance =
           channelId == null ? null : ChatScrollMemory.load(channelId);
       _lastMessageCount = 0;
+      // 되돌려 놓을 임시저장 글을 **지금** 잡아 둔다.
+      // (composer 가 처음 알리는 "빈 글"에 지워지지 않도록 미리 빼 둔다)
+      _pendingDraft = channelId == null
+          ? ''
+          : (_drafts[channelId] ?? _state.draftFor(channelId) ?? '');
+      // 입력창을 새로 만들고(작성 중인 글은 임시저장에 남겨 둔다)
+      // 저장해 둔 임시저장 글을 되돌린다.
+      _composerGeneration++;
+      _showJumpToLatest = false;
+      _scheduleDraftRestore();
     }
 
     // 새 메시지가 도착했을 때, 사용자가 최신 구간에 있으면 따라간다.
@@ -556,7 +712,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
             // 과거 메시지를 불러오는 중 표시
             if (state.isLoadingActiveMessages && messages.isNotEmpty)
-              const LinearProgressIndicator(
+               LinearProgressIndicator(
                 minHeight: 2,
                 color: LlackColors.accent,
                 backgroundColor: LlackColors.surfaceWell,
@@ -586,69 +742,84 @@ class _ChatScreenState extends State<ChatScreen> {
                               )
                             : NotificationListener<UserScrollNotification>(
                                 onNotification: _handleUserScroll,
-                                child: ListView.builder(
-                                  controller: _scrollController,
-                                  // 점프 대기 중에는 목록 전체가 빌드되게 한다
-                                  // (아직 빌드되지 않은 메시지로는 스크롤할 수 없다)
-                                  scrollCacheExtent: ScrollCacheExtent.pixels(
-                                    _isJumping ? _jumpCacheExtent : _defaultCacheExtent,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  itemCount: messages.length,
-                                  itemBuilder: (ctx, i) {
-                                    final msg = messages[i];
-                                    final isMine = msg.userId == myId;
-
-                                    final showDateHeader = i == 0 ||
-                                        !_isSameDay(messages[i - 1].createdAt, msg.createdAt);
-
-                                    // 삭제된 메시지는 조용한 한 줄로 그린다.
-                                    // (연속으로 삭제된 메시지는 하나로 합친다)
-                                    if (msg.deletedAt != null) {
-                                      if (i > 0 && messages[i - 1].deletedAt != null) {
-                                        // 앞 항목에 이미 합쳐서 그렸다
-                                        return const SizedBox.shrink();
-                                      }
-                                      var run = 1;
-                                      while (i + run < messages.length &&
-                                          messages[i + run].deletedAt != null) {
-                                        run++;
-                                      }
-                                      return ChatMessageItem(
-                                        message: msg,
-                                        isMine: isMine,
-                                        showDateHeader: showDateHeader,
-                                        deletedCount: run,
-                                        fileUrlResolver: state.api.absoluteFileUrl,
-                                        onOpenThread: () => _openThread(context, msg),
-                                        onToggleReaction: (emoji) =>
-                                            state.toggleReaction(msg, emoji),
-                                        onTogglePin: () => state.togglePin(msg),
-                                      );
-                                    }
-
-                                    return ChatMessageItem(
-                                      message: msg,
-                                      isMine: isMine,
-                                      showDateHeader: showDateHeader,
-                                      // 점프 대상에만 키를 붙인다
-                                      jumpKey: msg.id == focusId ? _jumpKey : null,
-                                      highlight: msg.id == _highlightedMessageId,
-                                      fileUrlResolver: state.api.absoluteFileUrl,
-                                      onOpenThread: () => _openThread(context, msg),
-                                      onReplyInline: () => state.setReplyTo(msg),
-                                      onToggleReaction: (emoji) => state.toggleReaction(msg, emoji),
-                                      onTogglePin: () => state.togglePin(msg),
-                                      onEdit: (newBody) => state.editMessage(msg.id, newBody),
-                                      // 메시지 목록 안의 context 를 넘겨야 가장 가까운
-                                      // (중첩) messenger 를 잡아 스낵바가 composer 를 덮지 않는다.
-                                      onDelete: () => MessageActions.deleteMessage(
-                                        ctx,
-                                        msg,
-                                        channel.id,
+                                // 메시지 목록 위에 "최신 메시지" 버튼을 띄운다.
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    ListView.builder(
+                                      controller: _scrollController,
+                                      // 점프 대기 중에는 목록 전체가 빌드되게 한다
+                                      // (아직 빌드되지 않은 메시지로는 스크롤할 수 없다)
+                                      scrollCacheExtent: ScrollCacheExtent.pixels(
+                                        _isJumping ? _jumpCacheExtent : _defaultCacheExtent,
                                       ),
-                                    );
-                                  },
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      itemCount: messages.length,
+                                      itemBuilder: (ctx, i) {
+                                        final msg = messages[i];
+                                        final isMine = msg.userId == myId;
+
+                                        final showDateHeader = i == 0 ||
+                                            !_isSameDay(messages[i - 1].createdAt, msg.createdAt);
+
+                                        // 삭제된 메시지는 조용한 한 줄로 그린다.
+                                        // (연속으로 삭제된 메시지는 하나로 합친다)
+                                        if (msg.deletedAt != null) {
+                                          if (i > 0 && messages[i - 1].deletedAt != null) {
+                                            // 앞 항목에 이미 합쳐서 그렸다
+                                            return const SizedBox.shrink();
+                                          }
+                                          var run = 1;
+                                          while (i + run < messages.length &&
+                                              messages[i + run].deletedAt != null) {
+                                            run++;
+                                          }
+                                          return ChatMessageItem(
+                                            message: msg,
+                                            isMine: isMine,
+                                            showDateHeader: showDateHeader,
+                                            deletedCount: run,
+                                            fileUrlResolver: state.api.absoluteFileUrl,
+                                            onOpenThread: () => _openThread(context, msg),
+                                            onToggleReaction: (emoji) =>
+                                                state.toggleReaction(msg, emoji),
+                                            onTogglePin: () => state.togglePin(msg),
+                                          );
+                                        }
+
+                                        return ChatMessageItem(
+                                          message: msg,
+                                          isMine: isMine,
+                                          showDateHeader: showDateHeader,
+                                          // 점프 대상에만 키를 붙인다
+                                          jumpKey: msg.id == focusId ? _jumpKey : null,
+                                          highlight: msg.id == _highlightedMessageId,
+                                          fileUrlResolver: state.api.absoluteFileUrl,
+                                          onOpenThread: () => _openThread(context, msg),
+                                          onReplyInline: () => state.setReplyTo(msg),
+                                          onToggleReaction: (emoji) =>
+                                              state.toggleReaction(msg, emoji),
+                                          onTogglePin: () => state.togglePin(msg),
+                                          onEdit: (newBody) => state.editMessage(msg.id, newBody),
+                                          // 메시지 목록 안의 context 를 넘겨야 가장 가까운
+                                          // (중첩) messenger 를 잡아 스낵바가 composer 를 덮지 않는다.
+                                          onDelete: () => MessageActions.deleteMessage(
+                                            ctx,
+                                            msg,
+                                            channel.id,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    if (_showJumpToLatest)
+                                      Positioned(
+                                        right: 16,
+                                        bottom: 12,
+                                        child: _JumpToLatestButton(
+                                          onPressed: () => _scrollToBottom(animate: true),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
               ),
@@ -669,27 +840,107 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
 
             // Composer
-            MessageComposer(
-              replyTo: state.replyToMessage,
-              onCancelReply: state.clearReplyTo,
-              // 채널 id 를 함께 넘겨야 다른 채널에 "입력 중" 이 잘못 전송되지 않는다.
-              onTyping: (typing) => state.sendTyping(typing, channel.id),
-              onSend: (text) async {
-                final ok = await state.sendMessage(text);
-                if (ok) {
-                  // 새 메시지를 보내면 강조를 푼다
-                  if (_highlightedMessageId != null) {
-                    setState(() => _highlightedMessageId = null);
+            KeyedSubtree(
+              // 입력창을 찾기 위한 키 (임시저장을 연결할 때 쓴다)
+              key: _composerKey,
+              child: MessageComposer(
+                // 채널이 바뀌면 composer 를 새로 만들어서(입력창을 비우고)
+                // 저장해 둔 임시저장 글을 되돌린다.
+                key: ValueKey('composer-$channelId-$_composerGeneration'),
+                // 채널마다 작성 중인 글을 따로 남긴다.
+                initialText: _pendingDraft,
+                replyTo: state.replyToMessage,
+                onCancelReply: state.clearReplyTo,
+                // 채널마다 작성 중인 글을 따로 남긴다.
+                onChanged: (text) => _handleDraftChanged(channel.id, text),
+                // 채널 id 를 함께 넘겨야 다른 채널에 "입력 중" 이 잘못 전송되지 않는다.
+                onTyping: (typing) {
+                  // 임시저장 글을 되돌린 경우에는 "입력 중" 을 보내지 않는다.
+                  if (_restoringDraft) return;
+                  state.sendTyping(typing, channel.id);
+                },
+                // 파일 첨부: 먼저 올리고, 그 id 를 메시지에 붙여 보낸다.
+                onUploadAttachments: () => _uploadAttachments(context, state),
+                onSendWithAttachments: (text, attachmentIds) async {
+                  final ok = await state.sendMessage(text, attachmentIds: attachmentIds);
+                  if (ok) {
+                    // 보냈으면 임시저장을 지운다
+                    state.setDraft(channel.id, '');
+                    _drafts.remove(channel.id);
+                    // 새 메시지를 보내면 강조를 푼다
+                    if (_highlightedMessageId != null) {
+                      setState(() => _highlightedMessageId = null);
+                    }
+                    _scrollToBottom(animate: true);
                   }
-                  _scrollToBottom(animate: true);
-                }
-                return ok;
-              },
+                  return ok;
+                },
+                onSend: (text) async {
+                  final ok = await state.sendMessage(text);
+                  if (ok) {
+                    // 보냈으면 임시저장을 지운다
+                    state.setDraft(channel.id, '');
+                    _drafts.remove(channel.id);
+                    // 새 메시지를 보내면 강조를 푼다
+                    if (_highlightedMessageId != null) {
+                      setState(() => _highlightedMessageId = null);
+                    }
+                    _scrollToBottom(animate: true);
+                  }
+                  return ok;
+                },
+              ),
             ),
           ],
         ),
       ),
     );
   }
+}
 
+/// "최신 메시지" 점프 버튼.
+///
+/// (과거를 보고 있을 때 화면 아래에 떠서 누르면 최신으로 간다)
+class _JumpToLatestButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _JumpToLatestButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: LlackColors.surfaceRaise,
+      elevation: 2,
+      shadowColor: Colors.black26,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(LlackTheme.radiusPill),
+        side: BorderSide(color: LlackColors.rule),
+      ),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(LlackTheme.radiusPill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+               Icon(
+                Icons.arrow_downward_rounded,
+                size: 16,
+                color: LlackColors.accent,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '최신 메시지',
+                style: LlackTypography.caption.copyWith(
+                  color: LlackColors.ink,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

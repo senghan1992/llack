@@ -4,6 +4,7 @@ import { Dialog } from "./Dialogs";
 import { Avatar } from "./Avatar";
 import { MemberSelect } from "./MemberSelect";
 import { Select } from "./Select";
+import { DateField, Disclosure, FormRow, FormTitle, Segmented } from "./Form";
 import { useStore } from "../store/useStore";
 import { toDateInput } from "../lib/calendar";
 import { dateRange, relativeTime } from "../lib/format";
@@ -121,7 +122,6 @@ export function ProjectDialog() {
     <Dialog
       title={isNew ? "프로젝트 등록" : "프로젝트"}
       onClose={() => setDialog(null)}
-      wide
       footer={
         <>
           {existing && canManage ? (
@@ -157,7 +157,7 @@ export function ProjectDialog() {
         </>
       }
     >
-      <div className="dialog__body u-col u-gap-4">
+      <div className="dialog__body u-col u-gap-3">
         {error ? <p className="field__error">{error}</p> : null}
 
         {vanished ? (
@@ -168,96 +168,88 @@ export function ProjectDialog() {
         ) : null}
 
         {!vanished ? (
-          <>
-            <label className="field">
-              <span className="field__label">프로젝트 이름</span>
-              <input
-                className="field__input"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="결제 시스템 개편"
-                autoFocus
-                maxLength={120}
-              />
-            </label>
+          <div className="form">
+            <FormTitle
+              value={name}
+              onChange={setName}
+              placeholder="프로젝트 이름"
+              label="프로젝트 이름"
+              autoFocus
+              maxLength={120}
+            />
 
-            <label className="field">
-              <span className="field__label">설명</span>
+            <FormRow label="설명" htmlFor="project-description">
               <textarea
+                id="project-description"
                 className="field__input u-h-auto u-minh-72 u-full u-py-2"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="구독 결제를 다시 만들고, 정산을 한곳에 모읍니다."
                 maxLength={4000}
               />
-            </label>
+            </FormRow>
 
-            <label className="field">
-              <span className="field__label">연결할 채널</span>
-              <Select
-                value={channelId}
-                onChange={setChannelId}
-                options={[
-                  {
-                    value: "",
-                    label: "연결 없음",
-                    lead: <Unlink size={13} aria-hidden="true" />,
-                  },
-                  ...channels
-                    .filter((channel) => channel.kind === "channel")
-                    .map((channel) => ({
-                      value: channel.id,
-                      label: channel.name,
-                      lead: <Hash size={13} aria-hidden="true" />,
-                    })),
-                ]}
-              />
-              <span className="field__hint">
-                이 프로젝트에 대한 이야기를 나누는 방입니다. 보드에서 바로 그 방으로 갈 수
-                있습니다.
-              </span>
-            </label>
+            <Disclosure
+              summary="연결할 채널 · 함께하는 사람"
+              defaultOpen={Boolean(channelId || memberIds.length)}
+            >
+              <FormRow label="연결할 채널">
+                <Select
+                  value={channelId}
+                  onChange={setChannelId}
+                  options={[
+                    {
+                      value: "",
+                      label: "연결 없음",
+                      lead: <Unlink size={13} aria-hidden="true" />,
+                    },
+                    ...channels
+                      .filter((channel) => channel.kind === "channel")
+                      .map((channel) => ({
+                        value: channel.id,
+                        label: channel.name,
+                        lead: <Hash size={13} aria-hidden="true" />,
+                      })),
+                  ]}
+                />
+              </FormRow>
 
-            <div className="field">
-              <span className="field__label">함께하는 사람</span>
-              {roster.length ? (
-                <div className="proj__roster">
-                  {roster.map((member) => (
-                    <span key={member.user.id} className="proj__rosteritem">
-                      <Avatar user={member.user} size="sm" />
-                      <span className="u-truncate">{member.user.name}</span>
-                      {canManage && member.user.id !== existing?.created_by ? (
-                        <button
-                          type="button"
-                          className="iconbtn proj__rosterx"
-                          aria-label={`${member.user.name}님 빼기`}
-                          onClick={() => {
-                            const next = memberIds.filter((id) => id !== member.user.id);
-                            setMemberIds(next);
-                            if (existing) {
-                              void removeProjectMember(existing.id, member.user.id);
-                            }
-                          }}
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </button>
-                      ) : null}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <MemberSelect
-                members={members}
-                value={memberIds}
-                onChange={setMemberIds}
-                placeholder="함께하는 사람 선택"
-              />
-              <span className="field__hint">
-                이름이 올라간 사람이 이 프로젝트의 담당자입니다. “내 프로젝트”에서 이
-                프로젝트만 볼 수 있습니다.
-              </span>
-            </div>
-          </>
+              <FormRow label="함께하는 사람" stack>
+                {roster.length ? (
+                  <div className="proj__roster">
+                    {roster.map((member) => (
+                      <span key={member.user.id} className="proj__rosteritem">
+                        <Avatar user={member.user} size="sm" />
+                        <span className="u-truncate">{member.user.name}</span>
+                        {canManage && member.user.id !== existing?.created_by ? (
+                          <button
+                            type="button"
+                            className="iconbtn proj__rosterx"
+                            aria-label={`${member.user.name}님 빼기`}
+                            onClick={() => {
+                              const next = memberIds.filter((id) => id !== member.user.id);
+                              setMemberIds(next);
+                              if (existing) {
+                                void removeProjectMember(existing.id, member.user.id);
+                              }
+                            }}
+                          >
+                            <X size={12} aria-hidden="true" />
+                          </button>
+                        ) : null}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <MemberSelect
+                  members={members}
+                  value={memberIds}
+                  onChange={setMemberIds}
+                  placeholder="함께하는 사람 선택"
+                />
+              </FormRow>
+            </Disclosure>
+          </div>
         ) : null}
       </div>
     </Dialog>
@@ -435,7 +427,6 @@ export function TaskDialog() {
     <Dialog
       title={isNew ? "할 일 추가" : "할 일"}
       onClose={() => setDialog(null)}
-      wide
       footer={
         <>
           {existing && canDelete ? (
@@ -469,7 +460,7 @@ export function TaskDialog() {
         </>
       }
     >
-      <div className="dialog__body u-col u-gap-4">
+      <div className="dialog__body u-col u-gap-3">
         {error ? <p className="field__error">{error}</p> : null}
 
         {vanished ? (
@@ -480,7 +471,16 @@ export function TaskDialog() {
         ) : null}
 
         {!vanished ? (
-          <>
+          <div className="form">
+            <FormTitle
+              value={title}
+              onChange={setTitle}
+              placeholder="무엇을 해야 하나요"
+              label="할 일 제목"
+              autoFocus
+              maxLength={200}
+            />
+
             {existing ? (
               project ? (
                 <p className="taskdlg__project">
@@ -489,8 +489,7 @@ export function TaskDialog() {
                 </p>
               ) : null
             ) : (
-              <label className="field">
-                <span className="field__label">프로젝트</span>
+              <FormRow label="프로젝트">
                 <Select
                   value={projectId}
                   onChange={(next) => {
@@ -505,89 +504,22 @@ export function TaskDialog() {
                     label: item.name,
                   }))}
                 />
-              </label>
+              </FormRow>
             )}
 
-            {projectRoadmaps.length ? (
-              <label className="field">
-                <span className="field__label">로드맵</span>
-                <Select
-                  value={roadmapId}
-                  onChange={setRoadmapId}
-                  options={[
-                    { value: "", label: "로드맵 없음" },
-                    ...projectRoadmaps.map((item) => ({
-                      value: item.id,
-                      label: item.name,
-                    })),
-                  ]}
-                />
-              </label>
-            ) : null}
-
-            <label className="field">
-              <span className="field__label">마일스톤</span>
-              <Select
-                value={milestoneId}
-                onChange={setMilestoneId}
-                options={
-                  projectMilestones.length
-                    ? [
-                        { value: "", label: "선택 안 함" },
-                        ...projectMilestones.map((item) => ({
-                          value: item.id,
-                          label: `${item.title} (${dateRange(item.start_at, item.end_at)})`,
-                        })),
-                      ]
-                    : [
-                        { value: "", label: "선택 안 함" },
-                        { value: "none", label: "등록된 마일스톤이 없습니다", disabled: true },
-                      ]
-                }
+            <FormRow label="상태">
+              <Segmented
+                value={status}
+                onChange={setStatus}
+                label="어디까지 했어요"
+                options={(Object.keys(STATUS_LABEL) as TaskStatus[]).map((value) => ({
+                  value,
+                  label: STATUS_LABEL[value],
+                }))}
               />
-            </label>
+            </FormRow>
 
-            <label className="field">
-              <span className="field__label">할 일</span>
-              <input
-                className="field__input"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="PG사 계약 조건 정리"
-                autoFocus
-                maxLength={200}
-              />
-            </label>
-
-            <label className="field">
-              <span className="field__label">설명</span>
-              <textarea
-                className="field__input u-h-auto u-minh-72 u-full u-py-2"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="무엇을 해야 하는지, 무엇이 끝나야 하는지"
-                maxLength={4000}
-              />
-            </label>
-
-            <div className="field">
-              <span className="field__label">어디까지 했어요</span>
-              <div className="u-row u-row--wrap u-gap-2">
-                {(Object.keys(STATUS_LABEL) as TaskStatus[]).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={`btn btn--sm${status === value ? " btn--primary" : ""}`}
-                    onClick={() => setStatus(value)}
-                  >
-                    {STATUS_LABEL[value]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <label className="field">
-              <span className="field__label">담당자</span>
+            <FormRow label="담당자">
               <Select
                 value={assigneeId}
                 onChange={setAssigneeId}
@@ -604,20 +536,76 @@ export function TaskDialog() {
                   })),
                 ]}
               />
-            </label>
+            </FormRow>
 
-            <label className="field">
-              <span className="field__label">마감일</span>
-              <input
-                type="date"
-                className="field__input"
+            <FormRow label="마감일">
+              <DateField
                 value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
+                onChange={setDueDate}
+                ariaLabel="마감일"
+                placeholder="마감일 고르기"
               />
-            </label>
+            </FormRow>
+
+            <Disclosure
+              summary={
+                projectRoadmaps.length
+                  ? "로드맵 · 마일스톤 · 설명"
+                  : "마일스톤 · 설명"
+              }
+              defaultOpen={Boolean(roadmapId || milestoneId || description)}
+            >
+              {projectRoadmaps.length ? (
+                <FormRow label="로드맵">
+                  <Select
+                    value={roadmapId}
+                    onChange={setRoadmapId}
+                    options={[
+                      { value: "", label: "로드맵 없음" },
+                      ...projectRoadmaps.map((item) => ({
+                        value: item.id,
+                        label: item.name,
+                      })),
+                    ]}
+                  />
+                </FormRow>
+              ) : null}
+
+              <FormRow label="마일스톤">
+                <Select
+                  value={milestoneId}
+                  onChange={setMilestoneId}
+                  options={
+                    projectMilestones.length
+                      ? [
+                          { value: "", label: "선택 안 함" },
+                          ...projectMilestones.map((item) => ({
+                            value: item.id,
+                            label: `${item.title} (${dateRange(item.start_at, item.end_at)})`,
+                          })),
+                        ]
+                      : [
+                          { value: "", label: "선택 안 함" },
+                          { value: "none", label: "등록된 마일스톤이 없습니다", disabled: true },
+                        ]
+                  }
+                />
+              </FormRow>
+
+              <FormRow label="설명" htmlFor="task-description">
+                <textarea
+                  id="task-description"
+                  className="field__input u-h-auto u-minh-72 u-full u-py-2"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="무엇을 해야 하는지, 무엇이 끝나야 하는지"
+                  maxLength={4000}
+                />
+              </FormRow>
+            </Disclosure>
 
             {existing ? (
-              <section className="field">
+              <section className="field taskdlg__talk">
                 <span className="field__label">
                   <MessageSquare size={12} aria-hidden="true" /> 의견 {existing.comment_count}
                 </span>
@@ -675,7 +663,7 @@ export function TaskDialog() {
                 </div>
               </section>
             ) : null}
-          </>
+          </div>
         ) : null}
       </div>
     </Dialog>

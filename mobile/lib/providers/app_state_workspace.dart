@@ -299,7 +299,7 @@ abstract class _AppStateWorkspace extends _AppStateMessages {
     }
   }
 
-  /// 할 일의 제목/설명/담당자/마감일을 고친다. 실패하면 false 를 돌려준다.
+  /// 할 일의 제목/설명/담당자/마감일/마일스톤을 고친다. 실패하면 false 를 돌려준다.
   /// null 인 인자는 "변경 안 함" 이다.
   /// (§9-1 규칙: 백엔드가 PATCH 직후 WS `task.updated` 를 먼저 보내므로,
   ///  목록 갱신은 id 기준 upsert 로 해서 순서와 무관하게 항상 1개다.)
@@ -310,6 +310,8 @@ abstract class _AppStateWorkspace extends _AppStateMessages {
     String? assigneeId,
     DateTime? dueAt,
     String? roadmapId,
+    String? milestoneId,
+    int? position,
   }) async {
     try {
       final updated = await api.updateTask(
@@ -319,6 +321,8 @@ abstract class _AppStateWorkspace extends _AppStateMessages {
         assigneeId: assigneeId,
         dueAt: dueAt,
         roadmapId: roadmapId,
+        milestoneId: milestoneId,
+        position: position,
       );
       if (_activeProject != null) {
         final list = _projectTasks[_activeProject!.id] ?? [];
@@ -328,6 +332,216 @@ abstract class _AppStateWorkspace extends _AppStateMessages {
       return true;
     } catch (e) {
       debugPrint('[updateTask error] $e');
+      return false;
+    }
+  }
+
+  /// 의견(댓글)을 지운다. 실패하면 false 를 돌려준다.
+  Future<bool> deleteTaskComment(String taskId, String commentId) async {
+    try {
+      await api.deleteTaskComment(commentId);
+      if (_activeProject != null) {
+        final list = _projectTasks[_activeProject!.id] ?? [];
+        final idx = list.indexWhere((t) => t.id == taskId);
+        if (idx != -1) {
+          final t = list[idx];
+          final comments = t.comments.where((c) => c.id != commentId).toList();
+          list[idx] = t.copyWith(comments: comments);
+          _projectTasks[_activeProject!.id] = List.from(list);
+          _notify();
+        }
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[deleteTaskComment error] $e');
+      return false;
+    }
+  }
+
+  // ── Project 관리 ─────────────────────────────────────────────
+
+  /// 프로젝트를 고친다. (이름 · 설명 · 연결 채널 · 멤버 · 보관)
+  Future<bool> updateProject({
+    required String projectId,
+    String? name,
+    String? description,
+    String? channelId,
+    List<String>? memberIds,
+    bool? isArchived,
+  }) async {
+    try {
+      final updated = await api.updateProject(
+        projectId,
+        name: name,
+        description: description,
+        channelId: channelId,
+        memberIds: memberIds,
+        isArchived: isArchived,
+      );
+      _projects = upsertById(_projects, updated, (p) => p.id);
+      if (_activeProject?.id == projectId) {
+        _activeProject = updated;
+      }
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[updateProject error] $e');
+      return false;
+    }
+  }
+
+  /// 프로젝트를 지운다.
+  Future<bool> deleteProject(String projectId) async {
+    try {
+      await api.deleteProject(projectId);
+      _projects = _projects.where((p) => p.id != projectId).toList();
+      _projectTasks.remove(projectId);
+      _projectRoadmaps.remove(projectId);
+      _projectMilestones.remove(projectId);
+      if (_activeProject?.id == projectId) {
+        _activeProject = null;
+      }
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[deleteProject error] $e');
+      return false;
+    }
+  }
+
+  /// 프로젝트에 사람을 넣는다.
+  Future<bool> addProjectMember(String projectId, String userId) async {
+    try {
+      await api.addProjectMember(projectId, userId);
+      final project = _projects.firstWhere((p) => p.id == projectId);
+      final user = _members.firstWhere((m) => m.user.id == userId).user;
+      final updated = project.copyWith(members: [...project.members, user]);
+      _projects = upsertById(_projects, updated, (p) => p.id);
+      if (_activeProject?.id == projectId) _activeProject = updated;
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[addProjectMember error] $e');
+      return false;
+    }
+  }
+
+  /// 프로젝트에서 사람을 뺀다.
+  Future<bool> removeProjectMember(String projectId, String userId) async {
+    try {
+      await api.removeProjectMember(projectId, userId);
+      final project = _projects.firstWhere((p) => p.id == projectId);
+      final updated = project.copyWith(
+        members: project.members.where((u) => u.id != userId).toList(),
+      );
+      _projects = upsertById(_projects, updated, (p) => p.id);
+      if (_activeProject?.id == projectId) _activeProject = updated;
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[removeProjectMember error] $e');
+      return false;
+    }
+  }
+
+  // ── Milestone & Roadmap ──────────────────────────────────────
+
+  /// 마일스톤을 만든다.
+  Future<Milestone> createMilestone({
+    required String title,
+    required DateTime startAt,
+    required DateTime endAt,
+    String description = '',
+    String color = '#4f6cff',
+    int progress = 0,
+    List<String>? taskIds,
+  }) async {
+    final pid = _activeProject?.id;
+    if (pid == null) throw Exception('선택된 프로젝트가 없습니다');
+    final milestone = await api.createMilestone(
+      pid,
+      title: title,
+      startAt: startAt,
+      endAt: endAt,
+      description: description,
+      color: color,
+      progress: progress,
+      taskIds: taskIds,
+    );
+    _projectMilestones[pid] = upsertById(
+      _projectMilestones[pid] ?? const [],
+      milestone,
+      (m) => m.id,
+    );
+    _notify();
+    return milestone;
+  }
+
+  /// 마일스톤을 고친다.
+  Future<bool> updateMilestone({
+    required String milestoneId,
+    String? title,
+    DateTime? startAt,
+    DateTime? endAt,
+    String? description,
+    String? color,
+    int? progress,
+    List<String>? taskIds,
+  }) async {
+    try {
+      final updated = await api.updateMilestone(
+        milestoneId,
+        title: title,
+        startAt: startAt,
+        endAt: endAt,
+        description: description,
+        color: color,
+        progress: progress,
+        taskIds: taskIds,
+      );
+      for (final pid in _projectMilestones.keys.toList()) {
+        final list = _projectMilestones[pid] ?? [];
+        if (list.any((m) => m.id == milestoneId)) {
+          _projectMilestones[pid] = upsertById(list, updated, (m) => m.id);
+        }
+      }
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[updateMilestone error] $e');
+      return false;
+    }
+  }
+
+  /// 마일스톤을 지운다.
+  Future<bool> deleteMilestone(String milestoneId) async {
+    try {
+      await api.deleteMilestone(milestoneId);
+      for (final pid in _projectMilestones.keys.toList()) {
+        _projectMilestones[pid] =
+            (_projectMilestones[pid] ?? []).where((m) => m.id != milestoneId).toList();
+      }
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[deleteMilestone error] $e');
+      return false;
+    }
+  }
+
+  /// 로드맵을 지운다.
+  Future<bool> deleteRoadmap(String roadmapId) async {
+    try {
+      await api.deleteRoadmap(roadmapId);
+      for (final pid in _projectRoadmaps.keys.toList()) {
+        _projectRoadmaps[pid] =
+            (_projectRoadmaps[pid] ?? []).where((r) => r.id != roadmapId).toList();
+      }
+      if (_selectedRoadmapId == roadmapId) _selectedRoadmapId = null;
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[deleteRoadmap error] $e');
       return false;
     }
   }
@@ -400,6 +614,90 @@ abstract class _AppStateWorkspace extends _AppStateMessages {
     );
     await loadOrg();
     return unit;
+  }
+
+  /// 조직 단위를 고친다. (이름 · 종류 · 설명 · 상위 조직)
+  Future<bool> updateOrgUnit({
+    required String unitId,
+    String? name,
+    String? parentId,
+    String? kind,
+    String? description,
+  }) async {
+    try {
+      await api.updateOrgUnit(
+        unitId,
+        name: name,
+        parentId: parentId,
+        kind: kind,
+        description: description,
+      );
+      await loadOrg();
+      return true;
+    } catch (e) {
+      debugPrint('[updateOrgUnit error] $e');
+      return false;
+    }
+  }
+
+  /// 조직 단위를 지운다.
+  Future<bool> deleteOrgUnit(String unitId) async {
+    try {
+      await api.deleteOrgUnit(unitId);
+      await loadOrg();
+      return true;
+    } catch (e) {
+      debugPrint('[deleteOrgUnit error] $e');
+      return false;
+    }
+  }
+
+  /// 조직에 사람을 넣는다.
+  Future<bool> addOrgUnitMember(String unitId, String userId) async {
+    try {
+      await api.addOrgUnitMember(unitId, userId);
+      await loadOrg();
+      return true;
+    } catch (e) {
+      debugPrint('[addOrgUnitMember error] $e');
+      return false;
+    }
+  }
+
+  /// 조직에서 사람을 뺀다.
+  Future<bool> removeOrgUnitMember(String unitId, String userId) async {
+    try {
+      await api.removeOrgUnitMember(unitId, userId);
+      await loadOrg();
+      return true;
+    } catch (e) {
+      debugPrint('[removeOrgUnitMember error] $e');
+      return false;
+    }
+  }
+
+  /// 조직 관리자로 임명한다.
+  Future<bool> addOrgUnitManager(String unitId, String userId) async {
+    try {
+      await api.addOrgUnitManager(unitId, userId);
+      await loadOrg();
+      return true;
+    } catch (e) {
+      debugPrint('[addOrgUnitManager error] $e');
+      return false;
+    }
+  }
+
+  /// 조직 관리자에서 해임한다.
+  Future<bool> removeOrgUnitManager(String unitId, String userId) async {
+    try {
+      await api.removeOrgUnitManager(unitId, userId);
+      await loadOrg();
+      return true;
+    } catch (e) {
+      debugPrint('[removeOrgUnitManager error] $e');
+      return false;
+    }
   }
 
   // ── Search ───────────────────────────────────────────────────

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/models.dart';
 import '../../providers/app_state.dart';
+import '../../theme/llack_colors.dart';
+import '../../theme/llack_typography.dart';
+import '../../widgets/llack_avatar.dart';
 
 /// 메시지 삭제 + 되돌리기(실행 취소) 를 한곳에서 처리한다.
 ///
@@ -80,5 +83,93 @@ class MessageActions {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// 반응한 사람들을 바텀 시트로 보여준다.
+  ///
+  /// 데스크톱은 반응 이모티콘에 커서를 올리면 "누가 눌렀는지" 를 보여준다.
+  /// 모바일은 반응 칩을 길게 누르면 이 시트가 열린다.
+  ///
+  /// 이름은 [AppState.members] 에서 찾는다. (못 찾으면 짧게 잘린 id 로 대신한다)
+  static Future<void> showReactionParticipants(
+    BuildContext context,
+    Reaction reaction,
+  ) {
+    final names = _participantNames(context, reaction);
+
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: LlackColors.surfaceRaise,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+                child: Text(
+                  names.isEmpty
+                      ? '${reaction.emoji} 반응'
+                      : '${reaction.emoji} 반응한 사람 ${names.length}명',
+                  style: LlackTypography.title,
+                ),
+              ),
+              if (names.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                  child: Text(
+                    reaction.count > 0
+                        ? '${reaction.count}명이 반응했습니다'
+                        : '이름을 확인할 수 없습니다',
+                    style: LlackTypography.bodySmall.copyWith(color: LlackColors.muted),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: names
+                        .map(
+                          (name) => ListTile(
+                            leading: LlackAvatar(name: name, size: 32),
+                            title: Text(name, style: LlackTypography.body),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 반응한 사람들의 이름. (멤버 목록에서 찾고, 못 찾으면 짧은 id 로 대신한다)
+  static List<String> _participantNames(BuildContext context, Reaction reaction) {
+    List<Member> members = const [];
+    try {
+      members = context.read<AppState>().members;
+    } catch (_) {
+      // AppState 가 없는 곳(테스트 등)에서는 id 로 대신한다.
+      members = const [];
+    }
+
+    return reaction.userIds.map((id) {
+      for (final member in members) {
+        if (member.user.id == id) return member.user.name;
+      }
+      return _shortId(id);
+    }).toList();
+  }
+
+  /// 이름을 모를 때 보여줄 짧은 id.
+  static String _shortId(String id) {
+    if (id.length <= 8) return id;
+    return '${id.substring(0, 8)}…';
   }
 }

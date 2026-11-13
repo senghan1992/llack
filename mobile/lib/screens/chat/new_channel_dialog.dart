@@ -72,7 +72,7 @@ class _NewChannelDialogState extends State<NewChannelDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('새 채널 만들기', style: LlackTypography.title),
+                   Text('새 채널 만들기', style: LlackTypography.title),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
                     onPressed: () => Navigator.pop(context),
@@ -101,8 +101,8 @@ class _NewChannelDialogState extends State<NewChannelDialog> {
               SwitchListTile(
                 value: _isPrivate,
                 onChanged: (v) => setState(() => _isPrivate = v),
-                title: const Text('비공개 채널', style: LlackTypography.body),
-                subtitle: const Text('초대받은 멤버만 이 채널을 볼 수 있습니다', style: LlackTypography.caption),
+                title: Text('비공개 채널', style: LlackTypography.body),
+                subtitle: Text('초대받은 멤버만 이 채널을 볼 수 있습니다', style: LlackTypography.caption),
                 contentPadding: EdgeInsets.zero,
                 activeTrackColor: LlackColors.accent,
               ),

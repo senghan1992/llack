@@ -186,7 +186,7 @@ class _EventDialogState extends State<EventDialog> {
                       SwitchListTile(
                         value: _allDay,
                         onChanged: (v) => setState(() => _allDay = v),
-                        title: const Text('하루 종일', style: LlackTypography.body),
+                        title: Text('하루 종일', style: LlackTypography.body),
                         contentPadding: EdgeInsets.zero,
                         activeTrackColor: LlackColors.accent,
                       ),
@@ -293,8 +293,8 @@ class _EventDialogState extends State<EventDialog> {
                       SwitchListTile(
                         value: _isPrivate,
                         onChanged: (v) => setState(() => _isPrivate = v),
-                        title: const Text('비공개 일정', style: LlackTypography.body),
-                        subtitle: const Text('초대받은 참석자만 일정을 봅니다', style: LlackTypography.caption),
+                        title: Text('비공개 일정', style: LlackTypography.body),
+                        subtitle: Text('초대받은 참석자만 일정을 봅니다', style: LlackTypography.caption),
                         contentPadding: EdgeInsets.zero,
                         activeTrackColor: LlackColors.accent,
                       ),

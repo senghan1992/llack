@@ -21,6 +21,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _wsNameCtrl = TextEditingController();
+  /// 초대 코드. (있으면 로그인 뒤 그 팀으로 들어간다)
+  final _inviteCtrl = TextEditingController();
 
   bool _obscurePassword = true;
 
@@ -44,15 +46,27 @@ class _AuthScreenState extends State<AuthScreen> {
     state.clearAuthError();
 
     try {
-      if (_isSignUp) {
-        await state.signup(
-          email: _emailCtrl.text.trim(),
-          password: _passCtrl.text,
-          name: _nameCtrl.text.trim(),
-          workspaceName: _wsNameCtrl.text.trim(),
-        );
-      } else {
-        await state.login(_emailCtrl.text.trim(), _passCtrl.text);
+      final ok = _isSignUp
+          ? await state.signup(
+              email: _emailCtrl.text.trim(),
+              password: _passCtrl.text,
+              name: _nameCtrl.text.trim(),
+              workspaceName: _wsNameCtrl.text.trim(),
+            )
+          : await state.login(_emailCtrl.text.trim(), _passCtrl.text);
+
+      // 로그인에 성공했고 초대 코드가 있으면 그 팀으로 들어간다.
+      // (데스크톱 로그인 화면의 "초대 코드" 와 같은 자리)
+      final inviteCode = _inviteCtrl.text.trim();
+      if (ok && inviteCode.isNotEmpty) {
+        try {
+          await state.acceptInvite(inviteCode);
+          if (!mounted) return;
+          showAppSnackBar(context, '초대받은 팀으로 들어왔습니다');
+        } catch (e) {
+          if (!mounted) return;
+          showAppSnackBar(context, '초대 코드를 사용할 수 없습니다: $e');
+        }
       }
     } catch (e) {
       // Core 가 authError 로 알려주지만, 예외가 그대로 올라오는 경우도 방어한다.
@@ -73,7 +87,7 @@ class _AuthScreenState extends State<AuthScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+             Text(
               '백엔드 API 서버 URL을 입력하세요.\n• 에뮬레이터: http://10.0.2.2:8000\n• 실제 기기: PC 의 LAN 주소 (예: http://192.168.0.10:8000)',
               style: TextStyle(fontSize: 13, color: LlackColors.ink2),
             ),
@@ -134,6 +148,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _passCtrl.dispose();
     _nameCtrl.dispose();
     _wsNameCtrl.dispose();
+    _inviteCtrl.dispose();
     super.dispose();
   }
 
@@ -165,7 +180,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.dns_outlined, color: LlackColors.ink2),
+                          icon: Icon(Icons.dns_outlined, color: LlackColors.ink2),
                           tooltip: '서버 주소 설정',
                           onPressed: _showServerSettings,
                         ),
@@ -183,7 +198,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           boxShadow: LlackTheme.shadowE2,
                         ),
                         alignment: Alignment.center,
-                        child: const Text(
+                        child: Text(
                           'A',
                           style: TextStyle(
                             color: LlackColors.accentInk,
@@ -227,7 +242,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(Icons.info_outline, size: 18, color: LlackColors.accent),
+                                 Icon(Icons.info_outline, size: 18, color: LlackColors.accent),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -318,7 +333,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       validator: (v) => v == null || !v.contains('@') ? '올바른 이메일을 입력하세요' : null,
                     ),
                     const SizedBox(height: 16),
-
                     Text('비밀번호', style: theme.textTheme.titleMedium?.copyWith(fontSize: 13)),
                     const SizedBox(height: 6),
                     TextFormField(
@@ -337,6 +351,20 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                       validator: (v) => v == null || v.length < 6 ? '6자 이상 입력하세요' : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 초대 코드 (있을 때만) — 데스크톱 로그인 화면과 같은 자리
+                    Text('초대 코드', style: theme.textTheme.titleMedium?.copyWith(fontSize: 13)),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _inviteCtrl,
+                      autocorrect: false,
+                      decoration: const InputDecoration(hintText: '있으면 입력하세요'),
+                    ),
+                    Text(
+                      '이미 만들어진 팀에 초대장으로 들어갈 때만 필요합니다.',
+                      style: theme.textTheme.labelSmall,
                     ),
                     const SizedBox(height: 24),
 
@@ -377,7 +405,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 20),
                     Center(
                       child: TextButton.icon(
-                        icon: const Icon(Icons.settings_outlined, size: 16, color: LlackColors.muted),
+                        icon: Icon(Icons.settings_outlined, size: 16, color: LlackColors.muted),
                         label: Text(
                           '서버 주소 설정 (${state.api.baseUrl})',
                           style: theme.textTheme.labelSmall,

@@ -85,7 +85,7 @@ class _NewDmDialogState extends State<NewDmDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('새 1:1 대화', style: LlackTypography.title),
+                   Text('새 1:1 대화', style: LlackTypography.title),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
                     onPressed: () => Navigator.pop(context),
@@ -96,7 +96,7 @@ class _NewDmDialogState extends State<NewDmDialog> {
               TextField(
                 controller: _searchCtrl,
                 autofocus: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: '이름, 직함, 이메일로 검색...',
                   prefixIcon: Icon(Icons.search, size: 20, color: LlackColors.muted),
                 ),

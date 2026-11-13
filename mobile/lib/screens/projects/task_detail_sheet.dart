@@ -73,6 +73,14 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
     if (mounted) setState(() => _isSubmittingComment = false);
   }
 
+  /// 의견(댓글)을 지운다. (확인 없이 바로 지운다)
+  Future<void> _deleteComment(TaskComment comment) async {
+    final state = context.read<AppState>();
+    final ok = await state.deleteTaskComment(widget.task.id, comment.id);
+    if (!mounted) return;
+    if (!ok) showAppSnackBar(context, '의견을 삭제하지 못했습니다');
+  }
+
   /// 할 일 편집 다이얼로그를 연다.
   ///
   /// 이 시트는 빌드할 때마다 상태에서 최신 태스크를 다시 찾으므로
@@ -128,7 +136,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
       curve: Curves.easeOut,
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: LlackColors.surfaceRaise,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -162,7 +170,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                       onPressed: () => _openEditDialog(context, task),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20, color: LlackColors.presenceBusy),
+                      icon: Icon(Icons.delete_outline, size: 20, color: LlackColors.presenceBusy),
                       tooltip: '할 일 삭제',
                       onPressed: _deleteTask,
                     ),
@@ -198,7 +206,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                             const SizedBox(width: 14),
                           ],
                           if (task.dueAt != null) ...[
-                            const Icon(Icons.calendar_today_outlined, size: 14, color: LlackColors.muted),
+                             Icon(Icons.calendar_today_outlined, size: 14, color: LlackColors.muted),
                             const SizedBox(width: 4),
                             Text(DateFormat('yyyy.MM.dd').format(task.dueAt!.toLocal()), style: LlackTypography.monoTimestamp),
                             const SizedBox(width: 14),
@@ -256,6 +264,8 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                               return _buildPendingCommentRow(_pendingComments[i - task.comments.length]);
                             }
                             final c = task.comments[i];
+                            // 내 의견에만 지우는 버튼을 준다.
+                            final isMine = c.userId == state.currentUser?.id;
                             return Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -272,16 +282,31 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
-                                            Text(
-                                              c.author.name,
-                                              style: LlackTypography.caption.copyWith(fontWeight: FontWeight.w700),
+                                            Expanded(
+                                              child: Text(
+                                                c.author.name,
+                                                style: LlackTypography.caption
+                                                    .copyWith(fontWeight: FontWeight.w700),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
                                             Text(
                                               DateFormat('MM.dd HH:mm').format(c.createdAt.toLocal()),
                                               style: LlackTypography.monoTimestamp,
                                             ),
+                                            if (isMine) ...[
+                                              const SizedBox(width: 4),
+                                              IconButton(
+                                                icon: const Icon(Icons.close, size: 14),
+                                                tooltip: '의견 삭제',
+                                                visualDensity: VisualDensity.compact,
+                                                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                                padding: EdgeInsets.zero,
+                                                onPressed: () => _deleteComment(c),
+                                              ),
+                                            ],
                                           ],
                                         ),
                                         const SizedBox(height: 4),
@@ -302,7 +327,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
               // Comment input box
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(top: BorderSide(color: LlackColors.rule)),
                 ),
                 child: Row(
@@ -321,7 +346,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                     IconButton(
                       icon: _isSubmittingComment
                           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.send_rounded, color: LlackColors.accent),
+                          : Icon(Icons.send_rounded, color: LlackColors.accent),
                       onPressed: _isSubmittingComment ? null : _sendComment,
                     ),
                   ],
@@ -396,7 +421,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
             const SizedBox(width: 6),
             Text(task.status.label, style: LlackTypography.caption.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(width: 4),
-            const Icon(Icons.arrow_drop_down, size: 16, color: LlackColors.muted),
+             Icon(Icons.arrow_drop_down, size: 16, color: LlackColors.muted),
           ],
         ),
       ),
@@ -421,14 +446,10 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
 
   Color _colorForStatus(TaskStatus s) {
     switch (s) {
-      case TaskStatus.request:
-        return LlackColors.statusRequest;
-      case TaskStatus.todo:
-        return LlackColors.statusTodo;
-      case TaskStatus.inProgress:
-        return LlackColors.statusInProgress;
-      case TaskStatus.done:
-        return LlackColors.statusDone;
+      case TaskStatus.request: return LlackColors.statusRequest;
+      case TaskStatus.todo: return LlackColors.statusTodo;
+      case TaskStatus.inProgress: return LlackColors.statusInProgress;
+      case TaskStatus.done: return LlackColors.statusDone;
     }
   }
 }

@@ -71,8 +71,14 @@
   --surface-raise: oklch(99.6% 0.004 84);
   --surface-well: oklch(95.4% 0.014 92);
   --surface-ink: oklch(21% 0.025 170);
-  --surface-selected: oklch(90% 0.055 158);
-  --surface-overlay: oklch(30% 0.02 165 / 0.34);
+  /* The selection wash is the signal, softened — one accent, everywhere a
+     thing is chosen. It sits a clear step below the panel, so a chosen row
+     reads even on a well. */
+  --surface-selected: oklch(91.5% 0.05 42);
+  --surface-overlay: oklch(30% 0.02 165 / 0.42);
+  /* the veil a dialog sits behind — the page recedes, the panel does not
+     float on a flat grey */
+  --scrim-veil: oklch(22% 0.02 165 / 0.22);
   --on-ink: oklch(98% 0.008 88);
   --avatar-bg: oklch(39% 0.11 162);
   /* Initials on a coloured tile. Paper white in both themes: the tile
@@ -143,14 +149,20 @@
   --bubble-mine-dim: oklch(98.5% 0.006 38.5 / 0.74);
   --bubble-mine-link: oklch(94% 0.04 40);
 
+  /* a well that is cut into a surface: the light stays at the top edge and
+     the foot of the cut is deeper — a field that was carved, not drawn */
+  --well-top: oklch(98.2% 0.01 92);
+  --well-bottom: oklch(93.8% 0.018 92);
+
   /* ── radii · one per nesting level ──────────────────────────── */
   --radius-xs: 5px; --radius-sm: 8px; --radius-input: 10px;
+  --radius-field: 12px;
   --radius-card: 14px; --radius-panel: 16px; --radius-pill: 999px;
 
   /* ── metrics ────────────────────────────────────────────────── */
   --rail-w: 264px; --thread-w: 400px; --header-h: 60px;
   --rail-w-collapsed: 56px; /* the rail as a strip of icons */
-  --control-h: 34px; --field-h: 38px; --hit-h: 44px;
+  --control-h: 34px; --field-h: 40px; --hit-h: 44px;
   --avatar-sm: 22px; --avatar: 30px; --avatar-lg: 40px;
   /* where the message text starts inside a pane: the row's padding, the
      avatar gutter and the gap. Headings, the thread's reply count and the
@@ -165,8 +177,13 @@
   /* the thread pane's text line: the pane's padding plus the input's own
      padding, so its messages and its composer share one line */
   --thread-inset: calc(var(--space-md) + var(--space-sm));
-  /* a field edge must clear 3:1 against its own surface */
-  --edge-field: oklch(58% 0.022 165);
+  /* a form's name column: the width the longest name needs, so every
+     control in the form starts on the same line and the sheet reads down */
+  --form-label-w: 96px;
+  /* a field edge must clear 3:1 against its own surface — and it is warm,
+     because the paper is warm: a cold grey line around a cream field reads
+     as a borrowed form */
+  --edge-field: oklch(58% 0.014 80);
   /* the reading measure of a single line of message text. The conversation
      itself fills its pane — rows, wash, composer, and your own bubble
      against the right edge — so a wide window reads as one spread
@@ -180,6 +197,12 @@
   --shadow-e1: 0 1px 2px oklch(28% 0.02 165 / 0.06), 0 1px 1px oklch(28% 0.02 165 / 0.04);
   --shadow-e2: 0 1px 2px oklch(28% 0.02 165 / 0.05), 0 10px 24px -12px oklch(28% 0.03 165 / 0.26);
   --shadow-e3: 0 2px 4px oklch(28% 0.02 165 / 0.07), 0 28px 60px -28px oklch(28% 0.03 165 / 0.38);
+  /* the panel of a dialog: it hangs over the page, so its shadow is
+     layered — a contact shadow, a body shadow and a long cast */
+  --shadow-modal: 0 1px 2px oklch(28% 0.02 165 / 0.08), 0 10px 24px -12px oklch(28% 0.03 165 / 0.3), 0 48px 90px -40px oklch(24% 0.03 165 / 0.5);
+  /* the light that falls along the top edge of a raised panel */
+  --edge-panel: oklch(100% 0 0 / 0.55);
+  --panel-sheen: inset 0 1px 0 oklch(100% 0 0 / 0.55);
   --shadow-sheet: -14px 0 34px -22px oklch(28% 0.03 165 / 0.45);
   /* the casts a surface makes on what is under it */
   --cast-small: 0 1px 2px oklch(28% 0.02 165 / 0.22);
@@ -236,12 +259,16 @@
   --surface-raise: oklch(22.5% 0.013 168);
   --surface-well: oklch(25.5% 0.015 168);
   --surface-ink: oklch(12% 0.011 168);
-  --surface-selected: oklch(30% 0.05 160);
-  --surface-overlay: oklch(4% 0.01 168 / 0.66);
+  --surface-selected: oklch(31% 0.06 40);
+  --surface-overlay: oklch(4% 0.01 168 / 0.72);
+  --scrim-veil: oklch(0% 0 0 / 0.34);
   --on-ink: oklch(93% 0.012 168);
   --avatar-bg: oklch(28% 0.05 162);
   --surface-groove: oklch(11.5% 0.014 168);
   --edge-light: oklch(100% 0 0 / 0.07);
+
+  --well-top: oklch(27.5% 0.016 168);
+  --well-bottom: oklch(23% 0.014 168);
 
   --gate-night-top: oklch(20% 0.012 25);
   --gate-night-bottom: oklch(12% 0.015 15);
@@ -259,7 +286,7 @@
   --shadow-key: oklch(4% 0.01 168 / 0.5);
 
   --edge-search: oklch(31% 0.018 166);
-  --edge-field: oklch(52% 0.022 165);
+  --edge-field: oklch(52% 0.014 80);
   --edge-search-hover: oklch(42% 0.02 166);
   --wash-rail: oklch(99% 0.01 160 / 0.09);
   --wash-row: oklch(99% 0.01 160 / 0.06);
@@ -293,6 +320,9 @@
   --shadow-e1: 0 1px 2px oklch(4% 0.01 168 / 0.5);
   --shadow-e2: 0 1px 2px oklch(4% 0.01 168 / 0.45), 0 10px 24px -12px oklch(2% 0.01 168 / 0.7);
   --shadow-e3: 0 2px 4px oklch(4% 0.01 168 / 0.5), 0 28px 60px -28px oklch(2% 0.01 168 / 0.75);
+  --shadow-modal: 0 1px 2px oklch(0% 0 0 / 0.5), 0 12px 28px -14px oklch(0% 0 0 / 0.7), 0 52px 96px -44px oklch(0% 0 0 / 0.9);
+  --edge-panel: oklch(100% 0 0 / 0.1);
+  --panel-sheen: inset 0 1px 0 oklch(100% 0 0 / 0.12);
   --shadow-sheet: -14px 0 34px -22px oklch(2% 0.01 168 / 0.8);
   --cast-small: 0 1px 2px oklch(2% 0.01 168 / 0.6);
   --cast-bar: 0 8px 16px -14px oklch(2% 0.01 168 / 0.9);

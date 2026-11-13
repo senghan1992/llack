@@ -230,6 +230,17 @@ class AppState extends _AppStateWorkspace {
 
   // ── Workspace & Channel Navigation ───────────────────────────
 
+  /// 초대 코드로 팀에 들어간다.
+  ///
+  /// 로그인한 뒤에 부는 것이라, 이 함수는 **로그인된 상태**에서만 뜻이 있다.
+  /// (데스크톱 로그인 화면의 "초대 코드" 와 같은 자리)
+  Future<Workspace> acceptInvite(String token) async {
+    final workspace = await api.acceptInvite(token);
+    await selectWorkspace(workspace);
+    _notify();
+    return workspace;
+  }
+
   Future<void> selectWorkspace(Workspace workspace) async {
     if (_activeWorkspace?.id == workspace.id) return;
     _activeWorkspace = workspace;

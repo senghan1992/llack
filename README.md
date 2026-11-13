@@ -5,8 +5,178 @@
 
 - **프런트엔드** React 19 + TypeScript + Vite, 데스크톱 셸은 **Tauri 2 (Rust)**
 - **백엔드** **FastAPI** (Python 3.12, async SQLAlchemy 2.0), 실시간은 WebSocket
+- **모바일** Flutter/Dart 클라이언트 (같은 백엔드를 씁니다)
 - **디자인** 자체 디자인 시스템. 토큰은 `desktop/src/styles/tokens.css` 한 곳에 있고,
   규칙은 [DESIGN.md](DESIGN.md)에 잠가 두었습니다.
+
+---
+
+## System Overview
+
+세 개의 실행 단위가 하나의 저장소를 나눠 가집니다. 모든 계약은 아래 세 개의
+파티션으로 나뉘고, 각 디렉터리에는 그 경계의 contract 파일(`README.md`)이 있습니다.
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  데스크톱  desktop/          React 19 + TypeScript + Vite 7     │
+│                            + Tauri 2 셸 (Rust)                │
+└───────────────┬───────────────────────────────────────────────┘
+                │  HTTPS /api/v1  ·  WebSocket /api/v1/ws
+┌───────────────▼───────────────────────────────────────────────┐
+│  백엔드    backend/          FastAPI · async SQLAlchemy 2.0   │
+│                            SQLite(개발) / Postgres(운영)      │
+└───────────────┬───────────────────────────────────────────────┘
+                │  HTTPS /api/v1  ·  WebSocket /api/v1/ws
+┌───────────────▼───────────────────────────────────────────────┐
+│  모바일    mobile/           Flutter · Dart SDK ^3.13.3       │
+└───────────────────────────────────────────────────────────────┘
+```
+
+백엔드는 **의존 방향이 한쪽**입니다. `api` 와 `realtime` 이 `services` 를 부르고,
+`services` 가 `models` 와 `core` 를 부르며, 올라가는 방향의 호출은 없습니다.
+`models` 의 SQLAlchemy 메타데이터가 곧 DDL의 유일한 출처입니다 — **마이그레이션
+도구가 없고**, 스키마는 기동 시 메타데이터에서 만들어지고 `ensure_schema()` 가
+실제 스키마와 어긋나면 기동 단계에서 실패합니다
+([backend/app/core/README.md](./backend/app/core/README.md)).
+
+클라이언트 셋은 모두 같은 규칙을 공유합니다. REST 접두사는 `/api/v1`, 실시간은
+`/api/v1/ws?token=…`, 오류 응답은 `{"error": {"code", "message", "field"}}`
+봉투 하나로 통일되어 있고, 401 은 토큰 교환을 최대 한 번만 시도합니다.
+
+## Local Interface & Invariants
+
+저장소 루트에는 소스 파일이 하나 있습니다 — `dev.sh`. 나머지는 설정과 매니페스트입니다.
+
+- `dev.sh` — 원샷 개발 실행 스크립트. `./dev.sh` (기본), `./dev.sh web`,
+  `./dev.sh mobile` 세 가지 모드. `set -euo pipefail` 아래에서 `uv`/`node`/`npm`을
+  확인하고(`need`), 백엔드 가상환경 → 의존성 → 시드 → 백엔드 기동 → 프런트엔드
+  의존성 → 앱 실행 순서를 지킵니다. `uv`는 `uv venv --python 3.12` 로 가상환경을
+  만들고 `uv pip install -e ".[dev]"` 로 항상 reinstall 합니다. 시드는
+  `backend/llack.db` 가 없을 때만 (`backend/scripts/seed.py`) 돕니다. 백엔드는
+  `http://127.0.0.1:8000/api/v1/health` 로 이미 떠 있는지 먼저 물어보고, 없으면
+  uvicorn 을 띄운 뒤 최대 40회 × 0.25초 health gate 를 밟습니다. 띄운 백엔드는
+  `trap cleanup EXIT INT TERM` 으로 종료 때 내려갑니다 — **이미 떠 있던 백엔드는
+  건드리지 않습니다**. `cargo-tauri` 가 있으면 `cargo tauri dev`, 없으면
+  `npm run app:dev`.
+- `Makefile` — `make help` 가 기본 목표입니다. `make setup` / `make dev` /
+  `make dev-web` / `make dev-desktop` / `make seed` / `make test` / `make lint` /
+  `make format` / `make contrast` / `make build` / `make clean` / `make db-reset` /
+  `make compose-up` / `make compose-down` / `make compose-logs` /
+  `make desktop-headless`.
+- `docker-compose.yml` — 서비스는 **둘뿐**입니다. `postgres:16-alpine` 과
+  `backend/Dockerfile` 로 만든 `api`. Redis·MinIO·S3·Celery 가 없습니다 —
+  실시간은 프로세스 안의 허브가 처리하고, 첨부 파일은 `UPLOAD_DIR` 볼륨에
+  있습니다. `api` 는 `--workers` 없이 uvicorn 하나만 돕니다.
+- `.env.example` — 환경 변수 표면. `SECRET_KEY`(필수), `DATABASE_URL`,
+  `UPLOAD_DIR`, `WORKSPACE_QUOTA_BYTES`, `ORPHAN_FILE_HOURS`, `CORS_ORIGINS`,
+  `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `JWT_ALGORITHM`,
+  `MAX_UPLOAD_BYTES`. `SECRET_KEY`·`DATABASE_URL`·`UPLOAD_DIR` 는 `LLACK_` 붙은
+  별칭도 읽습니다.
+
+**루트 불변식**
+
+- `dev.sh` 는 `uv`, `node`, `npm` 이 없으면 중단합니다. 다만 헤더 주석은
+  "uv / node / cargo" 라고 적혀 있어도 `cargo` 는 강제되지 않습니다 —
+  `cargo-tauri` 는 나중에 선택적으로만 확인하고, 없으면 npm 경로로 넘어갑니다.
+- `make setup-backend` 와 `dev.sh` 의 `uv pip install` 은 `--python` 인자가
+  다릅니다(디렉터리 vs 실행 파일). 결과는 같지만 명령은 같지 않습니다.
+- `docker-compose.yml` 의 `api` healthcheck 는 `/health` 를, `dev.sh` 는
+  `/api/v1/health` 를 봅니다. 두 경로가 모두 존재하므로 둘 다 옳습니다.
+
+## Subdirectories & System Boundaries
+
+- [backend](./backend/README.md) — FastAPI 백엔드. `app/`(HTTP·WebSocket·
+  도메인 로직·ORM·스키마·기반 모듈), `scripts/`(데모 시드). 10개 계약.
+- [desktop](./desktop/README.md) — 데스크톱 앱. `src/`(프런트엔드), `src-tauri/`
+  (Rust 셸). 7개 계약.
+- [mobile](./mobile/README.md) — Flutter 클라이언트. `lib/`(models·providers·
+  screens·services·theme·widgets). 15개 계약.
+- [scripts](./scripts/README.md) — 저장소 최상위 개발 도구 두 개
+  (`check-contrast.py`, `desktop-headless.sh`). 1개 계약.
+
+계약 없는 디렉터리: `docs/`(문서), `deploy/`(nginx 설정), `.github/workflows/`
+(CI), `desktop/src/styles/`·`desktop/src/assets/`·`desktop/public/`(스타일·자산),
+`desktop/src-tauri/capabilities/`·`icons/`(설정·자산), `backend/tests/`(테스트),
+`mobile/test/`(테스트), `mobile/android|ios|linux|macos|windows|web/`
+(Flutter 플랫폼 생성물).
+
+## Global Invariants
+
+- **실시간은 프로세스 안의 허브다.** 백엔드는 uvicorn 워커를 **한 개**만
+  씁니다. 여러 개로 올리면 한 워커에 붙은 소켓으로 다른 워커의 이벤트가
+  전달되지 않습니다. 허브 앞에 브로커를 두기 전에는 `--workers` 를 올리지
+  마세요 [backend/Dockerfile:Dockerfile].
+- **권한은 한 곳에서.** 워크스페이스 멤버십은 `require_membership`,
+  채널 접근은 `require_channel_access` 가 결정합니다. 관리자 권한은
+  `owner`·`admin` 두 역할뿐입니다
+  ([backend/app/services/README.md](./backend/app/services/README.md)).
+- **삭제는 보통 소프트 삭제입니다.** 메시지는 본문을 `deleted_body` 로 옮기고
+  `deleted_at` 을 찍습니다 — 모든 기기에서 되돌릴 수 있어야 하기 때문.
+  `restore` 는 `deleted_body` 가 있을 때만 동작합니다.
+- **파일 종류는 바이트가 정합니다.** 브라우저가 말한 `content_type` 은 힌트일
+  뿐이고, 앞 8192바이트가 판정합니다. SVG 는 업로드되지만 인라인 렌더링은
+  되지 않습니다. 디스크 이름은 파일 id 이고 확장자는 **검증된** MIME 에서 옵니다.
+- **ID 는 접두사가 붙은 ULID.** `usr_`, `wsp_`, `chl_`, `msg_` … 로 시작하는
+  30글자이고, 시간순으로 정렬됩니다. DB 시퀀스가 아닙니다
+  ([backend/app/core/README.md](./backend/app/core/README.md)).
+- **쓰기는 커밋 후 방송합니다.** 모든 변경 라우트는 커밋을 마친 뒤에만
+  realtime 이벤트를 보냅니다 — 방송이 항상 durable write 를 따릅니다.
+- **WS 는 HTTP 로 먼저 확인합니다.** `/api/v1/ws?token=…` 는 쿼리 토큰으로만
+  인증하고, 실패하면 close code `4401` 로 끊습니다. 클라이언트는 그 코드를
+  받으면 재연도를 시도하지 않습니다.
+- **클라이언트는 하나의 상태 컨테이너를 가집니다.** 데스크톱은 단일 Zustand
+  스토어, 모바일은 단일 `AppState` ChangeNotifier. 서버 이벤트가 HTTP 응답보다
+  먼저 오기 때문에 두 경로가 **같은 id 기준 upsert 규칙**을 씁니다
+  (`upsertById`).
+- **CSP 와 전역 API 를 닫아 둡니다.** Tauri CSP 는 `script-src 'self'`,
+  `object-src`/`form-action` `'none'` 이고 `withGlobalTauri` 는 `false` 입니다.
+  웹뷰에 노출되는 Tauri 커맨드는 정확히 5개입니다.
+
+## Global Side Effects
+
+- **파일 시스템** — 첨부 파일은 `UPLOAD_DIR/<workspace>/<id 앞 2자>/<id><확장자>`
+  에 쓰입니다. 기본값 `backend/var/uploads`, 파일당 50MiB, 워크스페이스당 5GiB.
+  어떤 메시에도 붙지 않은 업로드는 기본 24시간 뒤 지워집니다
+  (`ORPHAN_FILE_HOURS=0` 이면 지우지 않음).
+- **데이터베이스** — 기동 때마다 스키마를 만들고 늘립니다. 개발 DB 는 SQLite
+  한 파일(`backend/llack.db`), 운영은 Postgres. `make db-reset` 으로 SQLite 를
+  지우고 다시 만들 수 있습니다.
+- **네트워크** — 데스크톱 웹뷰는 `${VITE_API_BASE}/api/v1` 로 나가고, 셸은
+  `LLACK_API_BASE` / `LLACK_API_TOKEN` 환경변수로 `/health` 와
+  `/api/v1/channels/{id}` 만 부릅니다. 모바일은 `SharedPreferences` 에 토큰과
+  서버 주소를 둡니다.
+- **브라우저 저장소** — 데스크톱은 `localStorage` 의 `llack.access`,
+  `llack.refresh`, `llack.settings` 를 씁니다. 모바일은 `SharedPreferences` 의
+  `llack.access`, `llack.refresh`, `llack.api_base`.
+- **OS 알림** — 데스크톱 셸만 OS 알림을 띄웁니다 (`llack://notify` 이벤트).
+  브라우저 빌드에서는 조용히 넘어갑니다.
+- **창 상태** — 셸은 `app_config_dir()/window-state.json` 에 창 크기·위치를
+  저장합니다. 라벨이 `"main"` 인 창만 기록하므로 방(pop-out) 창은 워크스페이스
+  창을 움직이지 못합니다.
+- **네트워크 바깥** — `make contrast` 는 Playwright 로 실제 앱을 띄워 대비를
+  잽니다. `make desktop-headless` 는 Xvfb 위에 실제 Tauri 바이너리를 띄우고
+  PNG를 남깁니다. 둘 다 hermetic 테스트가 아니라 눈으로 확인하는 도구입니다.
+
+## System Verification
+
+- Run: `make test` — `cd backend && .venv/bin/pytest -q` (**156 passed**)
+- Run: `make lint` — `cd backend && .venv/bin/ruff check app tests scripts`,
+  `cd backend && .venv/bin/ruff format --check .`,
+  `cd desktop && npm run typecheck`
+- Run: `cd desktop && npm test` — vitest, 4개 파일 26개 테스트
+- Run: `cd desktop && npm run typecheck` — `tsc --noEmit`
+- Run: `cd desktop/src-tauri && cargo test` — lib 타깃 `llack_lib` 단위 테스트 5개
+- Run: `cd mobile && flutter test` — Flutter SDK 가 필요합니다
+- Run: `make contrast` — 실행 중인 앱이 있어야 하는 실시간 점검 (수동)
+- Run: `make desktop-headless` — `xvfb`·`ffmpeg` 가 필요한 실시간 점검 (수동)
+
+### 이름을 하나 고쳐 두기
+
+코드에는 이전 제품명이 남아 있습니다. `backend/app/main.py` 의 FastAPI
+`title` 은 `"Atrium"`, `description` 은 `"ArcheAI internal workspace & messenger
+API."` 이고, `desktop/src-tauri/tauri.conf.json` 의 `productName` 은
+`"Atrium"`, `identifier` 는 `"ai.arche.atrium"` 입니다. 셸의 창 제목 폴백도
+`"Atrium"` 입니다. 문서와 코드가 같은 이름으로 읽히도록 정리할 대상입니다.
 
 ---
 
@@ -57,39 +227,20 @@ npm run app:dev        # Tauri 창으로 실행
 VITE_API_BASE=http://127.0.0.1:8000 npm run dev
 ```
 
-### 3. 빌드
+### 3. 모바일 앱
+
+```bash
+cd mobile
+flutter pub get
+flutter run
+```
+
+### 4. 빌드
 
 ```bash
 cd desktop
 npm run build           # 프런트엔드 번들
 npm run app:build       # 데스크톱 설치 파일 (deb, dmg, msi)
-```
-
----
-
-## 구조
-
-```
-backend/
-  app/
-    core/         설정, DB 세션, 보안(ARGON2 + JWT), 에러 봉투, ID 발급
-    models/       SQLAlchemy 모델 (user, workspace, channel, message, file, schedule)
-    schemas/      Pydantic 응답 모델
-    api/v1/       라우터 (auth, workspaces, channels, messages, schedule, search, realtime)
-    realtime/     WebSocket 허브, 이벤트 발행, presence
-    services/     도메인 로직
-  scripts/seed.py 데모 워크스페이스
-  tests/          103개 테스트
-desktop/
-  src/
-    styles/       tokens.css (토큰 한 곳), base.css, app.css
-    lib/          API 클라이언트, WebSocket, 포맷, 달력 계산, 마크다운
-    store/        zustand 상태 관리
-    components/   화면 조각 (채널 · 스레드 · 일정 · 프로젝트 보드)
-  src-tauri/      Rust 데스크톱 셸 (창, 알림, 외부 링크)
-docs/API.md        API 계약 (프런트엔드와 백엔드가 함께 읽는 문서)
-docs/FILES.md     파일 저장 규칙 (어디에 저장되고, 무엇이 저장되며, 언제 사라지는지)
-DESIGN.md          잠긴 디자인 시스템
 ```
 
 ---
@@ -198,6 +349,9 @@ curl -s localhost:8000/api/v1/workspaces/<workspace_id>/channels \
   -H "authorization: Bearer <access_token>"
 ```
 
+라우트 전체와 권한 규칙은
+[backend/app/api/v1/README.md](./backend/app/api/v1/README.md) 에 있습니다.
+
 ---
 
 ## 디자인
@@ -239,13 +393,20 @@ scripts/desktop-headless.sh [--shot out.png] [--login] [--stop]
   시작하고, 평소 쓰는 프로필·창 상태는 건드리지 않습니다.
 - 창을 직접 조작하려면 `DISPLAY=:99`로 접속해 xdotool을 쓰세요.
 
+**대비 점검** — 실행 중인 앱을 Playwright로 띄워 모든 글자의 WCAG AA 대비를
+검사하고, `:hover` 규칙을 하나씩 강제로 켜서 hover 상태까지 잽니다.
+
+```bash
+make contrast
+```
+
 ---
 
 ## 개발 명령
 
 ```bash
 cd backend
-.venv/bin/pytest -q                  # 103 passed
+.venv/bin/pytest -q                  # 156 passed
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 
@@ -253,6 +414,9 @@ cd ../desktop
 npm run typecheck
 npm run test
 npm run build
+
+cd ../mobile
+flutter test
 ```
 
 ---

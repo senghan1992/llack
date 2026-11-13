@@ -152,7 +152,11 @@ void main() {
     // 상세 시트도 같은(로컬) 날짜를 보여준다
     await tester.tap(find.text('UTC 저장 일정'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('2026년 11월 10일'), findsOneWidget);
+    // (기기의 시간대에 따라 로컬 날짜가 달라지므로 직접 계산한 날짜를 본다)
+    expect(
+      find.textContaining('${localDay.year}년 ${localDay.month}월 ${localDay.day}일'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('참석자 목록의 "나" 배지는 이름 바로 뒤에 온다', (WidgetTester tester) async {

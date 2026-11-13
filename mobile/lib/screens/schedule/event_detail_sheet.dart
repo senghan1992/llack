@@ -75,7 +75,7 @@ class _EventDetailSheet extends StatelessWidget {
       curve: Curves.easeOut,
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: LlackColors.surfaceRaise,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -112,7 +112,7 @@ class _EventDetailSheet extends StatelessWidget {
                             ),
                           ),
                           if (event.isPrivate)
-                            const Padding(
+                             Padding(
                               padding: EdgeInsets.only(left: 8),
                               child: Icon(Icons.lock_outline, size: 18, color: LlackColors.muted),
                             ),
@@ -232,8 +232,8 @@ class _EventDetailSheet extends StatelessWidget {
                             Expanded(
                               child: OutlinedButton.icon(
                                 onPressed: () => _delete(context, event),
-                                icon: const Icon(Icons.delete_outline, size: 18, color: LlackColors.presenceBusy),
-                                label: const Text('삭제', style: TextStyle(color: LlackColors.presenceBusy)),
+                                icon: Icon(Icons.delete_outline, size: 18, color: LlackColors.presenceBusy),
+                                label: Text('삭제', style: TextStyle(color: LlackColors.presenceBusy)),
                                 style: OutlinedButton.styleFrom(
                                   minimumSize: const Size.fromHeight(44),
                                 ),

@@ -19,6 +19,7 @@ import { renderBody } from "../lib/markdown";
 import { Avatar } from "./Avatar";
 import { MemberSelect } from "./MemberSelect";
 import { Select } from "./Select";
+import { Disclosure, FormRow, FormTitle } from "./Form";
 import { useStore } from "../store/useStore";
 import type { Channel, Member, Message, Role, SearchResult, User } from "../lib/types";
 
@@ -541,63 +542,51 @@ export function NewChannelDialog() {
         </>
       }
     >
-      <div className="dialog__body u-col u-gap-4">
-        <div className="field">
-          <label className="field__label" htmlFor="channel-name">
-            채널 이름
-          </label>
-          <input
+      <div className="dialog__body u-col u-gap-3">
+        <div className="form">
+          <FormTitle
             id="channel-name"
-            className="field__input"
-            autoFocus
             value={name}
-            placeholder="예: 제품"
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-            }}
+            onChange={setName}
+            placeholder="새 채널 이름"
+            label="채널 이름"
+            hint="소문자와 하이픈으로 적습니다."
+            autoFocus
+            onEnter={() => void submit()}
           />
-          <p className="field__hint">소문자와 하이픈으로 적습니다.</p>
-        </div>
 
-        <div className="field">
-          <label className="field__label" htmlFor="channel-topic">
-            주제
-          </label>
-          <input
-            id="channel-topic"
-            className="field__input"
-            value={topic}
-            placeholder="이 채널에서 나누는 일을 한 줄로"
-            onChange={(event) => setTopic(event.target.value)}
-          />
-        </div>
+          <FormRow label="주제" htmlFor="channel-topic">
+            <input
+              id="channel-topic"
+              className="field__input"
+              value={topic}
+              placeholder="이 채널에서 나누는 일을 한 줄로"
+              onChange={(event) => setTopic(event.target.value)}
+            />
+          </FormRow>
 
-        <label className="u-row u-row--center u-gap-2 u-ui">
-          <input
-            type="checkbox"
-            checked={isPrivate}
-            onChange={(event) => setIsPrivate(event.target.checked)}
-          />
-          비공개 채널로 만들기
-        </label>
+          <FormRow label="구성원">
+            <MemberSelect
+              members={teammates}
+              value={picked}
+              onChange={setPicked}
+              placeholder="함께할 사람 선택"
+              emptyText="팀원이 없습니다."
+            />
+          </FormRow>
 
-        <div className="field">
-          <span className="field__label">구성원</span>
-          <MemberSelect
-            members={teammates}
-            value={picked}
-            onChange={setPicked}
-            placeholder="함께할 사람 선택"
-            emptyText="팀원이 없습니다."
-          />
-          <p className="field__hint">
-            {picked.length > 0
-              ? `${picked.length}명과 함께 만듭니다.`
-              : isPrivate
-                ? "비공개 채널은 초대한 사람만 볼 수 있습니다."
-                : "처음부터 함께할 사람을 고를 수 있습니다. 안 고르면 빈 채널입니다."}
-          </p>
+          <Disclosure summary="비공개" defaultOpen={isPrivate}>
+            <FormRow label="비공개">
+              <label className="sched__check">
+                <input
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(event) => setIsPrivate(event.target.checked)}
+                />
+                초대한 사람만 볼 수 있습니다
+              </label>
+            </FormRow>
+          </Disclosure>
         </div>
 
         {error ? <p className="field__error">{error}</p> : null}

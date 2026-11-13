@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Clock, Hash, Lock, MapPin, Trash2, Unlink, Users } from "lucide-react";
+import { Clock, Hash, Lock, MapPin, Trash2, Unlink, Users } from "lucide-react";
 import { Dialog } from "./Dialogs";
 import { Avatar } from "./Avatar";
+import { MemberSelect } from "./MemberSelect";
 import { Select } from "./Select";
+import { DateField, Disclosure, FormRow, FormTitle, TimeField } from "./Form";
 import { useStore } from "../store/useStore";
-import { toDateInput, toLocalInput, fromDateTimeInput } from "../lib/calendar";
+import { toDateInput, toLocalInput, fromDateTimeInput, dateKey, parseDateKey } from "../lib/calendar";
 import { formatDateLong } from "../lib/format";
 import type { ScheduleEvent } from "../lib/types";
 
@@ -38,8 +40,9 @@ export function EventDialog() {
   const [allDay, setAllDay] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [startTime, setStartTime] = useState("09:00");
-  const [endDate, setEndDate] = useState("");
   const [endTime, setEndTime] = useState("10:00");
+  /** The end day follows the two times — it is never typed. */
+  const [endDate, setEndDate] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [channelId, setChannelId] = useState<string>("");
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
@@ -96,13 +99,46 @@ export function EventDialog() {
   const isNew = !target;
   const vanished = Boolean(target && !existing);
 
+  // The end day follows the two times: a meeting that ends before it starts
+  // runs into the next day, and the row says so.
+  const nextDay = (key: string) => {
+    const date = parseDateKey(key);
+    date.setDate(date.getDate() + 1);
+    return dateKey(date);
+  };
+
+  const changeStartDate = (next: string) => {
+    setStartDate(next);
+    setEndDate(endTime > startTime ? next : nextDay(next));
+  };
+
+  const changeStartTime = (next: string) => {
+    setStartTime(next);
+    setEndDate(endTime > next ? startDate : nextDay(startDate));
+  };
+
+  const changeEndTime = (next: string) => {
+    setEndTime(next);
+    setEndDate(next > startTime ? startDate : nextDay(startDate));
+  };
+
+  /** The event runs past midnight — the end day is not the start day. */
+  const spansDays = Boolean(startDate) && endDate !== startDate;
+
   const save = async () => {
     if (!title.trim()) {
       setError("일정 제목을 입력해 주세요");
       return;
     }
+    if (!startDate) {
+      setError("날짜를 고르세요");
+      return;
+    }
     const startsAt = fromDateTimeInput(startDate, allDay ? "00:00" : startTime);
-    const endsAt = fromDateTimeInput(endDate, allDay ? "23:59" : endTime);
+    const endsAt = fromDateTimeInput(
+      allDay ? startDate : endDate,
+      allDay ? "23:59" : endTime,
+    );
     if (new Date(endsAt).getTime() < new Date(startsAt).getTime()) {
       setError("종료 시각이 시작 시각보다 빠릅니다");
       return;
@@ -161,7 +197,6 @@ export function EventDialog() {
     <Dialog
       title={isNew ? "일정 추가" : "일정"}
       onClose={() => setDialog(null)}
-      wide
       footer={
         <>
           {existing && canManage ? (
@@ -210,150 +245,125 @@ export function EventDialog() {
         {!vanished && readOnly ? (
           <EventReadOnly event={existing as ScheduleEvent} onAnswer={answer} />
         ) : !vanished ? (
-          <>
-            <label className="field">
-              <span className="field__label">제목</span>
-              <input
-                className="field__input"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="주간 회의"
-                autoFocus
-                maxLength={200}
-              />
-            </label>
+          <div className="form">
+            <FormTitle
+              value={title}
+              onChange={setTitle}
+              placeholder="주간 회의"
+              label="일정 제목"
+              autoFocus
+              maxLength={200}
+            />
 
-            <div className="field">
-              <span className="field__label">날짜와 시간</span>
-              <div className="sched__when">
-                <span className="sched__whenlabel">시작</span>
-                <input
-                  type="date"
-                  className="field__input"
+            <FormRow label="날짜">
+              <div className="formrow__with">
+                <DateField
                   value={startDate}
-                  onChange={(event) => {
-                    setStartDate(event.target.value);
-                    if (!endDate || endDate < event.target.value) setEndDate(event.target.value);
-                  }}
-                  aria-label="시작 날짜"
+                  onChange={changeStartDate}
+                  ariaLabel="날짜"
                 />
-                <input
-                  type="time"
-                  className="field__input"
-                  value={startTime}
-                  onChange={(event) => setStartTime(event.target.value)}
-                  disabled={allDay}
-                  aria-label="시작 시간"
-                />
-                <span className="sched__whenlabel">종료</span>
-                <input
-                  type="date"
-                  className="field__input"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  aria-label="종료 날짜"
-                />
-                <input
-                  type="time"
-                  className="field__input"
-                  value={endTime}
-                  onChange={(event) => setEndTime(event.target.value)}
-                  disabled={allDay}
-                  aria-label="종료 시간"
-                />
+                <label className="sched__check">
+                  <input
+                    type="checkbox"
+                    checked={allDay}
+                    onChange={(event) => setAllDay(event.target.checked)}
+                  />
+                  하루 종일
+                </label>
               </div>
-              <label className="sched__check">
+            </FormRow>
+
+            {allDay ? null : (
+              <FormRow label="시간">
+                <div className="formrow__pair">
+                  <TimeField
+                    value={startTime}
+                    onChange={changeStartTime}
+                    ariaLabel="시작 시간"
+                  />
+                  <span className="formrow__dash" aria-hidden="true">
+                    –
+                  </span>
+                  <TimeField
+                    value={endTime}
+                    onChange={changeEndTime}
+                    ariaLabel="종료 시간"
+                  />
+                </div>
+                {spansDays ? (
+                  <p className="field__hint">다음 날까지 이어집니다.</p>
+                ) : null}
+              </FormRow>
+            )}
+
+            <FormRow label="참석자">
+              <MemberSelect
+                members={members}
+                value={attendeeIds}
+                onChange={setAttendeeIds}
+                placeholder="참석할 사람 선택"
+              />
+            </FormRow>
+
+            <Disclosure
+              summary="장소 · 설명 · 연결할 채널 · 비공개"
+              defaultOpen={Boolean(location || description || channelId || isPrivate)}
+            >
+              <FormRow label="장소" htmlFor="event-location">
                 <input
-                  type="checkbox"
-                  checked={allDay}
-                  onChange={(event) => setAllDay(event.target.checked)}
+                  id="event-location"
+                  className="field__input"
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  placeholder="3층 회의실"
+                  maxLength={200}
                 />
-                하루 종일
-              </label>
-            </div>
+              </FormRow>
 
-            <label className="field">
-              <span className="field__label">장소</span>
-              <input
-                className="field__input"
-                value={location}
-                onChange={(event) => setLocation(event.target.value)}
-                placeholder="3층 회의실"
-                maxLength={200}
-              />
-            </label>
+              <FormRow label="설명" htmlFor="event-description">
+                <textarea
+                  id="event-description"
+                  className="field__input u-h-auto u-minh-72 u-full u-py-2"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="준비할 것, 안건"
+                  maxLength={4000}
+                />
+              </FormRow>
 
-            <label className="field">
-              <span className="field__label">설명</span>
-              <textarea
-                className="field__input u-h-auto u-minh-72 u-full u-py-2"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="준비할 것, 안건"
-                maxLength={4000}
-              />
-            </label>
+              <FormRow label="연결할 채널">
+                <Select
+                  value={channelId}
+                  onChange={setChannelId}
+                  options={[
+                    {
+                      value: "",
+                      label: "연결 없음",
+                      lead: <Unlink size={13} aria-hidden="true" />,
+                    },
+                    ...channels
+                      .filter((channel) => channel.kind === "channel")
+                      .map((channel) => ({
+                        value: channel.id,
+                        label: channel.name,
+                        lead: <Hash size={13} aria-hidden="true" />,
+                      })),
+                  ]}
+                />
+              </FormRow>
 
-            <label className="field">
-              <span className="field__label">연결할 채널</span>
-              <Select
-                value={channelId}
-                onChange={setChannelId}
-                options={[
-                  {
-                    value: "",
-                    label: "연결 없음",
-                    lead: <Unlink size={13} aria-hidden="true" />,
-                  },
-                  ...channels
-                    .filter((channel) => channel.kind === "channel")
-                    .map((channel) => ({
-                      value: channel.id,
-                      label: channel.name,
-                      lead: <Hash size={13} aria-hidden="true" />,
-                    })),
-                ]}
-              />
-              <span className="field__hint">일정에서 바로 그 방으로 갈 수 있습니다.</span>
-            </label>
-
-            <div className="field">
-              <span className="field__label">참석자</span>
-              <div className="sched__people">
-                {members.map((member) => {
-                  const on = attendeeIds.includes(member.user.id);
-                  return (
-                    <button
-                      key={member.user.id}
-                      type="button"
-                      className={`sched__person${on ? " sched__person--on" : ""}`}
-                      aria-pressed={on}
-                      onClick={() =>
-                        setAttendeeIds((current) =>
-                          on
-                            ? current.filter((id) => id !== member.user.id)
-                            : [...current, member.user.id],
-                        )
-                      }
-                    >
-                      <Avatar user={member.user} size="sm" />
-                      <span className="u-truncate">{member.user.name}</span>
-                      {on ? <Check size={13} aria-hidden="true" /> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <label className="sched__check">
-              <input
-                type="checkbox"
-                checked={isPrivate}
-                onChange={(event) => setIsPrivate(event.target.checked)}
-              />
-              비공개 — 나와 참석자만 볼 수 있습니다
-            </label>
-          </>
+              <FormRow label="비공개">
+                <label className="sched__check">
+                  <input
+                    type="checkbox"
+                    checked={isPrivate}
+                    onChange={(event) => setIsPrivate(event.target.checked)}
+                  />
+                  나와 참석자만 봅니다
+                </label>
+              </FormRow>
+            </Disclosure>
+          </div>
         ) : null}
       </div>
     </Dialog>

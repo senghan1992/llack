@@ -90,6 +90,8 @@ class _FakeApiService extends ApiService {
     String? assigneeId,
     DateTime? dueAt,
     String? roadmapId,
+    String? milestoneId,
+    int? position,
   }) async {
     if (updateTaskFails) throw Exception('수정 실패');
     lastRoadmapId = roadmapId;

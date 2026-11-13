@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Dialog } from "./Dialogs";
 import { Select } from "./Select";
+import { FormRow, FormTitle } from "./Form";
 import { useStore } from "../store/useStore";
 import type { OrgUnitInput } from "../lib/types";
 
@@ -105,77 +106,62 @@ export function OrgUnitDialog() {
         </>
       }
     >
-      <div className="dialog__body u-col u-gap-4">
+      <div className="dialog__body u-col u-gap-3">
         {error ? <p className="field__error">{error}</p> : null}
 
-        <div className="field">
-          <label className="field__label" htmlFor="org-new-name">
-            조직 이름
-          </label>
-          <input
+        <div className="form">
+          <FormTitle
             id="org-new-name"
-            className="field__input"
-            autoFocus
             value={name}
+            onChange={setName}
+            placeholder="조직 이름"
+            label="조직 이름"
+            autoFocus
             maxLength={120}
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-            }}
+            onEnter={() => void submit()}
           />
-        </div>
 
-        <div className="field">
-          <label className="field__label" htmlFor="org-new-kind">
-            조직 종류
-          </label>
-          <input
-            id="org-new-kind"
-            className="field__input"
-            value={kind}
-            placeholder="부서 또는 팀"
-            maxLength={24}
-            onChange={(event) => setKind(event.target.value)}
-          />
-          <p className="field__hint">예: 부서, 팀</p>
-        </div>
-
-        <div className="field">
-          <label className="field__label" htmlFor="org-new-desc">
-            설명
-          </label>
-          <textarea
-            id="org-new-desc"
-            className="field__input u-h-auto u-minh-72 u-full u-py-2"
-            value={description}
-            maxLength={4000}
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </div>
-
-        {parentUnit ? (
-          <div className="field">
-            <p className="field__hint orgdlg__parent">상위 조직: {parentUnit.name}</p>
-          </div>
-        ) : (
-          <div className="field">
-            <span className="field__label">상위 조직</span>
-            <Select
-              value={parentChoice}
-              onChange={setParentChoice}
-              ariaLabel="상위 조직"
-              options={[
-                ...(isWorkspaceAdmin
-                  ? [{ value: "", label: "최상위 조직" }]
-                  : []),
-                ...creatable.map((unit) => ({ value: unit.id, label: unit.name })),
-              ]}
+          <FormRow label="조직 종류" htmlFor="org-new-kind">
+            <input
+              id="org-new-kind"
+              className="field__input"
+              value={kind}
+              placeholder="부서 또는 팀"
+              maxLength={24}
+              onChange={(event) => setKind(event.target.value)}
             />
-            {isWorkspaceAdmin ? null : (
-              <p className="field__hint">내가 관리하는 조직 아래에만 만들 수 있습니다.</p>
-            )}
-          </div>
-        )}
+          </FormRow>
+
+          <FormRow label="설명" htmlFor="org-new-desc">
+            <textarea
+              id="org-new-desc"
+              className="field__input u-h-auto u-minh-72 u-full u-py-2"
+              value={description}
+              maxLength={4000}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </FormRow>
+
+          {parentUnit ? (
+            <FormRow label="상위 조직">
+              <p className="orgdlg__parent">{parentUnit.name}</p>
+            </FormRow>
+          ) : (
+            <FormRow label="상위 조직">
+              <Select
+                value={parentChoice}
+                onChange={setParentChoice}
+                ariaLabel="상위 조직"
+                options={[
+                  ...(isWorkspaceAdmin
+                    ? [{ value: "", label: "최상위 조직" }]
+                    : []),
+                  ...creatable.map((unit) => ({ value: unit.id, label: unit.name })),
+                ]}
+              />
+            </FormRow>
+          )}
+        </div>
       </div>
     </Dialog>
   );

@@ -1306,7 +1306,7 @@
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-input);
   background: var(--surface-raise);
-  box-shadow: var(--shadow-e1);
+  box-shadow: var(--shadow-e1), var(--sheen);
   color: var(--color-ink);
   font-size: var(--text-ui);
   font-weight: 500;
@@ -1315,7 +1315,7 @@
   transition: background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
 }
 
-.btn:not(:disabled):hover { background: var(--surface-well); }
+.btn:not(:disabled):hover { background: var(--surface-well); box-shadow: var(--shadow-e2), var(--sheen); }
 .btn:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .btn:active { transform: translateY(1px); box-shadow: none; }
 
@@ -1389,37 +1389,88 @@
 
 .field { display: grid; gap: var(--space-2xs); }
 
+/* A name and what it names. An icon in a name stands beside it, never on a
+   line of its own — every icon in the app is a block, so the name is the one
+   that has to make room. */
 .field__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
   font-size: var(--text-small);
   font-weight: 500;
   color: var(--color-ink-2);
 }
 
-/* a field is a well cut into the surface it sits on */
+/* A field is a well cut into the surface it sits on: the edge of the cut is
+   drawn inside it, so the field reads as carved out of the panel rather
+   than laid on top of it. */
 .field__input {
   width: 100%;
   height: var(--field-h);
   padding: 0 var(--space-sm);
-  border: 1px solid var(--edge-field);
-  border-radius: var(--radius-input);
-  background: var(--surface-well);
-  box-shadow: var(--recess);
+  border: 0;
+  border-radius: var(--radius-field);
+  background: linear-gradient(180deg, var(--well-top), var(--well-bottom));
+  box-shadow: var(--recess), inset 0 0 0 1px var(--edge-field);
   color: var(--color-ink);
   font-size: var(--text-ui);
-  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+  transition: box-shadow var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
 }
 
 .field__input::placeholder { color: var(--color-muted); }
-.field__input:hover { border-color: var(--color-muted); }
+.field__input:hover { box-shadow: var(--recess), inset 0 0 0 1px var(--color-muted); }
 .field__input:focus-visible {
   outline: none;
-  border-color: var(--color-accent);
   background: var(--surface-raise);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  box-shadow: inset 0 0 0 1px var(--color-accent), 0 0 0 3px var(--accent-ring);
 }
 
+/* The platform's own grip in the corner is chrome: it belongs to the
+   operating system, not to this panel. */
+textarea.field__input { resize: none; }
+
 .field__input:disabled { opacity: 0.55; cursor: not-allowed; }
-.field__input[aria-invalid="true"] { border-color: var(--color-error); }
+.field__input[aria-invalid="true"] { box-shadow: var(--recess), inset 0 0 0 1px var(--color-error); }
+
+/* The mark in a box is ours too: the platform's own checkbox paints with
+   the operating system, and a grey plate inside a cream panel reads as
+   something borrowed. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--surface-well);
+  box-shadow: var(--recess), inset 0 0 0 1px var(--edge-field);
+  cursor: pointer;
+  transition: box-shadow var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+}
+
+input[type="checkbox"]:hover { box-shadow: var(--recess), inset 0 0 0 1px var(--color-muted); }
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+input[type="checkbox"]:checked {
+  background: var(--color-accent);
+  box-shadow: var(--sheen), var(--rim), inset 0 0 0 1px var(--color-accent-deep);
+}
+
+/* the tick, cut out of the mark */
+input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid var(--color-accent-ink);
+  border-bottom: 2px solid var(--color-accent-ink);
+  transform: translateY(-1px) rotate(-45deg);
+}
 
 .field__error { color: var(--color-error); font-size: var(--text-tiny); }
 .field__hint { color: var(--color-muted); font-size: var(--text-tiny); }
@@ -1554,21 +1605,29 @@
 
 /* ══ dialogs ══════════════════════════════════════════════════════════ */
 
+/* The veil. The page behind a dialog is still there — it is only pushed
+   back: blurred, dimmed, and darkened at the edges, so the panel reads as
+   the one lit thing in the room. */
 .scrim {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
   display: grid;
-  place-items: start center;
+  place-items: center;
   padding: var(--space-xl) var(--space-md);
-  background: var(--surface-overlay);
-  -webkit-backdrop-filter: blur(3px) saturate(0.94);
-  backdrop-filter: blur(3px) saturate(0.94);
+  overflow-y: auto;
+  background:
+    radial-gradient(120% 90% at 50% 45%, transparent 30%, var(--scrim-veil) 100%),
+    var(--surface-overlay);
+  -webkit-backdrop-filter: blur(8px) saturate(0.9);
+  backdrop-filter: blur(8px) saturate(0.9);
   animation: fade-in var(--dur-short) var(--ease-out);
 }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* The panel. A raised surface with real elevation: a layered shadow, a
+   lit top edge, and a rimmed foot. Nothing about it is a flat rectangle. */
 .dialog {
   width: 100%;
   max-width: 460px;
@@ -1578,7 +1637,7 @@
   border: 0;
   border-radius: var(--radius-panel);
   background: var(--surface-raise);
-  box-shadow: var(--shadow-e3);
+  box-shadow: var(--shadow-modal), var(--panel-sheen);
   overflow: clip;
   animation: dialog-in var(--dur-long) var(--ease-out);
 }
@@ -1586,10 +1645,12 @@
 .dialog--wide { max-width: 620px; }
 
 @keyframes dialog-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
   to { opacity: 1; transform: none; }
 }
 
+/* The head is the panel's own lid: light falls on it, and a rule says
+   where the body begins. */
 .dialog__head {
   display: flex;
   align-items: center;
@@ -1597,8 +1658,12 @@
   gap: var(--space-sm);
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--color-rule-soft);
-  background: var(--surface-raise);
+  background: linear-gradient(180deg, var(--edge-panel), transparent);
 }
+
+/* On a panel of this tone the icon button needs a well of its own to be
+   seen — a hover that matches the panel is no hover at all. */
+.dialog__head .iconbtn:hover { background: var(--surface-well); }
 
 .dialog__title {
   font-family: var(--font-display);
@@ -1609,14 +1674,254 @@
 
 .dialog__body { padding: var(--space-lg); overflow-y: auto; }
 
+/* The foot is a shelf the actions stand on: a step below the panel, with
+   the keys at the edge of the sheet. */
 .dialog__foot {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
   border-top: 1px solid var(--color-rule-soft);
   background: var(--surface-well);
+}
+
+/* The keys in a dialog are a size up: the panel is read at arm's length,
+   not in a list of rows. */
+.dialog__foot .btn--sm { height: 32px; padding: 0 var(--space-sm); }
+
+/* ══ forms ═════════════════════════════════════════════════════════════ */
+
+/* A form is a sheet of rows: the name on the left, the thing you fill in on
+   the right. One row is one line, so the form is read at a glance instead of
+   scrolled through. */
+.form {
+  display: grid;
+  align-content: start;
+}
+
+.formrow {
+  display: grid;
+  grid-template-columns: var(--form-label-w) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-rule-soft);
+}
+
+.formrow:first-child { border-top: 0; padding-top: 0; }
+
+/* The title's own rule is the one rule between the subject and the rest —
+   two hairlines a breath apart read as one heavy edge. */
+.formtitle__block + .formrow { border-top: 0; padding-top: 0; }
+
+/* a name too long to stand beside its control */
+.formrow--stack {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-xs);
+}
+
+.formrow__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+
+.formrow__control { min-width: 0; }
+.formrow__control > .select { width: 100%; }
+
+/* Two controls that stand side by side — a start and an end. */
+.formrow__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+/* A control and a switch that belongs to it. */
+.formrow__with {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.formrow__with > .select { flex: 1 1 auto; min-width: 0; }
+
+.formrow__dash {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono);
+}
+
+/* The subject of the form: the name of the thing on the left, the thing
+   itself written large under it. */
+.formtitle__block {
+  display: grid;
+  gap: var(--space-2xs);
+  margin-bottom: var(--space-md);
+}
+
+/* The name of the thing, small and quiet above it — a label on a shelf. */
+.formtitle__eyebrow {
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+/* A sentence about the subject, under the rule. */
+.formtitle__hint {
+  margin: var(--space-2xs) 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-tiny);
+}
+
+/* The subject itself. It reads like a line on the page, and the rule
+   under it says "this is the thing you are writing". */
+.formtitle {
+  width: 100%;
+  margin-bottom: 0;
+  padding: 0 0 var(--space-2xs);
+  border: 0;
+  border-bottom: 2px solid var(--color-rule);
+  border-radius: 0;
+  background: none;
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-head);
+  font-weight: var(--display-weight);
+  letter-spacing: -0.03em;
+  line-height: 1.35;
+  transition: border-color var(--dur-micro) var(--ease-out);
+}
+
+.formtitle::placeholder {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.formtitle:focus-visible {
+  outline: none;
+  border-bottom-color: var(--color-accent);
+}
+
+/* 더 보기 — the fields most forms do not need. They are folded, not gone. */
+.disclosure__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-xs) 0;
+  border: 0;
+  border-top: 1px solid var(--color-rule-soft);
+  background: none;
+  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.disclosure__toggle:hover { color: var(--color-ink-2); }
+.disclosure__toggle:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.disclosure__chev {
+  flex: 0 0 auto;
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+
+.disclosure__toggle[aria-expanded="true"] .disclosure__chev { transform: rotate(90deg); }
+
+.disclosure__body { display: grid; }
+
+/* the month under the field — the same grid the schedule shows */
+.datepick {
+  position: fixed;
+  z-index: var(--z-menu);
+  display: grid;
+  gap: var(--space-2xs);
+  padding: var(--space-sm);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface-raise);
+  box-shadow: var(--shadow-e3);
+  animation: dropdown-in var(--dur-short) var(--ease-out);
+}
+
+.datepick__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.datepick__month {
+  font-family: var(--font-display);
+  font-size: var(--text-ui);
+  font-weight: var(--display-weight);
+}
+
+.datepick__weekdays,
+.datepick__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.datepick__weekdays {
+  color: var(--color-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-mono-sm);
+  text-align: center;
+}
+
+.datepick__day {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
+
+.datepick__day:hover { background: var(--surface-well); }
+.datepick__day:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.datepick__day--out { color: var(--color-muted); opacity: 0.45; }
+.datepick__day--today { font-weight: 600; }
+
+/* the day under the marker — the one the arrows are walking */
+.datepick__day--on {
+  box-shadow: 0 0 0 2px var(--color-accent);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.datepick__day--sel {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: 600;
+}
+
+.datepick__day--sel.datepick__day--on {
+  box-shadow: 0 0 0 2px var(--color-ink);
+}
+
+.datepick__foot {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: var(--space-2xs);
+  border-top: 1px solid var(--color-rule-soft);
 }
 
 /* ══ settings ══════════════════════════════════════════════════════════ */
@@ -1633,7 +1938,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   border-radius: var(--radius-panel);
   background: var(--surface-raise);
-  box-shadow: var(--shadow-e3);
+  box-shadow: var(--shadow-modal), var(--panel-sheen);
   overflow: clip;
   animation: dialog-in var(--dur-long) var(--ease-out);
 }
@@ -1645,7 +1950,12 @@
   gap: var(--space-sm);
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--color-rule-soft);
+  background: linear-gradient(180deg, var(--edge-panel), transparent);
 }
+
+/* the key in the head needs a well of its own — a hover that matches the
+   panel is no hover at all */
+.settings__head .iconbtn:hover { background: var(--surface-well); }
 
 .settings__title {
   font-family: var(--font-display);
@@ -1888,21 +2198,21 @@
   width: 100%;
   height: var(--field-h);
   padding: 0 var(--space-sm);
-  border: 1px solid var(--edge-field);
-  border-radius: var(--radius-input);
-  background: var(--surface-well);
-  box-shadow: var(--recess);
+  border: 0;
+  border-radius: var(--radius-field);
+  background: linear-gradient(180deg, var(--well-top), var(--well-bottom));
+  box-shadow: var(--recess), inset 0 0 0 1px var(--edge-field);
   color: var(--color-ink);
   font-size: var(--text-ui);
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+  transition: box-shadow var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
 }
-.select__trigger:hover { border-color: var(--color-muted); }
+.select__trigger:hover { box-shadow: var(--recess), inset 0 0 0 1px var(--color-muted); }
 .select__trigger:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .select__trigger[aria-expanded="true"] {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  background: var(--surface-raise);
+  box-shadow: inset 0 0 0 1px var(--color-accent), 0 0 0 3px var(--accent-ring);
 }
 .select__placeholder { color: var(--color-muted); }
 .select__count {
@@ -1935,7 +2245,7 @@
   border: 0;
   border-radius: var(--radius-card);
   background: var(--surface-raise);
-  box-shadow: var(--shadow-e2);
+  box-shadow: var(--shadow-e3);
   animation: dropdown-in var(--dur-short) var(--ease-out);
 }
 
@@ -1946,16 +2256,15 @@
   gap: var(--space-xs);
   height: var(--field-h);
   padding: 0 var(--space-sm);
-  border: 1px solid var(--edge-field);
-  border-radius: var(--radius-input);
-  background: var(--surface-well);
-  box-shadow: var(--recess);
-  transition: border-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+  border: 0;
+  border-radius: var(--radius-field);
+  background: linear-gradient(180deg, var(--well-top), var(--well-bottom));
+  box-shadow: var(--recess), inset 0 0 0 1px var(--edge-field);
+  transition: box-shadow var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
 }
 .select__search:focus-within {
-  border-color: var(--color-accent);
   background: var(--surface-raise);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  box-shadow: inset 0 0 0 1px var(--color-accent), 0 0 0 3px var(--accent-ring);
 }
 .select__input {
   flex: 1 1 auto;
@@ -2094,6 +2403,17 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  color: var(--color-muted);
+}
+/* a mark in a field stands in its own little cut, so the field says what
+   it holds before it is read */
+.select__lead > svg {
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-canvas);
+  box-shadow: var(--recess);
   color: var(--color-muted);
 }
 .select__lead .avatar { box-shadow: var(--sheen), 0 0 0 1px var(--surface-well); }
@@ -2883,6 +3203,8 @@
 /* ── an event ──────────────────────────────────────────────────────────── */
 
 .event {
+  position: relative;
+  z-index: 0;
   display: grid;
   grid-template-columns: 118px minmax(0, 1fr);
   align-items: start;
@@ -2891,6 +3213,7 @@
   border-bottom: 1px solid var(--color-rule-soft);
   border-radius: var(--radius-sm);
   transition: background-color var(--dur-micro) var(--ease-out);
+  cursor: pointer;
 }
 
 .event:hover { background: var(--wash-message); }
@@ -2927,6 +3250,17 @@
 .event__title:hover { text-decoration: underline; text-underline-offset: 0.16em; }
 .event__title:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .event__lock { color: var(--color-muted); }
+
+/* The title is the card's one control, and its hit area is the whole card —
+   click anywhere on an event to open it. The overlay belongs to the button,
+   so it carries the button's pointer, focus and click. It is lifted above
+   the card's own pieces (the avatars are positioned) to catch every click. */
+.event__title::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
 
 .event__meta,
 .event__who {
@@ -3033,18 +3367,6 @@
 }
 
 /* ── the event form ────────────────────────────────────────────────────── */
-
-.sched__when {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-.sched__whenlabel {
-  color: var(--color-muted);
-  font-size: var(--text-tiny);
-}
 
 .sched__check {
   display: flex;
@@ -4151,23 +4473,6 @@
 
 /* ── the milestone dialog ───────────────────────────────────────────────── */
 
-.msdlg__dates {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-sm);
-}
-
-.msdlg__date {
-  display: grid;
-  gap: var(--space-2xs);
-  min-width: 0;
-}
-
-.msdlg__datelabel {
-  color: var(--color-muted);
-  font-size: var(--text-tiny);
-}
-
 .msdlg__percent {
   color: var(--color-ink-2);
   font-family: var(--font-outlier);
@@ -4270,8 +4575,17 @@
   align-items: center;
   gap: var(--space-3xs);
   margin: 0;
+  padding-bottom: var(--space-2xs);
   color: var(--color-muted);
   font-size: var(--text-tiny);
+}
+
+/* the conversation under a card is not a row of the form — it is its own
+   block, and a rule says so */
+.taskdlg__talk {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-rule-soft);
 }
 
 .taskdlg__comments {

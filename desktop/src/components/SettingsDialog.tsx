@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { Avatar } from "./Avatar";
+import { Segmented } from "./Form";
 import { AVATAR_PALETTE, readableOn } from "../lib/color";
 import { formatDate } from "../lib/format";
 import { pickFolder, useInDesktop } from "../lib/desktop";
@@ -60,37 +61,6 @@ function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
     />
-  );
-}
-
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-  disabled,
-}: {
-  value: T;
-  options: { value: T; label: string; disabled?: boolean }[];
-  onChange: (next: T) => void;
-  label: string;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="segmented" role="group" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          className="segmented__item"
-          aria-pressed={option.value === value}
-          disabled={disabled || option.disabled}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

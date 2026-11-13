@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 import '../models/models.dart';
+import '../screens/chat/message_actions.dart';
+import '../services/device_settings.dart';
 import '../theme/llack_colors.dart';
 import '../theme/llack_typography.dart';
 import 'llack_avatar.dart';
 import 'message_attachments.dart';
+import 'message_markdown.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -16,6 +18,11 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onTogglePin;
   final void Function(String newBody)? onEdit;
   final VoidCallback? onDelete;
+
+  /// 반응 칩을 길게 눌렀을 때 (누가 그 반응을 눌렀는지) 보여줄 때 부른다.
+  ///
+  /// 이 콜백이 없으면 [MessageActions.showReactionParticipants] 가 기본 동작으로 동작한다.
+  final void Function(Reaction reaction)? onShowReactionParticipants;
 
   /// 첨부 파일의 상대경로를 실제 이미지 URL 로 바꿔주는 함수.
   /// (서버가 상대경로를 주기 때문에 절대 URL 로 바꿔야 Image.network 가 동작한다)
@@ -38,6 +45,7 @@ class MessageBubble extends StatelessWidget {
     this.onTogglePin,
     this.onEdit,
     this.onDelete,
+    this.onShowReactionParticipants,
     this.fileUrlResolver,
     this.highlight = false,
     this.deletedCount = 1,
@@ -66,7 +74,8 @@ class MessageBubble extends StatelessWidget {
   }
 
   String _formatTimestamp(DateTime dt) {
-    return DateFormat('HH:mm').format(dt.toLocal());
+    // 시간 표기(24시간/12시간)는 이 기기의 설정을 따른다.
+    return DeviceSettings.instance.clockFormat.value.format(dt);
   }
 
   void _showContextMenu(BuildContext context) {
@@ -88,9 +97,11 @@ class MessageBubble extends StatelessWidget {
               if (message.deletedAt == null) ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: ['👍', '❤️', '🔥', '🎉', '👀', '😂'].map((emoji) {
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.center,
+                    children: quickReactions.map((emoji) {
                       return InkWell(
                         onTap: () {
                           Navigator.pop(ctx);
@@ -116,8 +127,8 @@ class MessageBubble extends StatelessWidget {
                 const Divider(height: 1),
               ],
               ListTile(
-                leading: const Icon(Icons.forum_outlined, size: 20, color: LlackColors.ink),
-                title: const Text('스레드로 답글 달기', style: LlackTypography.body),
+                leading: Icon(Icons.forum_outlined, size: 20, color: LlackColors.ink),
+                title: Text('스레드로 답글 달기', style: LlackTypography.body),
                 onTap: () {
                   Navigator.pop(ctx);
                   HapticFeedback.selectionClick();
@@ -125,8 +136,8 @@ class MessageBubble extends StatelessWidget {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.reply_rounded, size: 20, color: LlackColors.ink),
-                title: const Text('인라인 답글', style: LlackTypography.body),
+                leading: Icon(Icons.reply_rounded, size: 20, color: LlackColors.ink),
+                title: Text('인라인 답글', style: LlackTypography.body),
                 onTap: () {
                   Navigator.pop(ctx);
                   HapticFeedback.selectionClick();
@@ -149,8 +160,8 @@ class MessageBubble extends StatelessWidget {
               // (삭제된 메시지는 본문이 없으니 복사 항목도 숨긴다)
               if (message.deletedAt == null)
                 ListTile(
-                  leading: const Icon(Icons.copy_rounded, size: 20, color: LlackColors.ink),
-                  title: const Text('메시지 복사', style: LlackTypography.body),
+                  leading: Icon(Icons.copy_rounded, size: 20, color: LlackColors.ink),
+                  title: Text('메시지 복사', style: LlackTypography.body),
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: message.body));
                     Navigator.pop(ctx);
@@ -161,16 +172,16 @@ class MessageBubble extends StatelessWidget {
                 ),
               if (isMine && message.deletedAt == null) ...[
                 ListTile(
-                  leading: const Icon(Icons.edit_outlined, size: 20, color: LlackColors.ink),
-                  title: const Text('메시지 수정', style: LlackTypography.body),
+                  leading: Icon(Icons.edit_outlined, size: 20, color: LlackColors.ink),
+                  title: Text('메시지 수정', style: LlackTypography.body),
                   onTap: () {
                     Navigator.pop(ctx);
                     _showEditDialog(context);
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline_rounded, size: 20, color: LlackColors.presenceBusy),
-                  title: const Text('메시지 삭제', style: TextStyle(color: LlackColors.presenceBusy)),
+                  leading: Icon(Icons.delete_outline_rounded, size: 20, color: LlackColors.presenceBusy),
+                  title: Text('메시지 삭제', style: TextStyle(color: LlackColors.presenceBusy)),
                   onTap: () {
                     Navigator.pop(ctx);
                     onDelete?.call();
@@ -239,11 +250,14 @@ class MessageBubble extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       _buildReplyQuote(isMine: true),
-                      Text(
-                        message.body,
-                        style: LlackTypography.body.copyWith(
+                      MessageMarkdown(
+                        body: message.body,
+                        textStyle: LlackTypography.body.copyWith(
                           color: LlackColors.bubbleMineInk,
                         ),
+                        // 내 말풍선(주황 배경) 위에서는 링크·멘션을 밝게 그려야 읽힌다.
+                        linkColor: LlackColors.bubbleMineInk,
+                        mentionColor: LlackColors.bubbleMineInk,
                       ),
                       MessageAttachments(
                         attachments: message.attachments,
@@ -275,7 +289,7 @@ class MessageBubble extends StatelessWidget {
                   )),
                 ),
               ),
-              _buildReactionsRow(isMine: true),
+              _buildReactionsRow(context, isMine: true),
               _buildThreadButton(isMine: true),
             ],
           ),
@@ -322,9 +336,9 @@ class MessageBubble extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildReplyQuote(isMine: false),
-                          Text(
-                            message.body,
-                            style: LlackTypography.body,
+                          MessageMarkdown(
+                            body: message.body,
+                            textStyle: LlackTypography.body,
                           ),
                           MessageAttachments(
                             attachments: message.attachments,
@@ -335,7 +349,7 @@ class MessageBubble extends StatelessWidget {
                       ),
                     )),
                   ),
-                  _buildReactionsRow(isMine: false),
+                  _buildReactionsRow(context, isMine: false),
                   _buildThreadButton(isMine: false),
                 ],
               ),
@@ -375,7 +389,7 @@ class MessageBubble extends StatelessWidget {
         ),
         if (message.pinned) ...[
           const SizedBox(width: 6),
-          const Icon(Icons.push_pin, size: 12, color: LlackColors.accent),
+           Icon(Icons.push_pin, size: 12, color: LlackColors.accent),
         ],
       ],
     );
@@ -426,7 +440,7 @@ class MessageBubble extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.push_pin, size: 12, color: LlackColors.accent),
+           Icon(Icons.push_pin, size: 12, color: LlackColors.accent),
           const SizedBox(width: 4),
           Text(
             '고정됨',
@@ -437,7 +451,7 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildReactionsRow({required bool isMine}) {
+  Widget _buildReactionsRow(BuildContext context, {required bool isMine}) {
     if (message.reactions.isEmpty) return const SizedBox.shrink();
 
     return Padding(
@@ -452,6 +466,11 @@ class MessageBubble extends StatelessWidget {
             onTap: () {
               HapticFeedback.selectionClick();
               onToggleReaction?.call(r.emoji);
+            },
+            // 길게 누르면 "누가 눌렀는지" 를 보여준다.
+            onLongPress: () {
+              HapticFeedback.mediumImpact();
+              _showReactionParticipants(context, r);
             },
             borderRadius: BorderRadius.circular(12),
             // 터치 타깃 44dp 확보 (시각적 칩은 그대로 둔다)
@@ -492,6 +511,19 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  /// 반응한 사람들을 보여준다.
+  ///
+  /// [onShowReactionParticipants] 가 있으면 그쪽이 대신하고,
+  /// 없으면 기본 동작(바텀 시트)으로 직접 보여준다.
+  void _showReactionParticipants(BuildContext context, Reaction reaction) {
+    final onShow = onShowReactionParticipants;
+    if (onShow != null) {
+      onShow(reaction);
+      return;
+    }
+    MessageActions.showReactionParticipants(context, reaction);
+  }
+
   Widget _buildThreadButton({required bool isMine}) {
     if (message.replyCount <= 0) return const SizedBox.shrink();
 
@@ -506,17 +538,17 @@ class MessageBubble extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.forum_outlined, size: 14, color: LlackColors.accent),
+               Icon(Icons.forum_outlined, size: 14, color: LlackColors.accent),
               const SizedBox(width: 5),
               Text(
                 '답글 ${message.replyCount}개',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: LlackColors.accent,
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 14, color: LlackColors.accent),
+               Icon(Icons.chevron_right, size: 14, color: LlackColors.accent),
             ],
           ),
         ),
@@ -556,7 +588,7 @@ class _EditMessageDialogState extends State<_EditMessageDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('메시지 수정', style: LlackTypography.title),
+      title: Text('메시지 수정', style: LlackTypography.title),
       content: TextField(
         controller: _controller,
         autofocus: true,

@@ -56,6 +56,7 @@ class _FakeApi extends ApiService {
     String? parentId,
     String? replyToId,
     bool inline = false,
+    List<String>? attachmentIds,
   }) {
     final completer = Completer<Message>();
     pending.add(completer);

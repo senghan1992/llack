@@ -69,7 +69,7 @@ void main() {
       await tester.pump();
 
       // 워크스페이스 전환 칩
-      expect(find.text('Llack'), findsOneWidget, reason: 'tab $tab 의 워크스페이스 칩');
+      expect(find.text('Atrium'), findsOneWidget, reason: 'tab $tab 의 워크스페이스 칩');
       // 공통 액션: 검색 버튼(툴팁 포함), 아바타
       expect(find.byTooltip('빠른 검색'), findsOneWidget, reason: 'tab $tab 의 검색 버튼');
     }

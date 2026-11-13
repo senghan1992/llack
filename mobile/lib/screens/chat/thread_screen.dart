@@ -41,7 +41,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('스레드 답글', style: LlackTypography.title),
+             Text('스레드 답글', style: LlackTypography.title),
             Text(
               '${widget.rootMessage.author.name}님의 메시지',
               style: LlackTypography.caption,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/models.dart';
 import '../../providers/app_state.dart';
+import '../../services/device_settings.dart';
 import '../../theme/llack_colors.dart';
 import '../../theme/llack_typography.dart';
 import '../../widgets/llack_avatar.dart';
@@ -149,15 +150,82 @@ class SettingsSheet extends StatelessWidget {
 
             ListTile(
               leading: const Icon(Icons.dns_outlined, size: 20),
-              title: const Text('서버 주소 설정', style: LlackTypography.body),
+              title: Text('서버 주소 설정', style: LlackTypography.body),
               subtitle: Text(state.api.baseUrl, style: theme.textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
               contentPadding: EdgeInsets.zero,
               onTap: () => showServerSettingsDialog(context),
             ),
 
+            // ── 화면 모드 · 시간 표기 (이 기기에 저장된다) ──────────────
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+
+            ValueListenableBuilder<ThemeModeSetting>(
+              valueListenable: DeviceSettings.instance.themeMode,
+              builder: (context, mode, _) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('화면 모드', style: theme.textTheme.titleMedium?.copyWith(fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: ThemeModeSetting.values.map((m) {
+                        return ChoiceChip(
+                          label: Text(m.label),
+                          selected: mode == m,
+                          selectedColor: LlackColors.accentSoft,
+                          labelStyle: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: mode == m ? FontWeight.w700 : FontWeight.w400,
+                            color: mode == m ? LlackColors.accentDeep : LlackColors.ink2,
+                          ),
+                          onSelected: (v) {
+                            if (v) DeviceSettings.instance.setThemeMode(m);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                );
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            ValueListenableBuilder<ClockFormatSetting>(
+              valueListenable: DeviceSettings.instance.clockFormat,
+              builder: (context, format, _) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('시간 표기', style: theme.textTheme.titleMedium?.copyWith(fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: ClockFormatSetting.values.map((f) {
+                        return ChoiceChip(
+                          label: Text(f.label),
+                          selected: format == f,
+                          selectedColor: LlackColors.accentSoft,
+                          labelStyle: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: format == f ? FontWeight.w700 : FontWeight.w400,
+                            color: format == f ? LlackColors.accentDeep : LlackColors.ink2,
+                          ),
+                          onSelected: (v) {
+                            if (v) DeviceSettings.instance.setClockFormat(f);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                );
+              },
+            ),
+
             ListTile(
-              leading: const Icon(Icons.logout, size: 20, color: LlackColors.presenceBusy),
-              title: const Text('로그아웃', style: TextStyle(color: LlackColors.presenceBusy)),
+              leading: Icon(Icons.logout, size: 20, color: LlackColors.presenceBusy),
+              title: Text('로그아웃', style: TextStyle(color: LlackColors.presenceBusy)),
               contentPadding: EdgeInsets.zero,
               onTap: () async {
                 Navigator.pop(context);
@@ -189,12 +257,16 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   late final TextEditingController _titleCtrl;
   bool _isSubmitting = false;
 
+  /// 고른 아바타 색 (hex). null 이면 서버에 저장된 값을 그대로 쓴다.
+  String? _avatarColor;
+
   @override
   void initState() {
     super.initState();
     final user = context.read<AppState>().currentUser;
     _nameCtrl = TextEditingController(text: user?.name ?? '');
     _titleCtrl = TextEditingController(text: user?.title ?? '');
+    _avatarColor = user?.avatarColor;
   }
 
   @override
@@ -214,6 +286,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       await state.updateMe(
         name: newName,
         title: _titleCtrl.text.trim().isNotEmpty ? _titleCtrl.text.trim() : null,
+        avatarColor: _avatarColor,
       );
       if (!mounted) return;
       Navigator.pop(context);
@@ -229,9 +302,10 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('프로필 수정', style: LlackTypography.title),
+      title: Text('프로필 수정', style: LlackTypography.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: _nameCtrl,
@@ -241,6 +315,41 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
           TextField(
             controller: _titleCtrl,
             decoration: const InputDecoration(labelText: '직함 / 부서', hintText: '예: 프로덕트 디자이너'),
+          ),
+          const SizedBox(height: 16),
+          Text('아바타 색', style: LlackTypography.caption),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: LlackColors.avatarPalette.map((hex) {
+              final color = LlackColors.colorFromHex(hex) ?? LlackColors.avatarColors.first;
+              final selected = _avatarColor?.toLowerCase() == hex.toLowerCase();
+              return Semantics(
+                button: true,
+                selected: selected,
+                label: '아바타 색 $hex',
+                child: InkWell(
+                  onTap: () => setState(() => _avatarColor = hex),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected ? LlackColors.ink : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: selected
+                        ? const Icon(Icons.check, size: 16, color: Colors.white)
+                        : null,
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),

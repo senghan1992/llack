@@ -23,7 +23,7 @@ class ChatMessagesErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off, size: 32, color: LlackColors.muted),
+             Icon(Icons.cloud_off, size: 32, color: LlackColors.muted),
             const SizedBox(height: 12),
             Text(
               message,

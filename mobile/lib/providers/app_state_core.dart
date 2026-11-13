@@ -132,6 +132,16 @@ abstract class _AppStateCore extends ChangeNotifier with WidgetsBindingObserver 
   /// 조직도 데이터를 이미 불러왔는지. (화면이 중복 요청을 피하게)
   bool _hasLoadedOrg = false;
 
+  // People & Invites
+  /// 보낸 초대 목록.
+  List<Invite> _invites = [];
+  /// 내 할 일만 모은 목록. (모든 프로젝트를 훑는 대신 서버가 골라 준다)
+  List<Task> _myTasks = [];
+
+  // Drafts
+  /// 채널별 임시저장 글. (방을 옮겨도 작성 중인 문장이 남는다)
+  final Map<String, String> _drafts = {};
+
   bool _disposed = false;
 
   // ── Getters ───────────────────────────────────────────────────
@@ -245,6 +255,27 @@ abstract class _AppStateCore extends ChangeNotifier with WidgetsBindingObserver 
 
   OrgOverview? get orgOverview => _orgOverview;
   bool get isLoadingOrg => _isLoadingOrg;
+
+  /// 보낸 초대 목록.
+  List<Invite> get invites => _invites;
+
+  /// 내 할 일 (모든 프로젝트 · 아직 끝나지 않은 것).
+  List<Task> get myTasks => _myTasks;
+
+  /// 채널에 임시저장된 글. (없으면 null)
+  String? draftFor(String channelId) {
+    final body = _drafts[channelId];
+    return (body == null || body.isEmpty) ? null : body;
+  }
+
+  /// 채널의 임시저장 글을 고친다. (빈 글은 저장을 지운 것으로 본다)
+  void setDraft(String channelId, String body) {
+    if (body.isEmpty) {
+      _drafts.remove(channelId);
+    } else {
+      _drafts[channelId] = body;
+    }
+  }
 
   String? get channelsError => _channelsError;
   String? get messagesError => _messagesError;
@@ -365,6 +396,85 @@ abstract class _AppStateCore extends ChangeNotifier with WidgetsBindingObserver 
 
   /// 해당 채널의 히스토리를 이미 불러왔는지.
   bool hasLoadedHistory(String channelId) => _historyLoaded.contains(channelId);
+
+  // ── People & Invites ─────────────────────────────────────────
+
+  /// 사람 검색 (초대 대상 · 조직원 추가 후보).
+  Future<List<User>> searchUsers(String query) async {
+    if (query.trim().isEmpty) return const [];
+    return api.searchUsers(query.trim());
+  }
+
+  /// 보낸 초대 목록을 불러온다.
+  Future<void> loadInvites() async {
+    final wsId = _activeWorkspace?.id;
+    if (wsId == null) return;
+    try {
+      _invites = await api.getInvites(wsId);
+    } catch (e) {
+      debugPrint('[loadInvites error] $e');
+    }
+    _notify();
+  }
+
+  /// 이메일로 초대장을 보낸다. (만들어진 초대장을 돌려준다)
+  Future<Invite> createInvite(String email, {String role = 'member'}) async {
+    final wsId = _activeWorkspace?.id;
+    if (wsId == null) throw ApiException(0, 'error', '워크스페이스가 없습니다.');
+    final invite = await api.createInvite(wsId, email: email.trim(), role: role);
+    _invites = [invite, ..._invites];
+    _notify();
+    return invite;
+  }
+
+  /// 초대장을 취소한다.
+  Future<void> revokeInvite(String inviteId) async {
+    final wsId = _activeWorkspace?.id;
+    if (wsId == null) return;
+    await api.revokeInvite(wsId, inviteId);
+    _invites = _invites.where((i) => i.id != inviteId).toList();
+    _notify();
+  }
+
+  /// 구성원의 역할을 바꾼다. (소유자 · 관리자 · 멤버)
+  Future<bool> updateMemberRole(Member member, Role role) async {
+    final wsId = _activeWorkspace?.id;
+    if (wsId == null) return false;
+    final updated = await api.updateMemberRole(wsId, member.user.id, role.name);
+    _members = [
+      for (final m in _members)
+        if (m.user.id == member.user.id) updated else m,
+    ];
+    _notify();
+    return true;
+  }
+
+  /// 구성원을 워크스페이스에서 내보낸다.
+  Future<bool> removeMember(Member member) async {
+    final wsId = _activeWorkspace?.id;
+    if (wsId == null) return false;
+    await api.removeMember(wsId, member.user.id);
+    _members = _members.where((m) => m.user.id != member.user.id).toList();
+    _notify();
+    return true;
+  }
+
+  /// 내 할 일 목록을 불러온다.
+  Future<void> loadMyTasks() async {
+    final wsId = _activeWorkspace?.id;
+    if (wsId == null) return;
+    try {
+      _myTasks = await api.getMyTasks(wsId);
+    } catch (e) {
+      debugPrint('[loadMyTasks error] $e');
+    }
+    _notify();
+  }
+
+  /// 아바타 색을 고른다. (프로필 편집에서 사용)
+  Future<void> updateAvatarColor(String color) async {
+    await updateMe(avatarColor: color);
+  }
 
   /// 0 메시지, 1 일정, 2 프로젝트, 3 조직도
   void goToTab(int index) {

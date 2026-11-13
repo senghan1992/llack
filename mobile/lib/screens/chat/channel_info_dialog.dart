@@ -7,6 +7,8 @@ import '../../theme/llack_theme.dart';
 import '../../theme/llack_typography.dart';
 import '../../widgets/app_snack_bar.dart';
 import '../../widgets/llack_avatar.dart';
+import 'channel_settings_sheet.dart';
+import 'people_picker_sheet.dart';
 
 class ChannelInfoDialog extends StatefulWidget {
   final Channel channel;
@@ -61,6 +63,32 @@ class _ChannelInfoDialogState extends State<ChannelInfoDialog> {
     }
   }
 
+  /// 채널 설정 시트 (이름 · 주제 · 목적 수정 · 삭제)를 연다.
+  ///
+  /// 다이얼로그를 **닫지 않고** 시트를 그 위에 띄운다.
+  /// (설정을 바꾸고 돌아오면 같은 대화창에서 결과를 바로 볼 수 있다)
+  Future<void> _openSettings(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => ChannelSettingsSheet(channel: widget.channel),
+    );
+    if (!mounted) return;
+    setState(() {}); // 바뀐 이름·주제를 즉시 반영한다
+  }
+
+  /// 채널에 사람 추가 시트를 연다.
+  Future<void> _openPeoplePicker(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => PeoplePickerSheet(channel: widget.channel),
+    );
+    if (!mounted) return;
+    // 방금 추가된 사람이 목록에 반영되도록 다시 불러온다
+    _loadMembers();
+  }
+
   void _leaveOrDelete(BuildContext context) async {
     final state = context.read<AppState>();
     final isDm = widget.channel.isDm;
@@ -110,10 +138,19 @@ class _ChannelInfoDialogState extends State<ChannelInfoDialog> {
     Navigator.pop(context); // close info dialog
   }
 
+  /// 상태에 있는 **최신** 채널 정보.
+  /// (설정을 저장하면 이름·주제가 바뀌므로 예전 스냅샷 대신 이 값을 쓴다)
+  Channel _latestChannel(AppState state) {
+    for (final c in state.allChannels) {
+      if (c.id == widget.channel.id) return c;
+    }
+    return widget.channel;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final channel = widget.channel;
+    final channel = _latestChannel(state);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(LlackTheme.radiusPanel)),
@@ -141,6 +178,12 @@ class _ChannelInfoDialogState extends State<ChannelInfoDialog> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (!channel.isDm)
+                    IconButton(
+                      icon: const Icon(Icons.tune_rounded, size: 20),
+                      tooltip: '채널 설정',
+                      onPressed: () => _openSettings(context),
+                    ),
                   IconButton(
                     icon: const Icon(Icons.close, size: 20),
                     onPressed: () => Navigator.pop(context),
@@ -158,7 +201,7 @@ class _ChannelInfoDialogState extends State<ChannelInfoDialog> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Icon(Icons.push_pin, size: 16, color: LlackColors.accent),
+                   Icon(Icons.push_pin, size: 16, color: LlackColors.accent),
                   const SizedBox(width: 6),
                   Text('고정된 메시지 (${_pins.length})', style: LlackTypography.subtitle.copyWith(fontSize: 13)),
                 ],
@@ -192,12 +235,18 @@ class _ChannelInfoDialogState extends State<ChannelInfoDialog> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Icon(Icons.people_outline, size: 16, color: LlackColors.accent),
+                   Icon(Icons.people_outline, size: 16, color: LlackColors.accent),
                   const SizedBox(width: 6),
                   Text(
                     '참여 중인 멤버 (${_members.isNotEmpty ? _members.length : channel.memberCount})',
                     style: LlackTypography.subtitle.copyWith(fontSize: 13),
                   ),
+                  const Spacer(),
+                  if (!channel.isDm)
+                    TextButton(
+                      onPressed: () => _openPeoplePicker(context),
+                      child: const Text('사람 추가'),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -231,7 +280,7 @@ class _ChannelInfoDialogState extends State<ChannelInfoDialog> {
                                 subtitle: m.user.title != null
                                     ? Text(m.user.title!, style: LlackTypography.caption)
                                     : null,
-                                trailing: Text(p.label, style: const TextStyle(fontSize: 11, color: LlackColors.muted)),
+                                trailing: Text(p.label, style: TextStyle(fontSize: 11, color: LlackColors.muted)),
                               );
                             },
                           ),
@@ -246,10 +295,10 @@ class _ChannelInfoDialogState extends State<ChannelInfoDialog> {
                 ),
                 label: Text(
                   channel.isDm ? '대화방 삭제' : '채널 나가기',
-                  style: const TextStyle(color: LlackColors.presenceBusy),
+                  style: TextStyle(color: LlackColors.presenceBusy),
                 ),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: LlackColors.presenceBusy),
+                  side: BorderSide(color: LlackColors.presenceBusy),
                 ),
                 onPressed: () => _leaveOrDelete(context),
               ),

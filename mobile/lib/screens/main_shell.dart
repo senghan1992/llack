@@ -57,7 +57,7 @@ class LlackAppBar extends StatelessWidget implements PreferredSizeWidget {
       title: Row(
         children: [
           // 칩은 먼저 측정되도록 flex 를 주지 않는다 (제목이 남은 폭을 모두 쓰게 된다)
-          _WorkspaceChip(name: state.activeWorkspace?.name ?? 'Llack'),
+          _WorkspaceChip(name: state.activeWorkspace?.name ?? 'Atrium'),
           const SizedBox(width: 10),
           Expanded(
             child: titleWidget ??
@@ -147,7 +147,7 @@ class _WorkspaceChip extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.business_outlined, size: 13, color: LlackColors.muted),
+                 Icon(Icons.business_outlined, size: 13, color: LlackColors.muted),
                 const SizedBox(width: 4),
                 Flexible(
                   child: Text(
@@ -160,7 +160,7 @@ class _WorkspaceChip extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Icon(Icons.keyboard_arrow_down, size: 15, color: LlackColors.muted),
+                 Icon(Icons.keyboard_arrow_down, size: 15, color: LlackColors.muted),
               ],
             ),
           ),
@@ -192,7 +192,7 @@ class SectionErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, size: 18, color: LlackColors.presenceBusy),
+           Icon(Icons.error_outline, size: 18, color: LlackColors.presenceBusy),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -255,7 +255,7 @@ void showWorkspaceSwitcher(BuildContext context) {
                   color: isSel ? LlackColors.accentDeep : LlackColors.ink,
                 ),
               ),
-              trailing: isSel ? const Icon(Icons.check, color: LlackColors.accent) : null,
+              trailing: isSel ?  Icon(Icons.check, color: LlackColors.accent) : null,
               onTap: () {
                 Navigator.pop(ctx);
                 state.selectWorkspace(ws);
@@ -274,7 +274,7 @@ class _ChatTabHost extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return  Scaffold(
       backgroundColor: LlackColors.paper,
       appBar: LlackAppBar(tabTitle: '메시지'),
       body: ChatTab(),
@@ -375,10 +375,10 @@ class _MainShellState extends State<MainShell> {
                 return Row(
                   children: [
                     _buildLeftRail(context, state, index),
-                    const VerticalDivider(width: 1, thickness: 1, color: LlackColors.rule),
+                     VerticalDivider(width: 1, thickness: 1, color: LlackColors.rule),
                     if (index == 0) ...[
                       const SizedBox(width: 280, child: ChatTab()),
-                      const VerticalDivider(width: 1, thickness: 1, color: LlackColors.rule),
+                       VerticalDivider(width: 1, thickness: 1, color: LlackColors.rule),
                       const Expanded(child: ChatScreen(showBackButton: false)),
                     ] else
                       Expanded(
@@ -454,7 +454,7 @@ class _MainShellState extends State<MainShell> {
 
           // Search button
           IconButton(
-            icon: const Icon(Icons.search, size: 22, color: LlackColors.ink2),
+            icon: Icon(Icons.search, size: 22, color: LlackColors.ink2),
             tooltip: '검색 (⌘K)',
             onPressed: () => showDialog(
               context: context,

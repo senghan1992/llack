@@ -20,7 +20,7 @@ class LlackTypography {
   ];
 
   // Headings
-  static const TextStyle display = TextStyle(
+  static TextStyle get display => TextStyle(
     fontSize: 26,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.5,
@@ -28,7 +28,7 @@ class LlackTypography {
     fontFamilyFallback: fontFallbacks,
   );
 
-  static const TextStyle title = TextStyle(
+  static TextStyle get title => TextStyle(
     fontSize: 18,
     fontWeight: FontWeight.w600,
     letterSpacing: -0.3,
@@ -36,7 +36,7 @@ class LlackTypography {
     fontFamilyFallback: fontFallbacks,
   );
 
-  static const TextStyle subtitle = TextStyle(
+  static TextStyle get subtitle => TextStyle(
     fontSize: 15,
     fontWeight: FontWeight.w600,
     letterSpacing: -0.2,
@@ -45,7 +45,7 @@ class LlackTypography {
   );
 
   // Body
-  static const TextStyle body = TextStyle(
+  static TextStyle get body => TextStyle(
     fontSize: 14.5,
     fontWeight: FontWeight.w400,
     height: 1.45,
@@ -53,7 +53,7 @@ class LlackTypography {
     fontFamilyFallback: fontFallbacks,
   );
 
-  static const TextStyle bodySmall = TextStyle(
+  static TextStyle get bodySmall => TextStyle(
     fontSize: 13,
     fontWeight: FontWeight.w400,
     height: 1.4,
@@ -61,7 +61,7 @@ class LlackTypography {
     fontFamilyFallback: fontFallbacks,
   );
 
-  static const TextStyle caption = TextStyle(
+  static TextStyle get caption => TextStyle(
     fontSize: 12,
     fontWeight: FontWeight.w400,
     color: LlackColors.muted,
@@ -69,7 +69,7 @@ class LlackTypography {
   );
 
   // Dose pharmacy label: monospace timestamp
-  static const TextStyle monoTimestamp = TextStyle(
+  static TextStyle get monoTimestamp => TextStyle(
     fontSize: 11,
     fontWeight: FontWeight.w500,
     letterSpacing: 0.2,
@@ -77,7 +77,7 @@ class LlackTypography {
     fontFamilyFallback: monoFallbacks,
   );
 
-  static const TextStyle monoTimestampOnMine = TextStyle(
+  static TextStyle get monoTimestampOnMine => TextStyle(
     fontSize: 11,
     fontWeight: FontWeight.w500,
     letterSpacing: 0.2,
@@ -86,7 +86,7 @@ class LlackTypography {
   );
 
   // Author name in message header
-  static const TextStyle authorName = TextStyle(
+  static TextStyle get authorName => TextStyle(
     fontSize: 13.5,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.2,
@@ -95,7 +95,7 @@ class LlackTypography {
   );
 
   // 작은 제목 / 버튼 라벨용 (Material 위젯이 TextTheme 역할을 참조하도록 채워둔다)
-  static const TextStyle titleSmall = TextStyle(
+  static TextStyle get titleSmall => TextStyle(
     fontSize: 13.5,
     fontWeight: FontWeight.w600,
     letterSpacing: -0.2,
@@ -103,7 +103,7 @@ class LlackTypography {
     fontFamilyFallback: fontFallbacks,
   );
 
-  static const TextStyle labelLarge = TextStyle(
+  static TextStyle get labelLarge => TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w600,
     color: LlackColors.ink,
@@ -113,7 +113,7 @@ class LlackTypography {
   /// 앱 전역 TextTheme.
   /// 화면에서 fontSize 를 직접 박지 않고 역할(role)로 크기를 참조하게 하면
   /// 시스템 글자 크기 설정이 반영될 때 함께 커지고, 최소 크기도 12 로 보장된다.
-  static const TextTheme textTheme = TextTheme(
+  static TextTheme get textTheme => TextTheme(
     displayLarge: display,
     titleLarge: title,
     titleMedium: subtitle,

@@ -131,7 +131,7 @@ class _BannerContent extends StatelessWidget {
 
     return Row(
       children: [
-        const Icon(Icons.cloud_off_outlined, size: 16, color: LlackColors.presenceBusy),
+         Icon(Icons.cloud_off_outlined, size: 16, color: LlackColors.presenceBusy),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

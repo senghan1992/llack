@@ -133,25 +133,7 @@ class ApiService {
     }
 
     if (res.statusCode >= 400) {
-      String code = 'error';
-      String message = '요청이 실패했습니다 (${res.statusCode})';
-      try {
-        final errJson = jsonDecode(utf8.decode(res.bodyBytes));
-        if (errJson is Map && errJson['error'] is Map) {
-          final errObj = errJson['error'] as Map;
-          code = errObj['code']?.toString() ?? code;
-          message = errObj['message']?.toString() ?? message;
-        } else if (errJson is Map && errJson['detail'] != null) {
-          message = errJson['detail'].toString();
-        }
-      } catch (_) {}
-
-      if (res.statusCode == 401) {
-        message = _unauthorizedMessage(path, method, message);
-      } else if (res.statusCode == 409) {
-        message = '이미 존재하는 리소스입니다.';
-      }
-      throw ApiException(res.statusCode, code, message);
+      throw _errorFromResponse(res, path, method);
     }
 
     if (res.statusCode == 204 || res.body.isEmpty) {
@@ -159,6 +141,30 @@ class ApiService {
     }
 
     return jsonDecode(utf8.decode(res.bodyBytes));
+  }
+
+  /// 오류 응답을 사람이 읽을 수 있는 예외로 바꾼다.
+  /// (서버가 준 코드·메시지를 살리되, 401·409 는 더 분명한 말로 바꾼다)
+  ApiException _errorFromResponse(http.Response res, String path, String method) {
+    String code = 'error';
+    String message = '요청이 실패했습니다 (${res.statusCode})';
+    try {
+      final errJson = jsonDecode(utf8.decode(res.bodyBytes));
+      if (errJson is Map && errJson['error'] is Map) {
+        final errObj = errJson['error'] as Map;
+        code = errObj['code']?.toString() ?? code;
+        message = errObj['message']?.toString() ?? message;
+      } else if (errJson is Map && errJson['detail'] != null) {
+        message = errJson['detail'].toString();
+      }
+    } catch (_) {}
+
+    if (res.statusCode == 401) {
+      message = _unauthorizedMessage(path, method, message);
+    } else if (res.statusCode == 409) {
+      message = '이미 존재하는 리소스입니다.';
+    }
+    return ApiException(res.statusCode, code, message);
   }
 
   /// 401 이 무슨 뜻인지 경로에 따라 구분한다.
@@ -291,6 +297,37 @@ class ApiService {
     return Channel.fromJson(res as Map<String, dynamic>);
   }
 
+  /// 채널 이름·주제·목적을 고친다. (PATCH /api/v1/channels/{channel_id})
+  /// null 인 항목은 "변경 안 함" 이므로 본문에 넣지 않는다.
+  Future<Channel> updateChannel(
+    String channelId, {
+    String? name,
+    String? topic,
+    String? purpose,
+  }) async {
+    final res = await _request(
+      '/channels/$channelId',
+      method: 'PATCH',
+      body: {
+        if (name != null) 'name': name,
+        if (topic != null) 'topic': topic,
+        if (purpose != null) 'purpose': purpose,
+      },
+    );
+    return Channel.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 공개 채널에 들어간다. (POST /api/v1/channels/{channel_id}/join)
+  Future<Channel> joinChannel(String channelId) async {
+    final res = await _request('/channels/$channelId/join', method: 'POST');
+    return Channel.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 채널을 삭제한다. (주최자만) (DELETE /api/v1/channels/{channel_id})
+  Future<void> deleteChannel(String channelId) async {
+    await _request('/channels/$channelId', method: 'DELETE');
+  }
+
   Future<Channel> openDm(String workspaceId, String userId) async {
     final res = await _request('/workspaces/$workspaceId/dms', method: 'POST', body: {
       'user_id': userId,
@@ -356,12 +393,14 @@ class ApiService {
     String? parentId,
     String? replyToId,
     bool inline = false,
+    List<String>? attachmentIds,
   }) async {
     final payload = <String, dynamic>{
       'body': body,
       if (parentId != null) 'parent_id': parentId,
       if (replyToId != null) 'reply_to_id': replyToId,
       'inline': inline,
+      if (attachmentIds != null && attachmentIds.isNotEmpty) 'attachment_ids': attachmentIds,
     };
     final res = await _request('/channels/$channelId/messages', method: 'POST', body: payload);
     return Message.fromJson(res as Map<String, dynamic>);
@@ -407,6 +446,100 @@ class ApiService {
   Future<List<Message>> getPins(String channelId) async {
     final res = await _request('/channels/$channelId/pins');
     return (res as List).map((e) => Message.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  // ── 구성원 · 초대 ───────────────────────────────────────────
+
+  /// 워크스페이스 구성원 목록. (GET /api/v1/workspaces/{id}/members)
+  Future<List<Member>> getMembers(String workspaceId) async {
+    final res = await _request('/workspaces/$workspaceId/members');
+    return (res as List).map((e) => Member.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 구성원의 역할을 바꾼다. (owner · admin · member)
+  Future<Member> updateMemberRole(String workspaceId, String userId, String role) async {
+    final res = await _request(
+      '/workspaces/$workspaceId/members/$userId',
+      method: 'PATCH',
+      body: {'role': role},
+    );
+    return Member.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 구성원을 워크스페이스에서 내보낸다.
+  Future<void> removeMember(String workspaceId, String userId) async {
+    await _request('/workspaces/$workspaceId/members/$userId', method: 'DELETE');
+  }
+
+  /// 전역 사용자 검색. (초대 대상 찾기 · 조직원 추가에 쓴다)
+  Future<List<User>> searchUsers(String query) async {
+    final res = await _request('/users?q=${Uri.encodeComponent(query)}');
+    return (res as List).map((e) => User.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 보낸 초대 목록. (GET /api/v1/workspaces/{id}/invites)
+  Future<List<Invite>> getInvites(String workspaceId) async {
+    final res = await _request('/workspaces/$workspaceId/invites');
+    return (res as List).map((e) => Invite.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 이메일로 초대장을 만든다. (POST /api/v1/workspaces/{id}/invites)
+  Future<Invite> createInvite(String workspaceId, {required String email, String role = 'member'}) async {
+    final res = await _request(
+      '/workspaces/$workspaceId/invites',
+      method: 'POST',
+      body: {'email': email, 'role': role},
+    );
+    return Invite.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 초대장을 취소한다.
+  Future<void> revokeInvite(String workspaceId, String inviteId) async {
+    await _request('/workspaces/$workspaceId/invites/$inviteId', method: 'DELETE');
+  }
+
+  /// 초대 코드로 팀에 들어간다. (POST /api/v1/invites/accept)
+  ///
+  /// 로그인한 뒤에 부른다. (코드만으로는 로그인할 수 없다)
+  Future<Workspace> acceptInvite(String token) async {
+    final res = await _request('/invites/accept', method: 'POST', body: {'token': token.trim()});
+    return Workspace.fromJson(res as Map<String, dynamic>);
+  }
+
+  // ── 파일 업로드 ─────────────────────────────────────────────
+
+  /// 워크스페이스에 파일을 올린다. (POST /api/v1/files?workspace_id=…)
+  ///
+  /// 데스크톱처럼 "먼저 올리고 그 id 를 메시지에 붙이는" 방식이다.
+  /// (메시지를 먼저 보내고 파일을 나중에 붙일 수는 없다)
+  Future<FileRef> uploadFile({
+    required String workspaceId,
+    required String filePath,
+    String? fileName,
+  }) async {
+    final uri = Uri.parse('$apiEndpoint/files?workspace_id=${Uri.encodeComponent(workspaceId)}');
+    final request = http.MultipartRequest('POST', uri);
+    final token = _accessToken;
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(
+      await http.MultipartFile.fromPath('file', filePath, filename: fileName),
+    );
+
+    http.Response res;
+    try {
+      final streamed = await request.send().timeout(requestTimeout);
+      res = await http.Response.fromStream(streamed);
+    } on TimeoutException {
+      throw ApiException(0, 'timeout', '파일 업로드가 시간 내에 끝나지 않았습니다.');
+    } catch (_) {
+      throw ApiException(0, 'network', '서버에 연결할 수 없습니다. ($baseUrl)');
+    }
+
+    if (res.statusCode >= 400) {
+      throw _errorFromResponse(res, '/files', 'POST');
+    }
+    final data = jsonDecode(utf8.decode(res.bodyBytes));
+    return FileRef.fromJson(data as Map<String, dynamic>);
   }
 
   // ── Schedule ─────────────────────────────────────────────────
@@ -522,6 +655,50 @@ class ApiService {
     return Project.fromJson(res as Map<String, dynamic>);
   }
 
+  /// 프로젝트를 고친다. (PATCH /api/v1/projects/{project_id})
+  Future<Project> updateProject(
+    String projectId, {
+    String? name,
+    String? description,
+    String? channelId,
+    List<String>? memberIds,
+    bool? isArchived,
+  }) async {
+    final res = await _request(
+      '/projects/$projectId',
+      method: 'PATCH',
+      body: {
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+        if (channelId != null) 'channel_id': channelId,
+        if (memberIds != null) 'member_ids': memberIds,
+        if (isArchived != null) 'is_archived': isArchived,
+      },
+    );
+    return Project.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 프로젝트를 지운다.
+  Future<void> deleteProject(String projectId) async {
+    await _request('/projects/$projectId', method: 'DELETE');
+  }
+
+  /// 프로젝트에 사람을 넣는다.
+  Future<void> addProjectMember(String projectId, String userId) async {
+    await _request('/projects/$projectId/members', method: 'POST', body: {'user_id': userId});
+  }
+
+  /// 프로젝트에서 사람을 뺀다.
+  Future<void> removeProjectMember(String projectId, String userId) async {
+    await _request('/projects/$projectId/members/$userId', method: 'DELETE');
+  }
+
+  /// 내 할 일만 모아서 가져온다. (GET /api/v1/workspaces/{id}/tasks)
+  Future<List<Task>> getMyTasks(String workspaceId) async {
+    final res = await _request('/workspaces/$workspaceId/tasks');
+    return (res as List).map((e) => Task.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   Future<List<Task>> getProjectTasks(String projectId) async {
     final res = await _request('/projects/$projectId/tasks');
     return (res as List).map((e) => Task.fromJson(e as Map<String, dynamic>)).toList();
@@ -553,7 +730,17 @@ class ApiService {
     return Task.fromJson(res as Map<String, dynamic>);
   }
 
-  Future<Task> updateTask(String taskId, {String? title, String? description, TaskStatus? status, String? assigneeId, DateTime? dueAt, String? roadmapId}) async {
+  Future<Task> updateTask(
+    String taskId, {
+    String? title,
+    String? description,
+    TaskStatus? status,
+    String? assigneeId,
+    DateTime? dueAt,
+    String? roadmapId,
+    String? milestoneId,
+    int? position,
+  }) async {
     final body = <String, dynamic>{};
     if (title != null) body['title'] = title;
     if (description != null) body['description'] = description;
@@ -561,6 +748,8 @@ class ApiService {
     if (assigneeId != null) body['assignee_id'] = assigneeId;
     if (dueAt != null) body['due_at'] = dueAt.toUtc().toIso8601String();
     if (roadmapId != null) body['roadmap_id'] = roadmapId;
+    if (milestoneId != null) body['milestone_id'] = milestoneId;
+    if (position != null) body['position'] = position;
 
     final res = await _request('/tasks/$taskId', method: 'PATCH', body: body);
     return Task.fromJson(res as Map<String, dynamic>);
@@ -573,6 +762,75 @@ class ApiService {
   Future<TaskComment> addTaskComment(String taskId, String body) async {
     final res = await _request('/tasks/$taskId/comments', method: 'POST', body: {'body': body});
     return TaskComment.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 의견(댓글)을 지운다.
+  Future<void> deleteTaskComment(String commentId) async {
+    await _request('/task-comments/$commentId', method: 'DELETE');
+  }
+
+  /// 마일스톤을 만든다. (POST /api/v1/projects/{project_id}/milestones)
+  Future<Milestone> createMilestone(
+    String projectId, {
+    required String title,
+    required DateTime startAt,
+    required DateTime endAt,
+    String description = '',
+    String color = '#4f6cff',
+    int progress = 0,
+    List<String>? taskIds,
+  }) async {
+    final res = await _request(
+      '/projects/$projectId/milestones',
+      method: 'POST',
+      body: {
+        'title': title,
+        'start_at': startAt.toUtc().toIso8601String(),
+        'end_at': endAt.toUtc().toIso8601String(),
+        'description': description,
+        'color': color,
+        'progress': progress,
+        if (taskIds != null) 'task_ids': taskIds,
+      },
+    );
+    return Milestone.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 마일스톤을 고친다. (PATCH /api/v1/milestones/{milestone_id})
+  Future<Milestone> updateMilestone(
+    String milestoneId, {
+    String? title,
+    DateTime? startAt,
+    DateTime? endAt,
+    String? description,
+    String? color,
+    int? progress,
+    List<String>? taskIds,
+  }) async {
+    final res = await _request(
+      '/milestones/$milestoneId',
+      method: 'PATCH',
+      body: {
+        if (title != null) 'title': title,
+        if (startAt != null) 'start_at': startAt.toUtc().toIso8601String(),
+        if (endAt != null) 'end_at': endAt.toUtc().toIso8601String(),
+        if (description != null) 'description': description,
+        if (color != null) 'color': color,
+        if (progress != null) 'progress': progress,
+        if (taskIds != null) 'task_ids': taskIds,
+      },
+    );
+    return Milestone.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 마일스톤을 지운다.
+  Future<void> deleteMilestone(String milestoneId) async {
+    await _request('/milestones/$milestoneId', method: 'DELETE');
+  }
+
+  /// 로드맵을 지운다.
+  Future<void> deleteRoadmap(String roadmapId) async {
+    await _request('/roadmaps/$roadmapId', method: 'DELETE');
   }
 
   Future<List<Roadmap>> getRoadmaps(String projectId) async {
@@ -610,6 +868,53 @@ class ApiService {
       },
     );
     return OrgUnit.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 조직 단위를 고친다. (PATCH /api/v1/org/units/{unit_id})
+  /// parentId 를 빈 문자열로 주면 상위 조직을 떼는 것으로 본다.
+  Future<OrgUnit> updateOrgUnit(
+    String unitId, {
+    String? name,
+    String? parentId,
+    String? kind,
+    String? description,
+  }) async {
+    final res = await _request(
+      '/org/units/$unitId',
+      method: 'PATCH',
+      body: {
+        if (name != null) 'name': name,
+        if (parentId != null) 'parent_id': parentId,
+        if (kind != null) 'kind': kind,
+        if (description != null) 'description': description,
+      },
+    );
+    return OrgUnit.fromJson(res as Map<String, dynamic>);
+  }
+
+  /// 조직 단위를 지운다.
+  Future<void> deleteOrgUnit(String unitId) async {
+    await _request('/org/units/$unitId', method: 'DELETE');
+  }
+
+  /// 조직에 사람을 넣는다.
+  Future<void> addOrgUnitMember(String unitId, String userId) async {
+    await _request('/org/units/$unitId/members', method: 'POST', body: {'user_id': userId});
+  }
+
+  /// 조직에서 사람을 뺀다.
+  Future<void> removeOrgUnitMember(String unitId, String userId) async {
+    await _request('/org/units/$unitId/members/$userId', method: 'DELETE');
+  }
+
+  /// 조직 관리자로 임명한다.
+  Future<void> addOrgUnitManager(String unitId, String userId) async {
+    await _request('/org/units/$unitId/managers', method: 'POST', body: {'user_id': userId});
+  }
+
+  /// 조직 관리자에서 해임한다.
+  Future<void> removeOrgUnitManager(String unitId, String userId) async {
+    await _request('/org/units/$unitId/managers/$userId', method: 'DELETE');
   }
 
   // ── Search ───────────────────────────────────────────────────

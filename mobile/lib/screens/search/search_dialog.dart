@@ -131,7 +131,7 @@ class _SearchDialogState extends State<SearchDialog> {
                 style: LlackTypography.body,
                 decoration: InputDecoration(
                   hintText: '채널, 멤버, 프로젝트, 메시지 검색...',
-                  prefixIcon: const Icon(Icons.search, color: LlackColors.muted),
+                  prefixIcon: Icon(Icons.search, color: LlackColors.muted),
                   suffixIcon: _controller.text.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.clear, size: 18),
@@ -159,7 +159,7 @@ class _SearchDialogState extends State<SearchDialog> {
                         : ListView(
                             children: [
                               if (_isSearching)
-                                const LinearProgressIndicator(
+                                 LinearProgressIndicator(
                                   minHeight: 2,
                                   color: LlackColors.accent,
                                   backgroundColor: LlackColors.surfaceWell,

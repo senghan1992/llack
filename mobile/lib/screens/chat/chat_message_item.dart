@@ -31,6 +31,10 @@ class ChatMessageItem extends StatelessWidget {
   final void Function(String newBody)? onEdit;
   final VoidCallback? onDelete;
 
+  /// 반응 칩을 길게 눌렀을 때 (누가 그 반응을 눌렀는지) 보여줄 때 부른다.
+  /// (없으면 말풍선이 기본 동작으로 직접 보여준다)
+  final void Function(Reaction reaction)? onShowReactionParticipants;
+
   const ChatMessageItem({
     super.key,
     required this.message,
@@ -46,6 +50,7 @@ class ChatMessageItem extends StatelessWidget {
     this.onTogglePin,
     this.onEdit,
     this.onDelete,
+    this.onShowReactionParticipants,
   });
 
   @override
@@ -63,6 +68,7 @@ class ChatMessageItem extends StatelessWidget {
       onTogglePin: onTogglePin,
       onEdit: onEdit,
       onDelete: onDelete,
+      onShowReactionParticipants: onShowReactionParticipants,
     );
 
     return KeyedSubtree(

@@ -227,9 +227,13 @@ abstract class _AppStateMessages extends _AppStateRealtime {
   }
 
   /// 메시지를 보낸다. 실패하면 `false` 를 돌려준다 (호출부가 입력값을 되살린다).
-  Future<bool> sendMessage(String body) async {
+  ///
+  /// [attachmentIds] 는 먼저 업로드된 파일의 id 다. (없으면 첨부 없이 보낸다)
+  Future<bool> sendMessage(String body, {List<String>? attachmentIds}) async {
     final cid = _activeChannelId;
-    if (cid == null || body.trim().isEmpty) return false;
+    if (cid == null || (body.trim().isEmpty && (attachmentIds == null || attachmentIds.isEmpty))) {
+      return false;
+    }
     final replyTo = _replyToMessage;
     _replyToMessage = null;
     _notify();
@@ -240,6 +244,7 @@ abstract class _AppStateMessages extends _AppStateRealtime {
         body: body.trim(),
         replyToId: replyTo?.id,
         inline: replyTo != null,
+        attachmentIds: attachmentIds,
       );
       _upsertMessage(cid, msg);
       _notify();
@@ -251,6 +256,19 @@ abstract class _AppStateMessages extends _AppStateRealtime {
       _notify();
       return false;
     }
+  }
+
+  /// 파일을 워크스페이스에 올린다. (먼저 올리고, 그 id 를 메시지에 붙인다)
+  Future<FileRef> uploadFile(String filePath, {String? fileName}) async {
+    final wsId = _activeWorkspace?.id;
+    if (wsId == null) {
+      throw ApiException(0, 'error', '워크스페이스가 없습니다.');
+    }
+    return api.uploadFile(
+      workspaceId: wsId,
+      filePath: filePath,
+      fileName: fileName,
+    );
   }
 
   /// 스레드에 답글을 보낸다. 실패하면 false 를 돌려준다.
@@ -497,6 +515,69 @@ abstract class _AppStateMessages extends _AppStateRealtime {
       _afterActiveChannelRemoved();
     }
     _notify();
+  }
+
+  /// 채널 이름·주제를 고친다. (이름·주제·목적)
+  Future<bool> updateChannel({
+    required String channelId,
+    String? name,
+    String? topic,
+    String? purpose,
+  }) async {
+    try {
+      final updated = await api.updateChannel(
+        channelId,
+        name: name,
+        topic: topic,
+        purpose: purpose,
+      );
+      _channels = upsertById(_channels, updated, (c) => c.id);
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[updateChannel error] $e');
+      return false;
+    }
+  }
+
+  /// 공개 채널에 들어간다. (아직 속하지 않은 채널)
+  Future<Channel> joinChannel(String channelId) async {
+    final joined = await api.joinChannel(channelId);
+    _channels = upsertById(_channels, joined, (c) => c.id, prepend: true);
+    _notify();
+    return joined;
+  }
+
+  /// 채널을 삭제한다. (주최자만 가능)
+  Future<bool> deleteChannel(String channelId) async {
+    try {
+      await api.deleteChannel(channelId);
+      _channels.removeWhere((c) => c.id == channelId);
+      _messages.remove(channelId);
+      _historyLoaded.remove(channelId);
+      if (_activeChannelId == channelId) {
+        _afterActiveChannelRemoved();
+      }
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[deleteChannel error] $e');
+      return false;
+    }
+  }
+
+  /// 채널에 사람을 넣는다.
+  Future<bool> addChannelMember(String channelId, String userId) async {
+    try {
+      await api.addChannelMember(channelId, userId);
+      // 멤버 목록을 다시 읽는다 (누가 들어왔는지 화면이 바로 보여야 한다)
+      _channelMembers.remove(channelId);
+      _notify();
+      return true;
+    } catch (e) {
+      debugPrint('[addChannelMember error] $e');
+      return false;
+    }
   }
 
   Future<void> deleteDm(String channelId) async {

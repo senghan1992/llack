@@ -653,6 +653,34 @@ class Project {
       doneTasks: json['done_tasks'] as int? ?? 0,
     );
   }
+
+  /// 일부만 바꾼 새 프로젝트. (멤버 목록을 손댈 때 쓴다)
+  Project copyWith({
+    String? name,
+    String? description,
+    String? channelId,
+    bool? isArchived,
+    List<User>? members,
+  }) {
+    return Project(
+      id: id,
+      workspaceId: workspaceId,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      purpose: purpose,
+      deliverables: deliverables,
+      channelId: channelId ?? this.channelId,
+      createdBy: createdBy,
+      isArchived: isArchived ?? this.isArchived,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      members: members ?? this.members,
+      isMember: isMember,
+      openTasks: openTasks,
+      totalTasks: totalTasks,
+      doneTasks: doneTasks,
+    );
+  }
 }
 
 class TaskComment {
@@ -979,6 +1007,49 @@ class Session {
       refreshToken: json['refresh_token'] as String? ?? '',
       user: User.fromJson(json['user'] as Map<String, dynamic>),
       workspace: Workspace.fromJson(json['workspace'] as Map<String, dynamic>),
+    );
+  }
+}
+
+// ── Invite (초대장) ───────────────────────────────────────────
+
+/// 팀에 초대한 한 사람.
+/// `token` 은 초대장이 담긴 주소(/?invite=token) 를 만드는 재료다.
+class Invite {
+  final String id;
+  final String workspaceId;
+  final String email;
+  final String role;
+  final String token;
+  final String createdBy;
+  final DateTime? createdAt;
+  final DateTime? expiresAt;
+
+  Invite({
+    required this.id,
+    required this.workspaceId,
+    required this.email,
+    required this.role,
+    required this.token,
+    required this.createdBy,
+    this.createdAt,
+    this.expiresAt,
+  });
+
+  factory Invite.fromJson(Map<String, dynamic> json) {
+    return Invite(
+      id: json['id'] as String? ?? '',
+      workspaceId: json['workspace_id'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      role: json['role'] as String? ?? 'member',
+      token: json['token'] as String? ?? '',
+      createdBy: json['created_by'] as String? ?? '',
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
+      expiresAt: json['expires_at'] != null
+          ? DateTime.tryParse(json['expires_at'] as String)
+          : null,
     );
   }
 }

@@ -101,7 +101,7 @@ class MessageAttachments extends StatelessWidget {
               height: 120,
               color: LlackColors.surfaceWell,
               alignment: Alignment.center,
-              child: const SizedBox(
+              child: SizedBox(
                 width: 18,
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2, color: LlackColors.accent),
@@ -219,7 +219,7 @@ class MessageAttachments extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.insert_drive_file_outlined, size: 16, color: LlackColors.accent),
+             Icon(Icons.insert_drive_file_outlined, size: 16, color: LlackColors.accent),
             const SizedBox(width: 6),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 150),

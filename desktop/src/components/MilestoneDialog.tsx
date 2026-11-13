@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "./Dialogs";
+import { DateField, Disclosure, FormRow, FormTitle } from "./Form";
 import { useStore } from "../store/useStore";
 import { toDateInput } from "../lib/calendar";
 import type { Milestone, MilestoneInput, Task, TaskStatus } from "../lib/types";
@@ -207,159 +208,148 @@ export function MilestoneDialog() {
         </>
       }
     >
-      <div className="dialog__body u-col u-gap-4">
+      <div className="dialog__body u-col u-gap-3">
         {error ? <p className="field__error">{error}</p> : null}
 
-        <div className="field">
-          <label className="field__label" htmlFor="ms-title">
-            제목
-          </label>
-          <input
+        <div className="form">
+          <FormTitle
             id="ms-title"
-            className="field__input"
-            autoFocus
             value={title}
-            placeholder="마일스톤 이름을 입력해 주세요"
+            onChange={setTitle}
+            placeholder="마일스톤 이름"
+            label="마일스톤 제목"
+            autoFocus
             maxLength={120}
-            onChange={(event) => setTitle(event.target.value)}
           />
-        </div>
 
-        <div className="field">
-          <span className="field__label">기간</span>
-          <div className="msdlg__dates">
-            <label className="msdlg__date">
-              <span className="msdlg__datelabel">시작일</span>
-              <input
-                type="date"
-                className="field__input"
+          <FormRow label="기간">
+            <div className="formrow__pair">
+              <DateField
                 value={startDate}
-                required
-                onChange={(event) => {
-                  setStartDate(event.target.value);
+                onChange={(next) => {
+                  setStartDate(next);
                   // The period may not end before it opens.
-                  if (endDate && endDate < event.target.value) setEndDate(event.target.value);
+                  if (endDate && endDate < next) setEndDate(next);
                 }}
+                ariaLabel="시작일"
               />
-            </label>
-            <label className="msdlg__date">
-              <span className="msdlg__datelabel">종료일</span>
-              <input
-                type="date"
-                className="field__input"
+              <span className="formrow__dash" aria-hidden="true">
+                –
+              </span>
+              <DateField
                 value={endDate}
-                min={startDate || undefined}
-                required
-                onChange={(event) => setEndDate(event.target.value)}
+                onChange={setEndDate}
+                ariaLabel="종료일"
               />
-            </label>
-          </div>
-        </div>
-
-        <div className="field">
-          <span className="field__label">색상</span>
-          <div className="swatches">
-            {PRESET_COLORS.map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`swatch${value === color ? " swatch--on" : ""}`}
-                style={{ ["--swatch" as string]: value }}
-                onClick={() => setColor(value)}
-                aria-label={`색상 ${value}`}
-                aria-pressed={value === color}
-              />
-            ))}
-            <span
-              className="swatch swatch--free msdlg__free"
-              style={{ ["--swatch" as string]: color }}
-            >
-              <input
-                type="color"
-                value={color}
-                onChange={(event) => setColor(event.target.value)}
-                aria-label="직접 고른 색상"
-              />
-            </span>
-            <span className="swatches__hex">{color}</span>
-          </div>
-        </div>
-
-        <div className="field">
-          <div className="u-row u-row--center u-gap-2">
-            <span className="field__label u-grow">진행률</span>
-            <span className="msdlg__percent">{auto ? `${percent}%` : `${progress}%`}</span>
-          </div>
-          {auto ? (
-            <p className="msdlg__auto">
-              ✓ 연결된 태스크 기반 자동 계산 ({done}/{total} 완료)
-            </p>
-          ) : (
-            <input
-              type="range"
-              className="msrange"
-              min={0}
-              max={100}
-              step={5}
-              value={progress}
-              onChange={(event) => setProgress(Number(event.target.value))}
-              aria-label="진행률"
-            />
-          )}
-        </div>
-
-        <div className="field">
-          <label className="field__label" htmlFor="ms-desc">
-            설명
-          </label>
-          <textarea
-            id="ms-desc"
-            className="field__input u-h-auto u-minh-72 u-full u-py-2"
-            value={description}
-            placeholder="마일스톤에 대한 간단한 설명"
-            maxLength={4000}
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </div>
-
-        {projectTasks.length ? (
-          <div className="field">
-            <div className="u-row u-row--center u-gap-2">
-              <span className="field__label u-grow">태스크 연결</span>
-              {picked.length ? (
-                <span className="msdlg__count">{picked.length}개 선택됨</span>
-              ) : null}
             </div>
-            <div className="msdlg__tasks">
-              {projectTasks.map((task) => {
-                const isPicked = picked.includes(task.id);
-                const other =
-                  task.milestone_id && task.milestone_id !== target
-                    ? projectMilestones.find(
-                        (milestone) => milestone.id === task.milestone_id,
-                      )
-                    : null;
-                return (
-                  <label
-                    key={task.id}
-                    className={`msdlg__task${task.status === "done" ? " msdlg__task--done" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isPicked}
-                      onChange={() => toggleTask(task.id)}
-                    />
-                    <span className={`badge badge--${task.status}`}>
-                      {STATUS_LABEL[task.status]}
-                    </span>
-                    <span className="msdlg__tasktitle u-truncate">{task.title}</span>
-                    {other ? <span className="mschip">{other.title}</span> : null}
-                  </label>
-                );
-              })}
+          </FormRow>
+
+          <FormRow label="색상">
+            <div className="swatches">
+              {PRESET_COLORS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`swatch${value === color ? " swatch--on" : ""}`}
+                  style={{ ["--swatch" as string]: value }}
+                  onClick={() => setColor(value)}
+                  aria-label={`색상 ${value}`}
+                  aria-pressed={value === color}
+                />
+              ))}
+              <span
+                className="swatch swatch--free msdlg__free"
+                style={{ ["--swatch" as string]: color }}
+              >
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(event) => setColor(event.target.value)}
+                  aria-label="직접 고른 색상"
+                />
+              </span>
+              <span className="swatches__hex">{color}</span>
             </div>
-          </div>
-        ) : null}
+          </FormRow>
+
+          <FormRow label="진행률">
+            <div className="u-col u-gap-2">
+              <div className="formrow__with">
+                <span className="msdlg__percent">
+                  {auto ? `${percent}%` : `${progress}%`}
+                </span>
+                {auto ? (
+                  <p className="msdlg__auto u-grow">
+                    ✓ 연결된 태스크 기반 자동 계산 ({done}/{total} 완료)
+                  </p>
+                ) : (
+                  <input
+                    type="range"
+                    className="msrange u-grow"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={progress}
+                    onChange={(event) => setProgress(Number(event.target.value))}
+                    aria-label="진행률"
+                  />
+                )}
+              </div>
+            </div>
+          </FormRow>
+
+          <Disclosure
+            summary={projectTasks.length ? "설명 · 태스크 연결" : "설명"}
+            defaultOpen={Boolean(description || picked.length)}
+          >
+            <FormRow label="설명" htmlFor="ms-desc">
+              <textarea
+                id="ms-desc"
+                className="field__input u-h-auto u-minh-72 u-full u-py-2"
+                value={description}
+                placeholder="마일스톤에 대한 간단한 설명"
+                maxLength={4000}
+                onChange={(event) => setDescription(event.target.value)}
+              />
+            </FormRow>
+
+            {projectTasks.length ? (
+              <FormRow label="태스크 연결" stack>
+                {picked.length ? (
+                  <span className="msdlg__count">{picked.length}개 선택됨</span>
+                ) : null}
+                <div className="msdlg__tasks">
+                  {projectTasks.map((task) => {
+                    const isPicked = picked.includes(task.id);
+                    const other =
+                      task.milestone_id && task.milestone_id !== target
+                        ? projectMilestones.find(
+                            (milestone) => milestone.id === task.milestone_id,
+                          )
+                        : null;
+                    return (
+                      <label
+                        key={task.id}
+                        className={`msdlg__task${task.status === "done" ? " msdlg__task--done" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isPicked}
+                          onChange={() => toggleTask(task.id)}
+                        />
+                        <span className={`badge badge--${task.status}`}>
+                          {STATUS_LABEL[task.status]}
+                        </span>
+                        <span className="msdlg__tasktitle u-truncate">{task.title}</span>
+                        {other ? <span className="mschip">{other.title}</span> : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </FormRow>
+            ) : null}
+          </Disclosure>
+        </div>
       </div>
     </Dialog>
   );

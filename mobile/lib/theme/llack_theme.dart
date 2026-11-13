@@ -37,46 +37,68 @@ class LlackTheme {
     ),
   ];
 
-  static ThemeData light() {
+  /// 밝은 화면 모드.
+  static ThemeData light() => _build(LlackColors.light, Brightness.light);
+
+  /// 어두운 화면 모드.
+  /// (같은 색을 종이 위에서 석판 위로 옮긴 팔레트)
+  static ThemeData dark() => _build(LlackColors.dark, Brightness.dark);
+
+  static ThemeData _build(LlackPalette p, Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
-      primaryColor: LlackColors.accent,
-      scaffoldBackgroundColor: LlackColors.paper,
-      colorScheme: const ColorScheme.light(
-        primary: LlackColors.accent,
-        onPrimary: LlackColors.accentInk,
-        primaryContainer: LlackColors.accentSoft,
-        onPrimaryContainer: LlackColors.accentDeep,
-        surface: LlackColors.surfaceRaise,
-        onSurface: LlackColors.ink,
-        surfaceContainerHighest: LlackColors.surfaceWell,
-        outline: LlackColors.rule,
-        outlineVariant: LlackColors.ruleSoft,
-      ),
+      brightness: brightness,
+      primaryColor: p.accent,
+      scaffoldBackgroundColor: p.paper,
+      colorScheme: isDark
+          ? ColorScheme.dark(
+              primary: p.accent,
+              onPrimary: p.accentInk,
+              primaryContainer: p.accentSoft,
+              onPrimaryContainer: p.accent,
+              surface: p.surfaceRaise,
+              onSurface: p.ink,
+              surfaceContainerHighest: p.surfaceWell,
+              outline: p.rule,
+              outlineVariant: p.ruleSoft,
+            )
+          : ColorScheme.light(
+              primary: p.accent,
+              onPrimary: p.accentInk,
+              primaryContainer: p.accentSoft,
+              onPrimaryContainer: p.accentDeep,
+              surface: p.surfaceRaise,
+              onSurface: p.ink,
+              surfaceContainerHighest: p.surfaceWell,
+              outline: p.rule,
+              outlineVariant: p.ruleSoft,
+            ),
       textTheme: LlackTypography.textTheme,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: LlackColors.paper,
-        foregroundColor: LlackColors.ink,
+      appBarTheme: AppBarTheme(
+        backgroundColor: p.paper,
+        foregroundColor: p.ink,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: LlackTypography.title,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        iconTheme: IconThemeData(color: LlackColors.ink),
+        systemOverlayStyle: isDark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
+        iconTheme: IconThemeData(color: p.ink),
       ),
-      dividerTheme: const DividerThemeData(
-        color: LlackColors.rule,
+      dividerTheme: DividerThemeData(
+        color: p.rule,
         thickness: 1,
         space: 1,
       ),
       // SnackBar 는 기본 검은 배경이라 종이 톤 화면과 어울리지 않는다.
       // 라이트한 표면 + 어두운 글씨로 읽기 좋은 대비를 유지한다.
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: LlackColors.surfaceRaise,
-        contentTextStyle: LlackTypography.bodySmall.copyWith(color: LlackColors.ink),
-        actionTextColor: LlackColors.accentDeep,
-        disabledActionTextColor: LlackColors.muted,
+        backgroundColor: p.surfaceRaise,
+        contentTextStyle: LlackTypography.bodySmall.copyWith(color: p.ink),
+        actionTextColor: p.accentDeep,
+        disabledActionTextColor: p.muted,
         // floating 으로 두는 이유:
         // - fixed 는 본문을 밀어올리지 않고 그 위에 "덮어" 그리므로
         //   메시지 입력창(composer)을 가린다.
@@ -89,35 +111,35 @@ class LlackTheme {
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusInput),
-          side: const BorderSide(color: LlackColors.rule, width: 1),
+          side: BorderSide(color: p.rule, width: 1),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: LlackColors.surfaceWell,
+        fillColor: p.surfaceWell,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        hintStyle: LlackTypography.bodySmall.copyWith(color: LlackColors.muted),
+        hintStyle: LlackTypography.bodySmall.copyWith(color: p.muted),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusInput),
-          borderSide: const BorderSide(color: LlackColors.rule, width: 1),
+          borderSide: BorderSide(color: p.rule, width: 1),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusInput),
-          borderSide: const BorderSide(color: LlackColors.rule, width: 1),
+          borderSide: BorderSide(color: p.rule, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusInput),
-          borderSide: const BorderSide(color: LlackColors.accent, width: 1.5),
+          borderSide: BorderSide(color: p.accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusInput),
-          borderSide: const BorderSide(color: LlackColors.presenceBusy, width: 1),
+          borderSide: BorderSide(color: LlackColors.presenceBusy, width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: LlackColors.accent,
-          foregroundColor: LlackColors.accentInk,
+          backgroundColor: p.accent,
+          foregroundColor: p.accentInk,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(
@@ -132,8 +154,8 @@ class LlackTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: LlackColors.ink,
-          side: const BorderSide(color: LlackColors.rule, width: 1),
+          foregroundColor: p.ink,
+          side: BorderSide(color: p.rule, width: 1),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(radiusInput),
@@ -146,7 +168,7 @@ class LlackTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: LlackColors.accent,
+          foregroundColor: p.accent,
           textStyle: const TextStyle(
             fontSize: 13.5,
             fontWeight: FontWeight.w600,
@@ -154,23 +176,23 @@ class LlackTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        color: LlackColors.surfaceRaise,
+        color: p.surfaceRaise,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusCard),
-          side: const BorderSide(color: LlackColors.rule, width: 1),
+          side: BorderSide(color: p.rule, width: 1),
         ),
         margin: EdgeInsets.zero,
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        backgroundColor: LlackColors.surfaceRail,
-        selectedItemColor: LlackColors.accent,
-        unselectedItemColor: LlackColors.muted,
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: p.surfaceRail,
+        selectedItemColor: p.accent,
+        unselectedItemColor: p.muted,
         type: BottomNavigationBarType.fixed,
         elevation: 4,
         // 최소 크기 12 유지 (접근성) — 시스템 글자 크기도 함께 반영된다.
-        selectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        selectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
       ),
     );
   }

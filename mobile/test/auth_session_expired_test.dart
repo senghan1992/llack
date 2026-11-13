@@ -89,8 +89,9 @@ void main() {
     expect(emailField.controller?.text, 'hong@company.com');
 
     // 비밀번호는 자동으로 채우지 않는다
-    final passwordField = tester.widget<TextFormField>(
-      find.byWidgetPredicate((w) => w is TextFormField && w.controller?.text.isEmpty == true),
+    // (빈 칸이 여러 개일 수 있으므로 "가려진 칸" 으로 찾는다)
+    final passwordField = tester.widget<TextField>(
+      find.byWidgetPredicate((w) => w is TextField && w.obscureText),
     );
     expect(passwordField.controller?.text, '');
   });

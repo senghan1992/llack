@@ -47,6 +47,8 @@ class _TaskEditAppState extends AppState {
     String? assigneeId,
     DateTime? dueAt,
     String? roadmapId,
+    String? milestoneId,
+    int? position,
   }) async {
     updateCallCount++;
     lastTaskId = taskId;

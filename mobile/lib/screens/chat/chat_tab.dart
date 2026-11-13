@@ -5,6 +5,7 @@ import '../../providers/app_state.dart';
 import '../../responsive/screen_type.dart';
 import '../../theme/llack_colors.dart';
 import '../../theme/llack_typography.dart';
+import '../../widgets/app_snack_bar.dart';
 import '../../widgets/llack_avatar.dart';
 import 'chat_navigator.dart';
 import 'new_channel_dialog.dart';
@@ -23,6 +24,29 @@ class ChatTab extends StatelessWidget {
       navigator: navigator,
       channelId: channel.id,
       // 태블릿은 대화창이 이미 옆에 보이므로 push 하지 않는다.
+      push: formFactor.isCompact,
+    );
+  }
+
+  /// 아직 속하지 않은 공개 채널을 찾아 참가한다.
+  ///
+  /// 참가하면 그 채널을 바로 연다. (데스크톱의 enterChannel 과 같은 흐름)
+  Future<void> _openBrowseChannels(BuildContext context) async {
+    final state = context.read<AppState>();
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final formFactor = FormFactor(context);
+
+    final joinedId = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _BrowseChannelsSheet(),
+    );
+    if (joinedId == null || !context.mounted) return;
+
+    ChatNavigator.openChannel(
+      state: state,
+      navigator: navigator,
+      channelId: joinedId,
       push: formFactor.isCompact,
     );
   }
@@ -100,6 +124,9 @@ class ChatTab extends StatelessWidget {
                 );
               }),
 
+            // 아직 속하지 않은 공개 채널에 참가하는 곳
+            _buildBrowseRow(context),
+
             const SizedBox(height: 16),
 
             // DMs section header
@@ -156,7 +183,7 @@ class ChatTab extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.add_rounded, size: 22, color: LlackColors.ink2),
+            icon: Icon(Icons.add_rounded, size: 22, color: LlackColors.ink2),
             onPressed: onAdd,
             tooltip: '$title 추가',
             // 최소 44dp 터치 타깃 확보 (아이콘 크기만 20dp 라 누르기 어려웠다)
@@ -164,6 +191,49 @@ class ChatTab extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           ),
         ],
+      ),
+    );
+  }
+
+  /// "채널 찾아보기" 행 (공개 채널 참가)
+  ///
+  /// (채널 목록과 같은 모양을 쓰되 ListTile 은 쓰지 않는다.
+  ///  채널 타일 개수를 세는 테스트가 있고, 행 하나가 늘면 헷갈리게 된다)
+  Widget _buildBrowseRow(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: () => _openBrowseChannels(context),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                 Icon(
+                  Icons.explore_outlined,
+                  size: 18,
+                  color: LlackColors.ink2,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '채널 찾아보기',
+                        style: LlackTypography.body.copyWith(color: LlackColors.ink2),
+                      ),
+                      Text('공개 채널에 참가하기', style: LlackTypography.caption),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -278,6 +348,160 @@ class ChatTab extends StatelessWidget {
               : null,
           onTap: onTap,
         ),
+      ),
+    );
+  }
+}
+
+/// 아직 속하지 않은 공개 채널 목록.
+///
+/// "참가" 를 누르면 그 채널에 들어가고, 닫힌 시트가 참가한 채널 id 를 돌려준다.
+/// (호출한 쪽이 그 채널을 열어 준다)
+class _BrowseChannelsSheet extends StatefulWidget {
+  const _BrowseChannelsSheet();
+
+  @override
+  State<_BrowseChannelsSheet> createState() => _BrowseChannelsSheetState();
+}
+
+class _BrowseChannelsSheetState extends State<_BrowseChannelsSheet> {
+  /// 참가 요청이 진행 중인 채널 id
+  final Set<String> _joiningIds = {};
+
+  /// 이번에 참가한 채널 id (목록에서 바로 빠지도록)
+  final Set<String> _joinedIds = {};
+
+  /// 공개 채널에 들어간다.
+  Future<void> _join(Channel channel) async {
+    setState(() => _joiningIds.add(channel.id));
+
+    final state = context.read<AppState>();
+    var ok = false;
+    try {
+      await state.joinChannel(channel.id);
+      ok = true;
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _joiningIds.remove(channel.id);
+      if (ok) _joinedIds.add(channel.id);
+    });
+
+    if (!ok) {
+      showAppSnackBar(context, '채널에 참가하지 못했습니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+
+    showAppSnackBar(context, '#${channel.name} 채널에 참가했습니다.');
+    // 참가한 채널을 호출한 쪽이 열어 주도록 id 를 넘긴다
+    Navigator.pop(context, channel.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    // 아직 속하지 않은 공개 채널만 보여준다.
+    final candidates = state.channels
+        .where((c) => !c.isDm && !c.isMember && !_joinedIds.contains(c.id))
+        .toList();
+
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 손잡이
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: LlackColors.rule,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                     Icon(Icons.explore_outlined, size: 20, color: LlackColors.accent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('채널 찾아보기', style: LlackTypography.title),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      tooltip: '닫기',
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                Text(
+                  '아직 참가하지 않은 공개 채널입니다.',
+                  style: LlackTypography.caption,
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+          Flexible(
+            child: candidates.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    child: Text(
+                      '참가할 수 있는 공개 채널이 없습니다.',
+                      style: LlackTypography.caption,
+                    ),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.only(bottom: 12),
+                    itemCount: candidates.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (ctx, i) {
+                      final ch = candidates[i];
+                      final isJoining = _joiningIds.contains(ch.id);
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                        leading: Icon(
+                          ch.isPrivate ? Icons.lock_outline : Icons.tag,
+                          size: 18,
+                          color: LlackColors.accent,
+                        ),
+                        title: Text('#${ch.name}', style: LlackTypography.bodySmall),
+                        subtitle: Text(
+                          ch.topic != null && ch.topic!.isNotEmpty
+                              ? ch.topic!
+                              : '멤버 ${ch.memberCount}명',
+                          style: LlackTypography.caption,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: isJoining
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : TextButton(
+                                onPressed: () => _join(ch),
+                                child: const Text('참가'),
+                              ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

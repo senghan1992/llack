@@ -27,7 +27,14 @@ class _TaskDialogState extends State<TaskDialog> {
   String? _assigneeId;
   DateTime? _dueDate;
   String? _roadmapId;
+  String? _milestoneId;
   bool _isCreating = false;
+
+  /// 마일스톤 드롭다운을 원래 값으로 되돌릴 때 키를 바꾼다.
+  ///
+  /// (드롭다운은 고른 값을 스스로 들고 있으므로, 고르지 못하게 되돌릴 때
+  ///  필드를 새로 만들어야 화면도 따라온다)
+  int _milestoneFieldKey = 0;
 
   @override
   void initState() {
@@ -43,6 +50,7 @@ class _TaskDialogState extends State<TaskDialog> {
       // (서버는 UTC 인스턴스로 주는데, 그대로 쓰면 하루 밀린다)
       _dueDate = editing.dueAt?.toLocal();
       _roadmapId = editing.roadmapId;
+      _milestoneId = editing.milestoneId;
     } else {
       _status = widget.initialStatus;
     }
@@ -77,6 +85,7 @@ class _TaskDialogState extends State<TaskDialog> {
           assigneeId: _assigneeId,
           dueAt: _dueDate,
           roadmapId: _roadmapId,
+          milestoneId: _milestoneId,
         );
         if (!ok) {
           if (mounted) {
@@ -93,6 +102,7 @@ class _TaskDialogState extends State<TaskDialog> {
           assigneeId: _assigneeId,
           dueAt: _dueDate,
           roadmapId: _roadmapId,
+          milestoneId: _milestoneId,
         );
       }
       if (mounted) Navigator.pop(context);
@@ -112,6 +122,7 @@ class _TaskDialogState extends State<TaskDialog> {
     final state = context.watch<AppState>();
     final members = state.members;
     final roadmaps = state.activeRoadmaps;
+    final milestones = state.activeMilestones;
 
     // 드롭다운의 현재 값은 **목록에 있는 값만** 쓸 수 있다.
     // (목록에 없는 값을 주면 Flutter 의 "exactly one item" assert 로 빨간 화면이 된다)
@@ -122,6 +133,9 @@ class _TaskDialogState extends State<TaskDialog> {
     final roadmapIds = roadmaps.map((r) => r.id).toSet();
     final selectedRoadmapId =
         (_roadmapId != null && roadmapIds.contains(_roadmapId)) ? _roadmapId : null;
+    final milestoneIds = milestones.map((m) => m.id).toSet();
+    final selectedMilestoneId =
+        (_milestoneId != null && milestoneIds.contains(_milestoneId)) ? _milestoneId! : '';
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(LlackTheme.radiusPanel)),
@@ -225,6 +239,38 @@ class _TaskDialogState extends State<TaskDialog> {
                                 )),
                           ],
                           onChanged: (v) => setState(() => _roadmapId = v),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // Milestone Dropdown — 현재 프로젝트의 마일스톤에서 고른다.
+                      if (milestones.isNotEmpty) ...[
+                        DropdownButtonFormField<String>(
+                          key: ValueKey('milestone-$_milestoneFieldKey'),
+                          initialValue: selectedMilestoneId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(labelText: '마일스톤'),
+                          items: [
+                            const DropdownMenuItem(value: '', child: Text('마일스톤 없음')),
+                            ...milestones.map((m) => DropdownMenuItem(
+                                  value: m.id,
+                                  child: Text(
+                                    '${m.title} (${DateFormat('yyyy.MM.dd').format(m.startAt.toLocal())})',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                )),
+                          ],
+                          onChanged: (v) {
+                            // 마일스톤을 떼는 것은 코어 API 가 null 을 "변경 안 함" 으로
+                            // 보아 지원하지 않는다. (떼는 요청을 받으면 알려준다)
+                            if ((v == null || v.isEmpty) && _milestoneId != null) {
+                              showAppSnackBar(context, '마일스톤을 떼는 것은 아직 지원되지 않습니다');
+                              setState(() => _milestoneFieldKey++);
+                              return;
+                            }
+                            setState(() => _milestoneId = (v == null || v.isEmpty) ? null : v);
+                          },
                         ),
                         const SizedBox(height: 12),
                       ],

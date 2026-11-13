@@ -495,13 +495,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> with AutomaticKeepAlive
                     ),
                   ),
                   if (ev.isPrivate)
-                    const Padding(
+                     Padding(
                       padding: EdgeInsets.only(left: 6),
                       child: Icon(Icons.lock_outline, size: 16, color: LlackColors.muted),
                     ),
                   if (isCreator)
                     IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 18, color: LlackColors.presenceBusy),
+                      icon: Icon(Icons.delete_outline, size: 18, color: LlackColors.presenceBusy),
                       padding: EdgeInsets.zero,
                       // 엄지로 누를 수 있도록 터치 영역을 44dp 로 확보한다 (§9-7)
                       constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -517,7 +517,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> with AutomaticKeepAlive
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    const Icon(Icons.location_on_outlined, size: 14, color: LlackColors.muted),
+                     Icon(Icons.location_on_outlined, size: 14, color: LlackColors.muted),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(ev.location, style: theme.textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),

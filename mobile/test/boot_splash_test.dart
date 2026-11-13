@@ -29,7 +29,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Llack 연결 중...'), findsOneWidget);
+    expect(find.text('Atrium 연결 중...'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
@@ -43,7 +43,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Llack 연결 중...'), findsNothing);
-    expect(find.text('Llack에 로그인'), findsOneWidget);
+    expect(find.text('Atrium 연결 중...'), findsNothing);
+    expect(find.text('Atrium에 로그인'), findsOneWidget);
   });
 }
