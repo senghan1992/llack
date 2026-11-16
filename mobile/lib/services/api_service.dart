@@ -21,19 +21,35 @@ class ApiException implements Exception {
 class ApiService {
   static const String keyAccess = 'llack.access';
   static const String keyRefresh = 'llack.refresh';
-  static const String keyApiBase = 'llack.api_base';
+
+  /// 빌드할 때 정한 서버 주소.
+  ///
+  /// 배포하면 주소가 고정되므로 — 앱이 말할 서버는 여기 하나로 정합니다.
+  /// 데스크톱 앱의 `LLACK_SERVER_URL` 과 같은 이름입니다.
+  ///
+  ///   flutter build apk --dart-define=LLACK_SERVER_URL=https://atrium.arche.ai
+  ///   flutter run --dart-define=LLACK_SERVER_URL=http://192.168.0.10:8000
+  ///
+  /// 비어 있으면 개발용 주소로 떨어집니다 — 안드로이드 에뮬레이터는
+  /// 10.0.2.2, 그 밖에는 127.0.0.1 입니다.
+  static const String buildServerUrl = String.fromEnvironment('LLACK_SERVER_URL');
 
   /// 네트워크가 먹통이면 UI 가 응답 없이 멈추므로 모든 요청에 타임아웃을 건다.
   static const Duration requestTimeout = Duration(seconds: 15);
 
+  /// 앱이 말할 서버 주소. 빌드 때 정한 값이 있으면 그것을 씁니다.
   static String getDefaultBaseUrl() {
+    final configured = buildServerUrl.trim();
+    if (configured.isNotEmpty) {
+      return configured.replaceAll(RegExp(r'/+$'), '');
+    }
     if (!kIsWeb && Platform.isAndroid) {
       return 'http://10.0.2.2:8000';
     }
     return 'http://127.0.0.1:8000';
   }
 
-  String _baseUrl = getDefaultBaseUrl();
+  final String _baseUrl = getDefaultBaseUrl();
   String? _accessToken;
   String? _refreshToken;
 
@@ -44,15 +60,8 @@ class ApiService {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _baseUrl = prefs.getString(keyApiBase) ?? getDefaultBaseUrl();
     _accessToken = prefs.getString(keyAccess);
     _refreshToken = prefs.getString(keyRefresh);
-  }
-
-  Future<void> setBaseUrl(String url) async {
-    _baseUrl = url.replaceAll(RegExp(r'/+$'), '');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(keyApiBase, _baseUrl);
   }
 
   /// 상대경로({api_prefix}/files/{id}) 를 절대 URL 로 만든다. 이미 절대경로면 그대로 반환.

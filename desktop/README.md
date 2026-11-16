@@ -26,8 +26,10 @@
 않는 요청을 위한 자체 HTTP 클라이언트. 에이전트·스크린캡처·키체인·딥링크·
 트레이·미니앱 패널은 없습니다.
 
-백엔드 주소는 `VITE_API_BASE` (기본 `http://127.0.0.1:8000`) 로 정하고,
-셸은 `LLACK_API_BASE` / `LLACK_API_TOKEN` 환경변수를 읽습니다.
+백엔드 주소는 **빌드할 때** `LLACK_SERVER_URL` 하나로 정합니다. 서버를
+배포하면 주소가 고정되므로 — 그 주소가 곧 기준입니다. 이 값 하나가 프런트엔드
+번들(`VITE_API_BASE`), Tauri CSP, Rust 셸(`option_env!`) 세 곳에 함께
+들어갑니다. 셸은 `LLACK_API_BASE` / `LLACK_API_TOKEN` 환경변수도 읽습니다.
 
 하위 디렉터리:
 
@@ -47,8 +49,9 @@
 
 - [desktop/package.json:scripts] — `dev` = `vite`, `build` = `tsc --noEmit &&
   vite build`, `preview` = `vite preview`, `typecheck` = `tsc --noEmit`,
-  `test` = `vitest run`, `tauri` = `tauri`, `app:dev` = `tauri dev`,
-  `app:build` = `tauri build`, `web` = `vite --host 0.0.0.0`.
+  `test` = `vitest run`, `tauri` = `tauri`, `app:dev` = `node scripts/tauri.mjs
+  dev`, `app:build` = `node scripts/tauri.mjs build`, `web` =
+  `vite --host 0.0.0.0`.
 - [desktop/package.json:dependencies] — `@tauri-apps/api` ^2.12.4,
   `@tauri-apps/plugin-dialog` ^2.7.3, `@tauri-apps/plugin-fs` ^2.5.2,
   `@tauri-apps/plugin-notification` ^2.8.0, `@tauri-apps/plugin-opener`
@@ -103,6 +106,20 @@
 - [desktop/src-tauri/tauri.conf.json:app.security.csp] — CSP가 구조적으로
   제한적입니다. `script-src` 은 `'self'` 뿐이고 `object-src`/`form-action` 은
   `'none'`. 유일한 완화는 `style-src` 의 `'unsafe-inline'` 입니다.
+- [desktop/scripts/tauri.mjs:csp] — 빌드 때 CSP 를 **만들어서** 끼워 넣습니다.
+  `LLACK_SERVER_URL` 의 오리진만 `connect-src` 과 `img-src` 에 들어가고,
+  나머지는 `tauri.conf.json` 의 기본값 그대로입니다. `tauri.conf.json` 을
+  손댈 필요가 없습니다.
+- [desktop/scripts/tauri.mjs:env] — `VITE_API_BASE` 도 `LLACK_SERVER_URL` 로
+  맞춰 넣어 넘깁니다. 프런트엔드가 읽는 주소와 CSP 가 허용하는 주소가
+  어긋나지 않게 하기 위함입니다.
+- [desktop/vite.config.ts:serverUrl] — 주소의 우선순위는
+  `VITE_API_BASE` → `LLACK_SERVER_URL` → 개발용 기본값입니다. 브라우저로만
+  띄워 볼 때 주소를 시험하기 편하게 하기 위한 precedence 이고, 앱 빌드에서는
+  앞의 `tauri.mjs` 가 이 값을 고정해 넣습니다.
+- [desktop/src-tauri/src/api.rs:DEFAULT_API_BASE] — 셸의 기본 주소는
+  `option_env!("LLACK_SERVER_URL")` 입니다. 빌드할 때 정해지므로 배포 뒤에는
+  바뀌지 않습니다.
 - [desktop/src-tauri/tauri.conf.json:app.withGlobalTauri] — 전역 Tauri API는
   웹뷰에 노출되지 않습니다.
 - [desktop/src/lib/api.ts:request] — 401 은 토큰을 한 번 교환한 뒤 **한 번만**
@@ -133,7 +150,8 @@
   웹뷰 테마를 바꾸고, [desktop/src/lib/popout.ts:openRoomWindow] 이 방 창을
   새로 만들거나 기존 창에 포커스를 줍니다.
 - **빌드 산출물** — `npm run build` 는 `tsc --noEmit` 후 `vite build` 로
-  `dist/` 를 만들고, `tauri build` 는 이를 커스텀 프로토콜로 번들합니다.
+  `dist/` 를 만들고, `npm run app:build` 는 이를 커스텀 프로토콜로 번들합니다.
+  번들·CSP·셸은 모두 `LLACK_SERVER_URL` 하나에서 나옵니다.
 
 ## System Verification
 

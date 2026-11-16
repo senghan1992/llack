@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import CurrentUser, DbSession, WorkspaceId, WorkspaceMember
+from app.api.deps import CurrentUser, DbSession, WorkspaceId, WorkspaceMember, limit_by_user
 from app.schemas.search import SearchResult
 from app.services.search import search_messages
 
@@ -19,5 +19,6 @@ async def search(
     membership: WorkspaceMember,
     q: str = Query(default="", max_length=200),
     limit: int = Query(default=30, ge=1),
+    _: None = Depends(limit_by_user("search")),
 ) -> list[SearchResult]:
     return await search_messages(session, workspace_id, user.id, q, limit)

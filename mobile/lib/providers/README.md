@@ -39,7 +39,6 @@ server failures; and a few read-only loaders catch and log their own failures.
 
 - `AppState({super.api, super.ws})` — `api` is `ApiService?`, `ws` is `WsService?`; defaults are provided, and the injection point exists so tests can fake server calls.
 - `Future<void> boot()` — cold-start only entry point.
-- `Future<void> changeApiBaseUrl(String url)`
 - `Future<bool> login(String email, String password)`
 - `Future<bool> signup({required String email, required String password, required String name, required String workspaceName})`
 - `Future<void> selectWorkspace(Workspace workspace)`
@@ -169,7 +168,6 @@ reachable through `AppState`:
 - `[mobile/lib/providers/app_state.dart:AppState.login]` `login` trims the email before calling the API, sets `_isSessionExpired = false` and `_hasSeenHello = false` for the new session. A workspace-bootstrap failure during `login` is caught separately and reported as `_channelsError` so a failed login is not shown as an auth failure. `login` and `signup` return `true`/`false` instead of rethrowing and always reset `_isAuthenticating = false` in `finally`.
 - `[mobile/lib/providers/app_state.dart:AppState.selectWorkspace]` `selectWorkspace` returns early when the requested workspace has the same id as the current active workspace; otherwise it clears `_activeChannelId`, `_messages`, `_historyLoaded`, `_hasMore`, `_events`, `_projects`, `_activeProject`, the project task/roadmap/milestone maps, `_orgOverview` and resets the section load flags before reloading.
 - `[mobile/lib/providers/app_state.dart:AppState.acceptInvite]` `acceptInvite` sends the trimmed token to the server, selects the returned workspace, and returns that workspace; invitation API failures propagate to the caller.
-- `[mobile/lib/providers/app_state.dart:AppState.changeApiBaseUrl]` `changeApiBaseUrl` disconnects the WebSocket and returns without reconnecting when `_currentUser == null || api.accessToken == null`.
 - `[mobile/lib/providers/app_state.dart:AppState.didChangeAppLifecycleState]` On `AppLifecycleState.resumed` the socket is reconnected and `refreshWorkspace()`, `loadMessages(cid)` and the section loads run again; on `inactive`, `paused`, `hidden` and `detached` the socket is disconnected, so the app never shows "online" for hours.
 - `[mobile/lib/providers/app_state.dart:AppState.dispose]` `dispose` sets `_disposed = true` as its first statement, removes the WidgetsBinding observer, removes the WS listener, nulls `ws.onStatusChanged`, disconnects the socket and disposes `tabIndex`.
 - `[mobile/lib/providers/app_state_realtime.dart:_handleWsEvent]` Events without a `type` field are ignored. The `hello` branch clears `_readAckPending` and only calls `_resyncAfterReconnect()` when `_hasSeenHello` was already true — the first `hello` is the initial connection, not a reconnect.
@@ -225,7 +223,6 @@ reachable through `AppState`:
 - `mobile/lib/providers/app_state.dart:AppState._connectWs` — opens the WebSocket with `ws.connect(baseUrl: api.baseUrl, tokenProvider: () => api.accessToken)`.
 - `mobile/lib/providers/app_state.dart:AppState.login` / `signup` — call `api.login(email.trim(), password)` and `api.signup(...)`; neither performs any navigator or `ScaffoldMessenger` interaction, errors are surfaced only through the `authError` / `channelsError` state fields.
 - `mobile/lib/providers/app_state.dart:AppState.acceptInvite` — calls `api.acceptInvite(token)` (`POST /invites/accept`) and then `selectWorkspace` with the returned workspace.
-- `mobile/lib/providers/app_state.dart:AppState.changeApiBaseUrl` — calls `api.setBaseUrl(url)`, then `refreshWorkspace()`, `loadMessages(cid)`, `loadEvents()`, `loadProjects()` and `loadOrg()`, and disconnects the socket before re-pointing the client at the new server.
 - `mobile/lib/providers/app_state.dart:AppState.dispose` — calls `ws.removeListener(_handleWsEvent)`, sets `ws.onStatusChanged = null` and calls `ws.disconnect()`.
 - `mobile/lib/providers/app_state.dart:AppState.didChangeAppLifecycleState` — calls `ws.disconnect()` when inactive/paused/hidden/detached and `_connectWs()` when resumed.
 - `mobile/lib/providers/app_state_core.dart:_AppStateCore.refreshWorkspace` — calls `api.getBootstrap(wsId)` and overwrites `_channels`, `_members` and the `_presence` map entries for every member and for the current user.

@@ -2,17 +2,19 @@
 
 ## Overview
 
-The five pieces everything else stands on:
+The seven pieces everything else stands on:
 
 - `config.py` — environment-backed settings, read once per process
-- `db.py` — the async engine, the session factory, and the schema bootstrap
+- `db.py` — the async engine, the session factory, and the schema check
 - `errors.py` — one error envelope for the whole API
 - `ids.py` — prefixed, time-sortable identifiers
 - `security.py` — password hashing, JWT issue/verify, and the auth dependencies
+- `migrations.py` — brings the database to the current Alembic revision
+- `ratelimit.py` — the token buckets that keep one caller from flooding
 
-There is no migration tool in this project. The schema is created from the
-SQLAlchemy metadata on startup, and drift is detected by comparing the live
-schema with the models.
+Alembic owns the schema. The models stay the single source of truth, Alembic
+records the revisions derived from them, and the server upgrades itself to the
+current revision on startup — a deploy is "replace the code and restart".
 
 ## Interface
 
@@ -51,6 +53,34 @@ schema with the models.
   [backend/app/core/config.py:Settings.orphan_file_hours]
 - `Settings.max_name_length` — `120`
   [backend/app/core/config.py:Settings.max_name_length]
+- `Settings.env` — `"development"` | `"staging"` | `"production"`; env aliases
+  `APP_ENV` | `LLACK_APP_ENV`
+  [backend/app/core/config.py:Settings.env]
+- `Settings.secret_key` default is refused in production
+  [backend/app/core/config.py:DEFAULT_DEV_SECRET_KEY]
+- `Settings.rate_limit_enabled` — `True`; `False` turns every limit off
+  [backend/app/core/config.py:Settings.rate_limit_enabled]
+- `Settings.rate_limit_signup` / `_login` / `_login_account` / `_refresh` /
+  `_message` / `_upload` / `_search` — how many calls each scope may make per
+  window; `0` means no limit
+  [backend/app/core/config.py:Settings.rate_limit_capacity]
+- `Settings.trusted_proxy_networks` — comma separated IPs/CIDRs whose
+  `X-Forwarded-For` header is believed; default `"127.0.0.1,::1"`
+  [backend/app/core/config.py:Settings.trusted_proxy_networks]
+- `Settings.trusted_proxy_networks_list` — the split, trimmed list
+  [backend/app/core/config.py:Settings.trusted_proxy_networks_list]
+- `Settings.rate_limit_capacity(scope)` — the limit for a scope name, `0` when
+  the scope is unknown
+  [backend/app/core/config.py:Settings.rate_limit_capacity]
+- `Settings.is_production` — `env == "production"`
+  [backend/app/core/config.py:Settings.is_production]
+- `DEFAULT_DEV_SECRET_KEY` — the development signing key that production
+  refuses [backend/app/core/config.py:DEFAULT_DEV_SECRET_KEY]
+- `InsecureSettings(RuntimeError)` — raised by the production guard
+  [backend/app/core/config.py:InsecureSettings]
+- `validate_production_settings(settings)` — refuses to boot production with
+  the default signing key or a wildcard CORS list
+  [backend/app/core/config.py:validate_production_settings]
 - `Settings.cors_origin_list` — splits `cors_origins` on commas; empty or `*`
   yields `["*"]` [backend/app/core/config.py:Settings.cors_origin_list]
 - `Settings.upload_root` — `upload_dir` when absolute, otherwise
@@ -74,15 +104,49 @@ schema with the models.
   class_=AsyncSession)` [backend/app/core/db.py:SessionLocal]
 - `get_session()` — FastAPI dependency yielding a request-scoped session
   [backend/app/core/db.py:get_session]
-- `create_all()` — creates every table declared on `Base.metadata`
+- `create_all()` — creates every table declared on `Base.metadata`; used when
+  adopting a database that predates Alembic
   [backend/app/core/db.py:create_all]
 - `drop_all()` — drops every table declared on `Base.metadata`
   [backend/app/core/db.py:drop_all]
 - `ensure_columns()` — idempotent `ALTER TABLE` / `CREATE INDEX` schema growth
-  for messages, files, projects, tasks
-  [backend/app/core/db.py:ensure_columns]
+  for messages, files, projects, tasks; used when adopting a database that
+  predates Alembic [backend/app/core/db.py:ensure_columns]
 - `ensure_schema()` — compares live columns to `Base.metadata` and raises
   `SchemaMismatch` on drift [backend/app/core/db.py:ensure_schema]
+
+### Migrations (`migrations.py`)
+
+- `BACKEND_ROOT` / `ALEMBIC_INI` / `ALEMBIC_DIR` — the locations of the
+  Alembic configuration and the revision scripts
+  [backend/app/core/migrations.py:BACKEND_ROOT]
+- `MigrationError(RuntimeError)` — raised when the schema cannot be brought to
+  the current revision [backend/app/core/migrations.py:MigrationError]
+- `prepare_schema(script_location=None)` — the startup entry point: an empty
+  database is created with `upgrade head`, an existing one is upgraded, and a
+  database that predates Alembic is adopted and stamped
+  [backend/app/core/migrations.py:prepare_schema]
+- `current_revision(connection)` — the revision the database is on, `None` when
+  it is not managed by Alembic
+  [backend/app/core/migrations.py:current_revision]
+- `_adopt_legacy_database()` — reconciles the shape (`create_all` +
+  `ensure_columns` + `ensure_schema`) and stamps `head` without touching rows
+  [backend/app/core/migrations.py:_adopt_legacy_database]
+- `_upgrade_to_head()` — runs `alembic upgrade head` in a worker thread, so
+  Alembic's own event loop does not collide with the app's
+  [backend/app/core/migrations.py:_upgrade_to_head]
+
+### Rate limits (`ratelimit.py`)
+
+- `POLICY_PERIODS` — the window of each scope in seconds: signup 3600, the
+  rest 60 [backend/app/core/ratelimit.py:POLICY_PERIODS]
+- `RateLimiter.check(scope, key, *, capacity, per_seconds)` — spends one
+  token and raises `rate_limited` (429) when the bucket is empty
+  [backend/app/core/ratelimit.py:RateLimiter.check]
+- `RateLimiter.reset()` — empties every bucket (tests)
+  [backend/app/core/ratelimit.py:RateLimiter.reset]
+- `limiter` — the process-wide singleton the dependencies use
+  [backend/app/core/ratelimit.py:limiter]
 
 ### Errors (`errors.py`)
 
@@ -195,9 +259,24 @@ schema with the models.
 - `ensure_schema()` treats a missing table (`NoSuchTableError`) as an empty
   column set, so every expected column is listed as missing
   [backend/app/core/db.py:ensure_schema]
-- There is no migration tool: drift is repaired by deleting and recreating the
-  SQLite file (`make db-reset`) or by creating a fresh Postgres schema
-  [backend/app/core/db.py:ensure_schema]
+- The schema is migrated by Alembic, not by `create_all`: the revision history
+  under `backend/alembic/versions/` is the record of how the shape changed
+  [backend/app/core/migrations.py:prepare_schema]
+- A database that predates Alembic is adopted rather than migrated: the shape
+  is reconciled and the revision is stamped, and the rows are left alone
+  [backend/app/core/migrations.py:_adopt_legacy_database]
+- Migrations assume one instance per database — two processes changing the same
+  schema at once overwrite each other
+  [backend/app/core/migrations.py:prepare_schema]
+- `validate_production_settings()` runs before the database is touched, so an
+  insecure production server never opens a connection
+  [backend/app/core/config.py:validate_production_settings]
+- `X-Forwarded-For` is believed only from `TRUSTED_PROXY_NETWORKS`; the address
+  used is the right-most untrusted one in the chain, so a caller cannot forge
+  its way past a limit [backend/app/api/deps.py:client_ip]
+- Rate limits live in the process, so an instance behind several workers keeps
+  one set of buckets per process
+  [backend/app/core/ratelimit.py:RateLimiter]
 - Every error response uses the envelope
   `{"error": {"code", "message", "field"}}`; `field` is null unless a field name
   is supplied [backend/app/core/errors.py:ErrorEnvelope]
@@ -264,8 +343,12 @@ schema with the models.
   [backend/app/core/db.py:engine]
 - Opens an `AsyncSession` per request through `SessionLocal` and closes it when
   the dependency generator ends [backend/app/core/db.py:get_session]
+- DDL: `alembic upgrade head` runs on startup inside its own connection; it
+  creates or alters tables to match the current revision
+  [backend/app/core/migrations.py:_upgrade_to_head]
 - DDL: `create_all()` issues `CREATE TABLE` for every table in `Base.metadata`
-  inside an engine transaction [backend/app/core/db.py:create_all]
+  inside an engine transaction, but only while adopting a database that
+  predates Alembic [backend/app/core/db.py:create_all]
 - DDL: `drop_all()` issues `DROP TABLE` for every table in `Base.metadata`
   [backend/app/core/db.py:drop_all]
 - DDL: `ensure_columns()` issues `ALTER TABLE messages ADD COLUMN reply_to_id /
@@ -281,6 +364,11 @@ schema with the models.
   [backend/app/core/db.py:ensure_columns]
 - `ensure_schema()` raises `SchemaMismatch` and aborts startup when the live
   schema drifts from `Base.metadata` [backend/app/core/db.py:ensure_schema]
+- DDL: `alembic stamp head` records the current revision on a database that
+  predates Alembic, without touching any row
+  [backend/app/core/migrations.py:_adopt_legacy_database]
+- The rate limiter keeps its buckets in memory; they are dropped when the
+  process ends [backend/app/core/ratelimit.py:RateLimiter]
 - Logs unhandled exceptions with
   `logger.exception('unhandled error on %s %s', request.method, request.url.path)`
   [backend/app/core/errors.py:register_exception_handlers]

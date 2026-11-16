@@ -31,7 +31,7 @@ channel list beside the content pane. The layout choice is made by
 - [Projects](./projects/README.md) — `ProjectsScreen`, project settings, milestone/timeline panels, `MyTasksScreen`, `TaskDetailSheet`, and `TaskDialog`.
 - [Schedule](./schedule/README.md) — `ScheduleScreen`, `EventDialog`, the event detail sheet.
 - [Search](./search/README.md) — `SearchDialog`.
-- [Settings](./settings/README.md) — `SettingsSheet`, `ServerSettingsDialog`.
+- [Settings](./settings/README.md) — `SettingsSheet`.
 
 ### People directory
 
@@ -47,10 +47,9 @@ channel list beside the content pane. The layout choice is made by
 - `[mobile/lib/screens/auth_screen.dart:_submit]` After a successful login or sign-up, a non-empty invite code (the `_inviteCtrl` field) is handed to `state.acceptInvite(code)`, which switches the session to the invited workspace; a rejected code is reported with `showAppSnackBar(context, '초대 코드를 사용할 수 없습니다: $e')` and the session stays as it was.
 - `[mobile/lib/screens/auth_screen.dart:build]` Email validation requires the field to be non-null and to contain `'@'` (`'올바른 이메일을 입력하세요'`). Password validation requires a non-null value of length at least 6 (`'6자 이상 입력하세요'`). In sign-up mode the workspace name and the personal name are both required. The submit button and the sign-up/sign-in mode toggle are both disabled (`onPressed: null`) while `state.isAuthenticating` is true.
 - `[mobile/lib/screens/auth_screen.dart:_prefillEmailIfSessionExpired]` The email is auto-filled only once (`_emailPrefilled` guard) and only when `state.isSessionExpired` is true and `state.currentUser?.email` is non-null and non-empty; the password is never auto-filled.
-- `[mobile/lib/screens/auth_screen.dart:_looksLikeConnectionError]` A message is treated as a connection/server-address problem only when it is non-null and non-empty and contains one of `'연결'`, `'네트워크'`, `'서버'`, `'timeout'`, `'host'`, `'소켓'`, `'refused'` (case-insensitive).
+- `[mobile/lib/screens/auth_screen.dart:_looksLikeConnectionError]` A message is treated as a connection problem only when it is non-null and non-empty and contains one of `'연결'`, `'네트워크'`, `'서버'`, `'timeout'`, `'host'`, `'소켓'`, `'refused'` (case-insensitive). The login screen then shows a plain hint — there is no server-address editor, because the address is fixed at build time.
 - `[mobile/lib/screens/auth_screen.dart:build]` The visible error text is rendered directly from `state.authError` rather than from any local copy, and the session-expired notice is only rendered when `state.isSessionExpired` is true, using a neutral accent color rather than the red error color. The form content is constrained to a maximum width of 420 via a `ConstrainedBox` inside a `SingleChildScrollView`.
 - `[mobile/lib/screens/auth_screen.dart:_submit]` The catch block returns early when `!mounted` before showing the failure snack bar.
-- `[mobile/lib/screens/auth_screen.dart:_showServerSettings]` The save handler checks `mounted` both before and after awaiting `state.changeApiBaseUrl(url)` before showing the confirmation snack bar.
 - `[mobile/lib/screens/main_shell.dart:_MainShellState.build]` The layout is chosen by `FormFactor(context).isPad`: the tablet/pad split layout is used when `isPad` is true, otherwise the phone bottom-nav layout.
 - `[mobile/lib/screens/main_shell.dart:_buildPhoneLayout]` The phone layout renders the four tabs in an `IndexedStack` whose index comes from `state.tabIndex`, keeping each tab's state alive across switches, and the bottom navigation bar has exactly four items labeled `'메시지'`, `'일정'`, `'프로젝트'`, `'조직도'`.
 - `[mobile/lib/screens/main_shell.dart:_buildTabletLayout]` In the tablet layout index 0 renders a fixed 280dp-wide `ChatTab()` beside a `ChatScreen(showBackButton: false)`, while indices 1-3 render `ScheduleScreen(showCommonActions: false)`, `ProjectsScreen(showCommonActions: false)` or `OrgScreen(showCommonActions: false)` via a switch on the tab index. The tablet left rail is a fixed 72dp-wide `Container` separated from the content by a 1px `VerticalDivider`.
@@ -72,7 +71,6 @@ channel list beside the content pane. The layout choice is made by
 ## Side Effects
 
 - `[mobile/lib/screens/auth_screen.dart:_submit]` Calls `state.clearAuthError()`, then `state.login(_emailCtrl.text.trim(), _passCtrl.text)` — `POST /auth/login` — or `state.signup(email:, password:, name:, workspaceName:)` — `POST /auth/signup`, which persists the session under the SharedPreferences keys `llack.access` and `llack.refresh`. On an unexpected exception it calls `showAppSnackBar(context, '로그인에 실패했습니다: $e')`.
-- `[mobile/lib/screens/auth_screen.dart:_showServerSettings]` Opens an `AlertDialog` via `showDialog` whose content is a `TextField` pre-filled with `state.api.baseUrl`; the `'저장'` button pops the dialog then awaits `state.changeApiBaseUrl(url)`, which writes the SharedPreferences key `llack.api_base` and reloads the workspace. After saving it shows `showAppSnackBar(context, '서버 주소가 변경되었습니다: $url')`.
 - `[mobile/lib/screens/auth_screen.dart:build]` Reads the AppState via `context.watch<AppState>()` to render `authError`, `isAuthenticating`, `isSessionExpired` and `state.api.baseUrl`, and via `context.read<AppState>()` to mutate state.
 - `[mobile/lib/screens/auth_screen.dart:dispose]` Disposes the five `TextEditingController`s `_emailCtrl`, `_passCtrl`, `_nameCtrl`, `_wsNameCtrl` and `_inviteCtrl`.
 - `[mobile/lib/screens/auth_screen.dart:_submit]` Calls `state.acceptInvite(_inviteCtrl.text.trim())` when the invite-code field is not empty after the session was established; the invite code is never sent with the credentials themselves.

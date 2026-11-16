@@ -7,7 +7,6 @@ import '../../theme/llack_colors.dart';
 import '../../theme/llack_typography.dart';
 import '../../widgets/llack_avatar.dart';
 import '../../widgets/presence_badge.dart';
-import 'server_settings_dialog.dart';
 import '../../widgets/app_snack_bar.dart';
 
 class SettingsSheet extends StatelessWidget {
@@ -147,14 +146,6 @@ class SettingsSheet extends StatelessWidget {
 
             const SizedBox(height: 16),
             const Divider(height: 1),
-
-            ListTile(
-              leading: const Icon(Icons.dns_outlined, size: 20),
-              title: Text('서버 주소 설정', style: LlackTypography.body),
-              subtitle: Text(state.api.baseUrl, style: theme.textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-              contentPadding: EdgeInsets.zero,
-              onTap: () => showServerSettingsDialog(context),
-            ),
 
             // ── 화면 모드 · 시간 표기 (이 기기에 저장된다) ──────────────
             const SizedBox(height: 16),

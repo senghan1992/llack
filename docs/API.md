@@ -12,6 +12,25 @@ file downloads. All timestamps are ISO-8601 UTC strings (`2026-11-02T09:14:00Z`)
 Codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409),
 `validation_error` (422), `rate_limited` (429), `internal` (500).
 
+## 속도 제한
+
+너무 많은 요청은 429 `rate_limited` 로 막힙니다. 그 메시지에는 몇 초 뒤에
+다시 시도하면 되는지가 들어 있습니다. 한도는 `RATE_LIMIT_*` 환경변수로 정해집니다
+— 사내망에서는 주소를 나눠 쓰므로 값을 키우면 됩니다.
+
+| 대상 | 기본값 | 기준 |
+| --- | --- | --- |
+| `/auth/signup` | 60 | 시간당, 주소당 |
+| `/auth/login` | 30 | 분당, 주소당 |
+| `/auth/login` | 10 | 분당, **계정**당 (비밀번호 추측 방지) |
+| `/auth/refresh` | 30 | 분당, 주소당 |
+| `POST /channels/{id}/messages` | 60 | 분당, 사람당 |
+| `POST /files` | 30 | 분당, 사람당 |
+| `GET /workspaces/{id}/search` | 60 | 분당, 사람당 |
+
+주소는 리버스 프록시 뒤에서 왔을 때 `X-Forwarded-For` 를 봅니다 — 단,
+`TRUSTED_PROXY_NETWORKS` 에 적힌 프록시에서 온 요청만 믿습니다.
+
 ## Auth
 
 `Authorization: Bearer <access_token>` on every protected route.

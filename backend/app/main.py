@@ -10,15 +10,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
-from app.core.config import get_settings
-from app.core.db import (
-    SchemaMismatch,
-    SessionLocal,
-    create_all,
-    ensure_columns,
-    ensure_schema,
-)
+from app.core.config import get_settings, validate_production_settings
+from app.core.db import SchemaMismatch, SessionLocal, ensure_schema
 from app.core.errors import register_exception_handlers
+from app.core.migrations import prepare_schema
 from app.services.files import purge_orphan_files
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -29,9 +24,14 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Create the schema on startup; there is no migration tool in this project."""
-    await create_all()
-    await ensure_columns()
+    """Bring the schema to the current revision before serving anyone."""
+    # An insecure production server does not start at all — the check comes
+    # before anything touches the database.
+    validate_production_settings(settings)
+    # The schema is Alembic's job: the database is migrated to the current
+    # revision here, so deploying a new version is "replace the code and
+    # restart" — nothing else to remember.
+    await prepare_schema()
     try:
         await ensure_schema()
     except SchemaMismatch as exc:

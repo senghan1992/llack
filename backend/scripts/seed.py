@@ -20,7 +20,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
-from app.core.db import SessionLocal, create_all  # noqa: E402
+from app.core.db import SessionLocal  # noqa: E402
 from app.core.ids import (  # noqa: E402
     ATTENDEE_PREFIX,
     CHANNEL_MEMBER_PREFIX,
@@ -40,6 +40,7 @@ from app.core.ids import (  # noqa: E402
     WORKSPACE_PREFIX,
     new_id,
 )
+from app.core.migrations import prepare_schema  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.models.channel import KIND_CHANNEL, KIND_DM, Channel, ChannelMember  # noqa: E402
 from app.models.invite import Invite  # noqa: E402
@@ -1060,7 +1061,8 @@ async def _ensure_invite(session: AsyncSession) -> Invite:
 
 
 async def main() -> None:
-    await create_all()
+    # The schema is Alembic's job — the seed only fills it.
+    await prepare_schema()
     async with SessionLocal() as session:
         result = await _seed(session)
         if result is None:

@@ -69,8 +69,15 @@ HTTP/WebSocket으로만 이야기합니다. 덕분에 프런트엔드는 브라�
 
 ## 데이터 모델
 
-테이블은 스물두 개입니다. 스키마는 서버가 기동할 때 SQLAlchemy 메타데이터에서
-만듭니다 — 마이그레이션 도구가 없습니다(`app/main.py` 의 `lifespan` → `create_all`).
+테이블은 스물두 개입니다. 스키마는 **Alembic** 이 만듭니다 — SQLAlchemy
+메타데이터에서 리비전을 만들고(`backend/alembic/versions/`), 서버가 기동할 때
+스스로 `upgrade head` 합니다(`app/main.py` 의 `lifespan` →
+`app/core/migrations.py` 의 `prepare_schema`). 예전 스키마로 만들어진
+데이터베이스는 데이터를 건드리지 않고 현재 리비전으로 찍어 줍니다.
+
+마이그레이션은 스키마의 **기록**입니다 — 서버가 켜질 때 한 번, 배포마다 한
+번 돌아갑니다. 사람이 손댈 일은 아닙니다(`make db-migrate` 로 미리 확인만
+할 수 있습니다).
 
 | 테이블 | 하는 일 | 눈여겨볼 점 |
 | --- | --- | --- |

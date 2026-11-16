@@ -75,54 +75,6 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  void _showServerSettings() {
-    final state = context.read<AppState>();
-    final ctrl = TextEditingController(text: state.api.baseUrl);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('서버 주소 설정', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-             Text(
-              '백엔드 API 서버 URL을 입력하세요.\n• 에뮬레이터: http://10.0.2.2:8000\n• 실제 기기: PC 의 LAN 주소 (예: http://192.168.0.10:8000)',
-              style: TextStyle(fontSize: 13, color: LlackColors.ink2),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                hintText: 'http://192.168.0.10:8000',
-                isDense: true,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final url = ctrl.text.trim();
-              Navigator.pop(ctx);
-              if (!mounted) return;
-              await state.changeApiBaseUrl(url);
-              if (!mounted) return;
-              showAppSnackBar(context, '서버 주소가 변경되었습니다: $url');
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -174,19 +126,6 @@ class _AuthScreenState extends State<AuthScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 서버 주소 설정 진입점 — 실제 기기에서는 기본 주소로 연결이 안 되므로
-                    // 눈에 띄게(아이콘 버튼) 노출한다 (§3-C-10)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.dns_outlined, color: LlackColors.ink2),
-                          tooltip: '서버 주소 설정',
-                          onPressed: _showServerSettings,
-                        ),
-                      ],
-                    ),
-
                     // Brand mark
                     Center(
                       child: Container(
@@ -198,14 +137,11 @@ class _AuthScreenState extends State<AuthScreen> {
                           boxShadow: LlackTheme.shadowE2,
                         ),
                         alignment: Alignment.center,
-                        child: Text(
-                          'A',
-                          style: TextStyle(
-                            color: LlackColors.accentInk,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -1,
-                          ),
+                        child: Image.asset(
+                          'assets/brand/symbol-white.png',
+                          width: 32,
+                          height: 32,
+                          fit: BoxFit.contain,
                         ),
                       ),
                     ),
@@ -281,23 +217,9 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             if (_looksLikeConnectionError(authError)) ...[
                               const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '실제 기기에서는 127.0.0.1 로 연결되지 않습니다. PC 의 LAN 주소로 바꿔주세요.',
-                                      style: theme.textTheme.labelSmall,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: _showServerSettings,
-                                    style: ElevatedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    ),
-                                    child: const Text('서버 주소 설정'),
-                                  ),
-                                ],
+                              Text(
+                                '서버에 닿지 못했습니다. 사내 네트워크에 연결되어 있는지 확인해주세요.',
+                                style: theme.textTheme.labelSmall,
                               ),
                             ],
                           ],
@@ -399,18 +321,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       child: Text(
                         _isSignUp ? '이미 계정이 있으신가요? 로그인' : '새 워크스페이스를 만드시나요? 회원가입',
                         style: theme.textTheme.bodySmall?.copyWith(color: LlackColors.accent),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-                    Center(
-                      child: TextButton.icon(
-                        icon: Icon(Icons.settings_outlined, size: 16, color: LlackColors.muted),
-                        label: Text(
-                          '서버 주소 설정 (${state.api.baseUrl})',
-                          style: theme.textTheme.labelSmall,
-                        ),
-                        onPressed: _showServerSettings,
                       ),
                     ),
                   ],

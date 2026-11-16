@@ -20,8 +20,12 @@ app/core/              settings, database, errors, ids, security
 scripts/seed.py        demo workspace seeder
 ```
 
-There is no migration tool. The schema is created from the SQLAlchemy metadata
-on startup and drift is detected by comparing the live schema with the models.
+Alembic owns the schema. It records revisions from the SQLAlchemy metadata
+and the server upgrades itself to the current revision on startup, so a
+deploy is "replace the code and restart". A database created before Alembic
+existed is adopted — the shape is reconciled and the revision is stamped —
+without touching the rows. `ensure_schema()` then fails the boot if the live
+schema still disagrees with the models.
 
 ## Local Interface & Invariants
 
@@ -32,7 +36,8 @@ configuration, and the container definition.
   runtime dependencies `fastapi>=0.115`, `uvicorn[standard]>=0.32`,
   `pydantic>=2.9`, `pydantic-settings>=2.6`, `sqlalchemy[asyncio]>=2.0.36`,
   `aiosqlite>=0.20`, `asyncpg>=0.30`, `greenlet>=3.1`, `pwdlib[argon2]>=0.2`,
-  `pyjwt>=2.10`, `python-multipart>=0.0.17`, `email-validator>=2.2`; dev extras
+  `pyjwt>=2.10`, `python-multipart>=0.0.17`, `email-validator>=2.2`,
+  `alembic>=1.13`; dev extras
   `pytest>=8.3`, `pytest-asyncio>=0.24`, `asgi-lifespan>=2.1`, `httpx>=0.28`,
   `websockets>=13.0`, `ruff>=0.8`
   [backend/pyproject.toml:project]
@@ -52,14 +57,20 @@ configuration, and the container definition.
 - The runtime image runs as the non-root user `llack` (uid/gid 10001) and
   writes only to `/app/var` [backend/Dockerfile:Dockerfile]
 - `docker-entrypoint.sh` — `set -eu`, echoes the command, then `exec "$@"`; it
-  runs no migration step because the schema is created on startup
-  [backend/docker-entrypoint.sh:docker-entrypoint.sh]
+  runs no migration step because the schema is migrated by the app's own
+  startup [backend/docker-entrypoint.sh:docker-entrypoint.sh]
+- `alembic.ini` — the Alembic configuration; `script_location` and the
+  `sqlalchemy.url` placeholder both point at the repository so the tool works
+  from any working directory [backend/alembic.ini:alembic]
+- `alembic/env.py` — reads the live `DATABASE_URL` from `app.core.db` instead
+  of the ini file, so migrations and the app always talk to the same database
+  [backend/alembic/env.py:run_migrations_online]
 - `.dockerignore` — excludes `.venv/`, `var/`, `__pycache__/`, `*.pyc`,
   `.pytest_cache/`, `.ruff_cache/`, `*.db`, `*.db-wal`, `*.db-shm`, `.env` and
   `tests/` [backend/.dockerignore:.dockerignore]
 - `.env.example` — the documented environment surface: `SECRET_KEY`,
-  `DATABASE_URL`, `API_PREFIX`, `CORS_ORIGINS`, `UPLOAD_DIR`
-  [backend/.env.example:.env.example]
+  `DATABASE_URL`, `API_PREFIX`, `CORS_ORIGINS`, `UPLOAD_DIR`, `APP_ENV` and
+  the `RATE_LIMIT_*` family [backend/.env.example:.env.example]
 
 ## Subdirectories & System Boundaries
 
@@ -68,6 +79,8 @@ configuration, and the container definition.
   packages
 - [scripts](./scripts/README.md) — the demo workspace seeder behind
   `make seed`
+- [alembic](./alembic/README.md) — the schema history: `env.py` and the
+  revision files under `versions/`
 
 ## Global Invariants
 

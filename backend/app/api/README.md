@@ -28,6 +28,17 @@ The transport layer. Two pieces:
 - `channel_with_access(channel_id, user, session) -> tuple[Channel, WorkspaceMembership]`
   — the channel plus the caller's membership, enforcing visibility rules
   [backend/app/api/deps.py:channel_with_access]
+- `client_ip(request) -> str` — the address of the caller. `X-Forwarded-For`
+  is believed only from `TRUSTED_PROXY_NETWORKS`, and only the right-most
+  untrusted address in the chain is taken
+  [backend/app/api/deps.py:client_ip]
+- `check_limit(scope, key)` — spends one token of the scope's bucket and raises
+  `rate_limited` (429) when it is empty; a scope with a limit of `0` is
+  unlimited [backend/app/api/deps.py:check_limit]
+- `limit_by_ip(scope)` — a dependency that limits a scope by address
+  [backend/app/api/deps.py:limit_by_ip]
+- `limit_by_user(scope)` — a dependency that limits a scope by user
+  [backend/app/api/deps.py:limit_by_user]
 - Subdirectory contracts:
   - [v1](./v1/README.md) — every route of the API contract, mounted under
     `/api/v1`

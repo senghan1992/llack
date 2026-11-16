@@ -40,6 +40,9 @@ services:
       # Postgres 는 컨테이너 안에서만 씁니다 — 안에서 쓰는 드라이버는
       # asyncpg 하나입니다.
       DATABASE_URL: postgresql+asyncpg://llack:llack@postgres:5432/llack
+      # 운영을 뜻합니다 — 서버가 뜨기 전에 개발용 키와 "*" CORS 를
+      # 걸러 냅니다. 아래 두 값을 채우지 않으면 컨테이너가 뜨지 않습니다.
+      APP_ENV: ${APP_ENV:-production}
       # 필수: 배포 전에 반드시 덮어쓰세요. 이 값으로 모든 토큰이 서명됩니다.
       #   python3 -c "import secrets; print(secrets.token_urlsafe(48))"
       SECRET_KEY: ${SECRET_KEY:-llack-dev-secret-key-change-me-before-production}
@@ -50,6 +53,17 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-1800}
       REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-2592000}
+      # 속도 제한 — 사내망에서 주소를 나눠 쓰면 값을 키우세요.
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_SIGNUP: ${RATE_LIMIT_SIGNUP:-60}
+      RATE_LIMIT_LOGIN: ${RATE_LIMIT_LOGIN:-30}
+      RATE_LIMIT_LOGIN_ACCOUNT: ${RATE_LIMIT_LOGIN_ACCOUNT:-10}
+      RATE_LIMIT_REFRESH: ${RATE_LIMIT_REFRESH:-30}
+      RATE_LIMIT_MESSAGE: ${RATE_LIMIT_MESSAGE:-60}
+      RATE_LIMIT_UPLOAD: ${RATE_LIMIT_UPLOAD:-30}
+      RATE_LIMIT_SEARCH: ${RATE_LIMIT_SEARCH:-60}
+      # nginx가 같은 compose 네트워크에서 오면 그 주소도 신뢰합니다.
+      TRUSTED_PROXY_NETWORKS: ${TRUSTED_PROXY_NETWORKS:-127.0.0.1,::1,172.16.0.0/12}
     # 실시간 허브가 프로세스 안에 있습니다. 워커를 둘 이상 띄우면 서로의
     # 소켓에 이벤트가 전달되지 않으므로 프로세스 하나로 유지합니다.
     command:
@@ -59,9 +73,11 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+      # 리버스 프록시가 앞에 있을 때만 forwarded 헤더를 믿습니다.
+      # "*" 로 두면 아무나 X-Forwarded-For 를 조작해 한도를 피할 수 있습니다.
       - --proxy-headers
       - --forwarded-allow-ips
-      - "*"
+      - ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     ports:
       - "8000:8000"
     volumes:

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import check_limit, limit_by_ip
 from app.core.db import get_session
 from app.core.errors import conflict, unauthorized
 from app.core.ids import USER_PREFIX, new_id
@@ -54,7 +55,11 @@ def _session(user: User, workspace: Workspace) -> Session:
 
 
 @router.post("/signup", response_model=Session)
-async def signup(payload: SignupRequest, session: AsyncSession = Depends(get_session)) -> Session:
+async def signup(
+    payload: SignupRequest,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(limit_by_ip("signup")),
+) -> Session:
     email = payload.email.strip().lower()
     existing = await session.scalar(select(User).where(User.email == email))
     if existing is not None:
@@ -81,8 +86,15 @@ async def signup(payload: SignupRequest, session: AsyncSession = Depends(get_ses
 
 
 @router.post("/login", response_model=Session)
-async def login(payload: LoginRequest, session: AsyncSession = Depends(get_session)) -> Session:
+async def login(
+    payload: LoginRequest,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(limit_by_ip("login")),
+) -> Session:
     email = payload.email.strip().lower()
+    # 주소로도 막지만, 한 계정을 노리는 시도도 막습니다. 주소가 여러 개일
+    # 수 있기 때문에 계정 쪽 한도를 따로 둡니다.
+    check_limit("login-account", email)
     user = await session.scalar(select(User).where(User.email == email))
     if user is None or not verify_password(payload.password, user.password_hash):
         raise unauthorized("invalid email or password")
@@ -94,7 +106,11 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
 
 
 @router.post("/refresh", response_model=Tokens)
-async def refresh(payload: RefreshRequest, session: AsyncSession = Depends(get_session)) -> Tokens:
+async def refresh(
+    payload: RefreshRequest,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(limit_by_ip("refresh")),
+) -> Tokens:
     try:
         user_id = decode_token(payload.refresh_token, REFRESH_TOKEN)
     except Exception as exc:

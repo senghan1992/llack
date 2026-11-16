@@ -36,6 +36,7 @@ make setup-backend
 # 2. 환경 변수
 mkdir -p /etc/llack
 cat > /etc/llack/llack.env <<'EOF'
+APP_ENV=production
 SECRET_KEY=<위에서 뽑은 값>
 DATABASE_URL=sqlite+aiosqlite:////opt/llack/backend/llack.db
 UPLOAD_DIR=/var/lib/llack/uploads
@@ -48,8 +49,23 @@ cd /opt/llack/backend
     --proxy-headers --forwarded-allow-ips 127.0.0.1
 ```
 
-테이블은 서버가 기동할 때 메타데이터에서 만들어집니다 — 마이그레이션 단계가
-없습니다. 처음 뜬 서버가 곧 데이터베이스입니다.
+테이블은 **Alembic** 이 만듭니다. 서버가 기동할 때 스스로 현재 리비전까지
+올립니다 — 처음 뜬 서버가 곧 데이터베이스이고, 두 번째로 뜬 서버는 이전
+리비전의 데이터베이스를 자동으로 올려 줍니다. 배포는 "코드 교체 + 재시작"
+한 번으로 끝납니다.
+
+확인하고 싶으면:
+
+```bash
+cd /opt/llack/backend
+.venv/bin/alembic current      # 지금 어느 리비전인가
+.venv/bin/alembic history      # 이력
+```
+
+`APP_ENV=production` 이면 서버가 뜨기 전에 두 가지를 검사합니다 — 개발용
+서명 키를 그대로 쓰고 있는지, `CORS_ORIGINS` 가 `*` 인지. 하나라도 걸리면
+서버가 뜨지 않고 이유를 알려 줍니다. 실수로 운영에 나가는 것을 막기 위한
+것입니다.
 
 ### systemd
 
@@ -154,6 +170,7 @@ compose 의 API 컨테이너는 워커 하나로 뜹니다. 이유는 A 절에 �
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
+| `APP_ENV` | `development` | `production` 이면 서버가 뜨기 전에 설정을 검사합니다 |
 | `SECRET_KEY` | 개발용 기본값 | 모든 토큰의 서명 키. 배포 전 반드시 변경 |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./llack.db` | `postgresql+asyncpg://…` 로 바꾸면 Postgres |
 | `UPLOAD_DIR` | `backend/var/uploads` | 첨부 파일이 저장되는 디렉터리 |
@@ -162,6 +179,11 @@ compose 의 API 컨테이너는 워커 하나로 뜹니다. 이유는 A 절에 �
 | `REFRESH_TOKEN_TTL_SECONDS` | `2592000` | 리프레시 토큰 수명 (30일) |
 | `JWT_ALGORITHM` | `HS256` | JWT 서명 알고리즘 |
 | `MAX_UPLOAD_BYTES` | `20971520` | 첨부 파일 최대 크기 (20MiB) |
+| `RATE_LIMIT_ENABLED` | `true` | 속도 제한을 켤지 말지 |
+| `RATE_LIMIT_LOGIN` | `30` | 분당 로그인 시도 (주소당) |
+| `RATE_LIMIT_LOGIN_ACCOUNT` | `10` | 분당 로그인 시도 (계정당) — 비밀번호 추측 방지 |
+| `RATE_LIMIT_MESSAGE` | `60` | 분당 메시지 (사람당) |
+| `TRUSTED_PROXY_NETWORKS` | `127.0.0.1,::1` | `X-Forwarded-For` 를 믿을 프록시 주소 |
 
 `SECRET_KEY` · `DATABASE_URL` · `UPLOAD_DIR` 는 `LLACK_` 붙은 이름으로도
 읽힙니다(`LLACK_SECRET_KEY` 등). 같은 값을 두 이름으로 주지 마세요 — 어느
@@ -267,6 +289,16 @@ systemd 로 돌릴 때는 `UPLOAD_DIR=/var/lib/llack/uploads` 로 두고 그 디
 - **자동 업데이트가 없습니다.** 데스크톱 앱은 새 설치본으로 교체합니다
   ([WINDOWS.md](WINDOWS.md)).
 - **백업은 직접 해야 합니다.** 자동으로 해 주는 장치가 없습니다.
+- **속도 제한은 프로세스 안에 있습니다.** 한도가 든 버킷을 메모리에 두기
+  때문입니다 — 인스턴스를 둘 이상 띄우면 한도도 따로 세어집니다. 한
+  인스턴스라는 전제([위](#알아두어야-할-한계) 참고)에서는 문제가 되지
+  않습니다.
+- **마이그레이션은 한 번에 하나만.** 서버가 스키마를 고치는 동안 다른
+  프로세스가 같은 데이터베이스를 고치면 서로의 작업을 엎습니다. 배포는
+  서버를 한 대만 띄운 채로 끝내고 나서 나머지를 올리세요.
+- **데스크톱 앱의 서버 주소는 빌드할 때 정해집니다.** `LLACK_SERVER_URL`
+  하나로 번들·CSP·셸에 함께 들어갑니다. 주소가 바뀌면 앱을 다시 빌드해야
+  합니다 — 서버 설정을 고치는 것으로는 바뀌지 않습니다.
 
 ## 확인
 

@@ -16,8 +16,15 @@ use std::time::Duration;
 use reqwest::{Client, StatusCode};
 use url::Url;
 
-/// 기본 API 주소. 프론트엔드 CSP(`connect-src`)와 같은 로컬 백엔드다.
-pub const DEFAULT_API_BASE: &str = "http://127.0.0.1:8000";
+/// 기본 API 주소.
+///
+/// 배포하면 서버 주소가 정해집니다 — 그래서 빌드할 때 정합니다.
+/// `LLACK_SERVER_URL` 이 이 값을 정하고(프런트엔드 번들과 CSP 도 같은
+/// 주소를 씁니다), 없을 때만 개발용 주소로 떨어집니다.
+pub const DEFAULT_API_BASE: &str = match option_env!("LLACK_SERVER_URL") {
+    Some(url) => url,
+    None => "http://127.0.0.1:8000",
+};
 
 /// 백엔드 API 프리픽스(`backend/app/core/config.py` 의 `api_prefix` 와 동일).
 const API_PREFIX: &str = "/api/v1";
@@ -178,4 +185,19 @@ fn label_of(value: &serde_json::Value) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_API_BASE;
+
+    #[test]
+    fn the_default_api_base_is_the_address_the_build_was_given() {
+        // 배포할 때 정한 주소가 그대로 셸에 들어 있어야 합니다 — 프런트엔드가
+        // 말하는 주소와 셸이 말하는 주소가 다르면 알림에 채널 이름이 안 붙습니다.
+        match option_env!("LLACK_SERVER_URL") {
+            Some(url) => assert_eq!(DEFAULT_API_BASE, url),
+            None => assert_eq!(DEFAULT_API_BASE, "http://127.0.0.1:8000"),
+        }
+    }
 }

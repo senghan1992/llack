@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "tauri": "tauri",
-    "app:dev": "tauri dev",
-    "app:build": "tauri build",
+    "app:dev": "node scripts/tauri.mjs dev",
+    "app:build": "node scripts/tauri.mjs build",
     "web": "vite --host 0.0.0.0"
   },
   "dependencies": {

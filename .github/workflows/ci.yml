@@ -32,12 +32,18 @@ jobs:
         working-directory: backend
         run: ruff check app tests scripts
 
-      # 스키마를 관리하는 도구가 따로 없습니다 — 서버가 기동할 때 메타데이터로
-      # 테이블을 만듭니다. 그래서 포맷 검사는 코드가 리포지토리에 맞춰져 있는
-      #지만 확인하는 자리로 씁니다.
       - name: ruff format
         working-directory: backend
         run: ruff format --check .
+
+      # 모델과 리비전이 어긋났는지 봅니다 — 어긋나면 서버를 띄웠을 때
+      # 스키마가 옛 모양으로 남아 사고가 납니다. 여기서 먼저 잡아 둡니다.
+      - name: alembic check
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-secret-value-not-used-in-production
+          DATABASE_URL: sqlite+aiosqlite:///./var/ci.db
+        run: mkdir -p var && alembic upgrade head && alembic check
 
       - name: pytest
         working-directory: backend
@@ -140,9 +146,13 @@ jobs:
 
       # --no-bundle: 이 잡은 셸이 컴파일되는지까지만 봅니다. 설치본은
       # release-windows.yml 이 굽습니다.
+      # 이 잡은 "셸이 컴파일되는가" 만 봅니다(결과물을 올리지 않습니다).
+      # 서버 주소는 설치본에 심히는 값이라 여기서는 자리표시자로 둡니다 —
+      # 실제 배포 주소는 release-windows.yml 이 받습니다.
       - name: 빌드
         working-directory: desktop
+        env:
+          LLACK_SERVER_URL: https://llack.example.com
         run: |
           npm ci
-          npm run build
-          npm run tauri build -- --no-bundle
+          npm run app:build -- --no-bundle

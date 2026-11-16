@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import AppError, VALIDATION_ERROR, not_found, validation_error
+from app.core.errors import VALIDATION_ERROR, AppError, not_found, validation_error
 from app.core.ids import MESSAGE_PREFIX, REACTION_PREFIX, READ_STATE_PREFIX, new_id
 from app.models.base import utcnow
 from app.models.channel import Channel

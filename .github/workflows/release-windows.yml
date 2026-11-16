@@ -59,7 +59,16 @@ jobs:
       #   · nsis — 개인 사용자용 setup.exe
       - name: Tauri 빌드 (MSI + NSIS)
         working-directory: desktop
-        run: npm run build && npm run tauri build
+        env:
+          # 설치본이 말할 서버. 저장소 변수(Repository variable)로 둡니다 —
+          # 배포 주소는 공개 저장소에 남지 않습니다.
+          LLACK_SERVER_URL: ${{ vars.LLACK_SERVER_URL }}
+        run: |
+          if [ -z "$LLACK_SERVER_URL" ]; then
+            echo "::error::저장소 변수 LLACK_SERVER_URL 가 없습니다 — 설치본이 말할 서버 주소입니다"
+            exit 1
+          fi
+          npm run app:build
 
       # 어떤 트리거로 돌든 다운로드 가능한 아티팩트를 남깁니다. 수동 실행에서는
       # 이것이 결과물을 받는 유일한 경로입니다(만료 30일).

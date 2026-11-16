@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, limit_by_user
 from app.core.config import get_settings
 from app.core.errors import AppError, forbidden, validation_error
 from app.core.security import current_user_or_token
@@ -44,6 +44,7 @@ async def upload_file(
     session: DbSession,
     file: UploadFile = File(...),
     workspace_id: str | None = None,
+    _: None = Depends(limit_by_user("upload")),
 ) -> FileOut:
     """Upload a file into a workspace.
 

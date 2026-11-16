@@ -82,11 +82,17 @@ Runtime environment:
 - **Timeouts.** Every REST request is capped at 15 seconds
   (`mobile/lib/services/api_service.dart:ApiService.requestTimeout`) and is
   converted into an `ApiException` rather than hanging the UI.
-- **Credential persistence.** The access token, refresh token, and server base
-  URL are persisted in `SharedPreferences` under the keys `llack.access`,
-  `llack.refresh`, and `llack.api_base`
+- **Credential persistence.** The access token and refresh token are persisted
+  in `SharedPreferences` under the keys `llack.access` and `llack.refresh`
   (`mobile/lib/services/api_service.dart:ApiService.keyAccess`,
-  `ApiService.keyRefresh`, `ApiService.keyApiBase`).
+  `ApiService.keyRefresh`). The server address is **not** stored — it is fixed
+  at build time (see below).
+- **One fixed server address.** The address the app talks to is compiled into
+  the binary with `--dart-define=LLACK_SERVER_URL=…` and read from
+  `ApiService.buildServerUrl`
+  (`mobile/lib/services/api_service.dart:ApiService.buildServerUrl`). Nobody
+  can change it from the UI, so the login screen, the settings sheet and the
+  shared preferences hold no address at all.
 - **Reconnect backoff.** The WebSocket retries on a 5, 5, 5, 8, 16, 30, 30, ...
   second schedule, and the backoff counter is only reset once a connection has
   survived 10 seconds
@@ -130,10 +136,11 @@ Runtime environment:
   sends `{'type': 'ping'}` every 25 seconds, plus `typing` and `read` frames
   (`mobile/lib/services/ws_service.dart:WsService._startPing`,
   `WsService.sendTyping`, `WsService.sendRead`).
-- **Disk.** `SharedPreferences` holds exactly three keys — `llack.access`,
-  `llack.refresh`, `llack.api_base`
+- **Disk.** `SharedPreferences` holds exactly two keys — `llack.access` and
+  `llack.refresh`
   (`mobile/lib/services/api_service.dart:ApiService.setTokens`,
-  `ApiService.setBaseUrl`, `ApiService.clearTokens`).
+  `ApiService.clearTokens`). The server address lives in the binary, not on
+  the disk.
 - **Global state.** `AppState` is the only mutable state container; all its
   mutations are published through `notifyListeners()`
   (`mobile/lib/providers/app_state_core.dart:_AppStateCore._notify`). A
@@ -144,6 +151,25 @@ Runtime environment:
   (`mobile/lib/providers/app_state.dart:AppState.didChangeAppLifecycleState`).
   On WebSocket reconnect the client re-syncs the workspace bootstrap and the
   newest messages (`mobile/lib/providers/app_state_realtime.dart:_resyncAfterReconnect`).
+
+## Building Against a Fixed Server
+
+The server address is compiled into the app. Deployment fixes the address, so
+the app is built with it and there is nothing to change at runtime.
+
+```bash
+flutter build apk   --dart-define=LLACK_SERVER_URL=https://atrium.arche.ai
+flutter build ipa   --dart-define=LLACK_SERVER_URL=https://atrium.arche.ai
+flutter run         --dart-define=LLACK_SERVER_URL=http://192.168.0.10:8000
+```
+
+The same variable name is used by the desktop app (`desktop/scripts/tauri.mjs`),
+so one address configures both clients.
+
+Without the variable the app falls back to a development address — `10.0.2.2` on
+the Android emulator, `127.0.0.1` everywhere else. That fallback is for local
+development only: a real phone cannot reach `127.0.0.1`, which is why the
+address has to be given at build time.
 
 ## System Verification
 

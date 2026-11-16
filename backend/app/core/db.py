@@ -145,12 +145,13 @@ async def ensure_columns() -> None:
 async def ensure_schema() -> None:
     """Make sure the database has the shape the models describe.
 
-    :func:`create_all` creates the tables that are missing but never changes
-    a table that already exists. A database left behind by another version of
-    the app therefore starts up happily and then fails at the first query —
-    and a login that answers "internal server error" is a hard end for the
-    person in front of the screen. This check says what is wrong while there
-    is still someone to read it.
+    Alembic (:mod:`app.core.migrations`) brings the database to the current
+    revision; this check asks a different question — does the live schema
+    still match the models? A database that was edited by hand, or one whose
+    migration did not fully apply, would otherwise start up happily and then
+    fail at the first query — and a login that answers "internal server
+    error" is a hard end for the person in front of the screen. This check
+    says what is wrong while there is still someone to read it.
     """
 
     async with engine.begin() as connection:
@@ -173,7 +174,7 @@ async def ensure_schema() -> None:
             raise SchemaMismatch(
                 "이 데이터베이스는 현재 코드와 맞지 않는 스키마를 가지고 있습니다.\n"
                 + "\n".join(f"  · {problem}" for problem in problems)
-                + "\n이 프로젝트에는 스키마를 옮겨주는 도구가 없습니다."
+                + "\n`make db-migrate` 로 현재 리비전까지 올려 보세요."
                 "\n개발용 SQLite 는 `make db-reset` 으로 파일을 지우고 다시 만들고,"
                 "\nPostgres 는 스키마를 새로 만드세요."
             )

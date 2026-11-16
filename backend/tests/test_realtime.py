@@ -40,6 +40,9 @@ def live_server(tmp_path_factory) -> dict:
     env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_path}"
     env["SECRET_KEY"] = "live-secret-key"
     env["UPLOAD_DIR"] = str(workdir / "uploads")
+    # 이 서버는 모듈 내내 하나가 계속 돕니다 — 계정을 여러 번 만들기
+    # 때문에 주소당 한도가 걸리면 websocket 이 아니라 한도가 문제가 됩니다.
+    env["RATE_LIMIT_ENABLED"] = "false"
 
     process = subprocess.Popen(
         [

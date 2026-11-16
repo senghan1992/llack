@@ -527,7 +527,7 @@
 }
 
 /* the states a person can wear — one green, one amber, one red */
-.presence--online { background: var(--color-accent); }
+.presence--online { background: var(--color-online); }
 .presence--busy { background: var(--color-error); }
 .presence--dnd { background: var(--color-error); }
 .presence--dnd::after {

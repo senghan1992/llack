@@ -34,9 +34,12 @@
 
 백엔드는 **의존 방향이 한쪽**입니다. `api` 와 `realtime` 이 `services` 를 부르고,
 `services` 가 `models` 와 `core` 를 부르며, 올라가는 방향의 호출은 없습니다.
-`models` 의 SQLAlchemy 메타데이터가 곧 DDL의 유일한 출처입니다 — **마이그레이션
-도구가 없고**, 스키마는 기동 시 메타데이터에서 만들어지고 `ensure_schema()` 가
-실제 스키마와 어긋나면 기동 단계에서 실패합니다
+`models` 의 SQLAlchemy 메타데이터가 곧 DDL의 유일한 출처입니다. **Alembic** 이
+그 메타데이터를 따라 리비전으로 기록하고, 서버는 **기동할 때 스스로**
+`upgrade head` 를 합니다 — 배포는 "코드 교체 + 재시작" 한 번으로 끝납니다.
+Alembic 이전에 만들어진 데이터베이스는 데이터를 건드리지 않고 현재 리비전으로
+찍어 줍니다. `ensure_schema()` 는 마지막으로 실제 스키마와 메타데이터가 어긋나면
+기동 단계에서 실패합니다
 ([backend/app/core/README.md](./backend/app/core/README.md)).
 
 클라이언트 셋은 모두 같은 규칙을 공유합니다. REST 접두사는 `/api/v1`, 실시간은
@@ -56,8 +59,8 @@
   `http://127.0.0.1:8000/api/v1/health` 로 이미 떠 있는지 먼저 물어보고, 없으면
   uvicorn 을 띄운 뒤 최대 40회 × 0.25초 health gate 를 밟습니다. 띄운 백엔드는
   `trap cleanup EXIT INT TERM` 으로 종료 때 내려갑니다 — **이미 떠 있던 백엔드는
-  건드리지 않습니다**. `cargo-tauri` 가 있으면 `cargo tauri dev`, 없으면
-  `npm run app:dev`.
+  건드리지 않습니다**. 데스크톱 앱은 항상 `npm run app:dev` 로 띄웁니다 —
+  `desktop/scripts/tauri.mjs` 가 서버 주소를 번들과 CSP 에 함께 심습니다.
 - `Makefile` — `make help` 가 기본 목표입니다. `make setup` / `make dev` /
   `make dev-web` / `make dev-desktop` / `make seed` / `make test` / `make lint` /
   `make format` / `make contrast` / `make build` / `make clean` / `make db-reset` /
@@ -138,16 +141,19 @@
   에 쓰입니다. 기본값 `backend/var/uploads`, 파일당 50MiB, 워크스페이스당 5GiB.
   어떤 메시에도 붙지 않은 업로드는 기본 24시간 뒤 지워집니다
   (`ORPHAN_FILE_HOURS=0` 이면 지우지 않음).
-- **데이터베이스** — 기동 때마다 스키마를 만들고 늘립니다. 개발 DB 는 SQLite
-  한 파일(`backend/llack.db`), 운영은 Postgres. `make db-reset` 으로 SQLite 를
-  지우고 다시 만들 수 있습니다.
+- **데이터베이스** — 기동할 때마다 Alembic 이 스키마를 현재 리비전으로 올립니다.
+  개발 DB 는 SQLite 한 파일(`backend/llack.db`), 운영은 Postgres. `make db-reset`
+  으로 SQLite 를 지우고 다시 만들 수 있고, `make db-migrate` · `make db-current`
+  · `make db-check` 로 리비전을 확인합니다.
 - **네트워크** — 데스크톱 웹뷰는 `${VITE_API_BASE}/api/v1` 로 나가고, 셸은
   `LLACK_API_BASE` / `LLACK_API_TOKEN` 환경변수로 `/health` 와
-  `/api/v1/channels/{id}` 만 부릅니다. 모바일은 `SharedPreferences` 에 토큰과
-  서버 주소를 둡니다.
+  `/api/v1/channels/{id}` 만 부릅니다. 모바일은 `SharedPreferences` 에 토큰만
+  둡니다. 두 앱이 말하는 서버 주소는 **빌드할 때** `LLACK_SERVER_URL` 하나로
+  정해집니다 — 배포 후에는 고정되어 있으니 그때 바꿔도 서버 설정은 손댈
+  필요가 없습니다.
 - **브라우저 저장소** — 데스크톱은 `localStorage` 의 `llack.access`,
   `llack.refresh`, `llack.settings` 를 씁니다. 모바일은 `SharedPreferences` 의
-  `llack.access`, `llack.refresh`, `llack.api_base`.
+  `llack.access`, `llack.refresh`.
 - **OS 알림** — 데스크톱 셸만 OS 알림을 띄웁니다 (`llack://notify` 이벤트).
   브라우저 빌드에서는 조용히 넘어갑니다.
 - **창 상태** — 셸은 `app_config_dir()/window-state.json` 에 창 크기·위치를
@@ -159,7 +165,7 @@
 
 ## System Verification
 
-- Run: `make test` — `cd backend && .venv/bin/pytest -q` (**156 passed**)
+- Run: `make test` — `cd backend && .venv/bin/pytest -q` (**173 passed**)
 - Run: `make lint` — `cd backend && .venv/bin/ruff check app tests scripts`,
   `cd backend && .venv/bin/ruff format --check .`,
   `cd desktop && npm run typecheck`
@@ -227,13 +233,24 @@ npm run app:dev        # Tauri 창으로 실행
 VITE_API_BASE=http://127.0.0.1:8000 npm run dev
 ```
 
+**서버 주소는 빌드할 때 정합니다.** 배포하면 주소가 고정되므로 — 그 주소가
+곧 기준입니다. `LLACK_SERVER_URL` 하나가 프런트엔드 번들, Tauri CSP, Rust 셸에
+함께 들어갑니다. 주소를 바꾸려면 앱을 다시 빌드하면 됩니다.
+
+```bash
+LLACK_SERVER_URL=https://atrium.arche.ai npm run app:build
+```
+
 ### 3. 모바일 앱
 
 ```bash
 cd mobile
 flutter pub get
-flutter run
+flutter run --dart-define=LLACK_SERVER_URL=http://127.0.0.1:8000
 ```
+
+모바일 앱도 서버 주소를 **빌드할 때** 받습니다 — 로그인 화면에서 주소를
+바꿀 수 없습니다. 데스크톱과 같은 `LLACK_SERVER_URL` 이름입니다.
 
 ### 4. 빌드
 
@@ -241,6 +258,14 @@ flutter run
 cd desktop
 npm run build           # 프런트엔드 번들
 npm run app:build       # 데스크톱 설치 파일 (deb, dmg, msi)
+```
+
+설치 파일을 만들 때는 서버 주소를 함께 정합니다.
+
+```bash
+LLACK_SERVER_URL=https://atrium.arche.ai npm run app:build
+cd ../mobile
+flutter build apk --dart-define=LLACK_SERVER_URL=https://atrium.arche.ai
 ```
 
 ---
@@ -406,7 +431,7 @@ make contrast
 
 ```bash
 cd backend
-.venv/bin/pytest -q                  # 156 passed
+.venv/bin/pytest -q                  # 173 passed
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 
@@ -426,3 +451,13 @@ flutter test
 `backend/Dockerfile`은 백엔드 이미지입니다. SQLite는 단일 인스턴스 배포용이고,
 여러 인스턴스로 갈 때는 Postgres를 쓰세요. 데스크톱 앱은 CI에서
 `npm run app:build`로 배포합니다.
+
+배포 순서는 두 단계입니다.
+
+1. **서버** — 코드를 갈아끼우고 다시 켭니다. 서버는 기동할 때 스스로 스키마를
+   현재 리비전까지 올립니다(Alembic) — 따로 손댈 일은 없습니다.
+2. **앱** — `LLACK_SERVER_URL` 로 서버 주소를 정한 뒤 빌드합니다. 주소가 고정
+   된 뒤로는 이 값만 바꾸면 됩니다.
+
+자세한 절차는 [docs/DEPLOY.md](./docs/DEPLOY.md), 윈도우 빌드는
+[docs/WINDOWS.md](./docs/WINDOWS.md) 를 보세요.

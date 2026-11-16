@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 
-from app.api.deps import ChannelAccess, CurrentUser, DbSession
+from app.api.deps import ChannelAccess, CurrentUser, DbSession, limit_by_user
 from app.core.errors import forbidden, not_found, validation_error
 from app.models.channel import KIND_CHANNEL, KIND_DM
 from app.models.workspace import WorkspaceMembership
@@ -24,8 +24,8 @@ from app.services.members import is_channel_member, is_manager
 from app.services.messages import (
     DEFAULT_PAGE_SIZE,
     create_message,
-    list_messages_around,
     list_messages_after,
+    list_messages_around,
     list_messages_with_flags,
     list_pinned,
     mark_read,
@@ -240,6 +240,7 @@ async def post_message(
     channel: ChannelAccess,
     user: CurrentUser,
     session: DbSession,
+    _: None = Depends(limit_by_user("message")),
 ) -> MessageOut:
     target, _ = channel
     message = await create_message(

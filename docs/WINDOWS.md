@@ -87,25 +87,37 @@ npm run tauri icon <로고.png>
 
 ## 배포된 API 를 가리키기
 
-API 주소는 **빌드할 때** 정해집니다. `VITE_API_BASE` 를 주면 됩니다 —
-값이 번들에 그대로 들어갑니다.
+API 주소는 **빌드할 때** 정해집니다. 서버를 배포하면 주소가 고정되므로 —
+그 주소를 한 번 정해 두고 앱을 그 주소로 빌드하면 됩니다.
 
 ```powershell
-$env:VITE_API_BASE = "https://llack.example.com"
+$env:LLACK_SERVER_URL = "https://llack.example.com"
 npm run app:build
 ```
 
 개발 중일 때도 같습니다.
 
 ```powershell
-$env:VITE_API_BASE = "http://127.0.0.1:8000"
+$env:LLACK_SERVER_URL = "http://127.0.0.1:8000"
 npm run app:dev
 ```
 
-### CSP 를 넓혀야 합니다 — 이건 꼭 봐주세요
+`LLACK_SERVER_URL` 하나가 **세 곳**에 들어갑니다.
 
-`desktop/src-tauri/tauri.conf.json` 의 `app.security.csp` 에는 API 주소가
-이미 들어 있습니다. 지금 허용된 대상은 이렇습니다.
+| 들어가는 곳 | 쓰임 |
+| --- | --- |
+| 프런트엔드 번들 (`VITE_API_BASE`) | REST·WebSocket 주소 |
+| Tauri CSP | 그 주소로의 요청과 이미지를 허용 |
+| Rust 셸 | 알림에 붙일 채널 이름을 물을 때 쓰는 주소 |
+
+### CSP 를 손으로 고칠 필요는 없습니다
+
+`desktop/scripts/tauri.mjs` 가 `LLACK_SERVER_URL` 를 읽어 CSP 를 **만들어
+끼워 넣습니다**. `tauri.conf.json` 의 `app.security.csp` 는 기본값이고,
+빌드할 때 그 위에 병합됩니다. 따라서 주소를 바꿀 때 JSON 을 손댈 필요가
+없습니다 — 환경변수만 바꾸고 다시 빌드하세요.
+
+기본값으로 빌드하면 이렇게 허용됩니다.
 
 | directives | 허용된 주소 |
 | --- | --- |
@@ -114,17 +126,14 @@ npm run app:dev
 
 **API 가 이 주소들 바깥에 있으면 앱이 조용히 실패합니다.** 메시지는 안 나가고,
 첨부 미리보기도 안 뜹니다. 네트워크 창에 `Refused to connect … Content Security Policy`
-가 떠 있는 게 그 증상입니다.
+가 떠 있는 게 그 증상입니다. `LLACK_SERVER_URL` 을 빼먹었거나 오타를 낸
+경우입니다 — 위 표와 실제 주소가 같은지 확인하세요.
 
-따라서 API 를 `https://llack.example.com` 에 둘 때는 `tauri.conf.json` 의
-`connect-src` 에 `https://llack.example.com wss://llack.example.com` 을,
-`img-src` 에 `https://llack.example.com` 을 더해야 합니다. 바꾼 뒤 다시
-`npm run app:build` 하세요.
+### 주소를 바꿔도 서버는 그대로입니다
 
-```jsonc
-"connect-src": "'self' ipc: http://ipc.localhost http://127.0.0.1:8000 http://localhost:8000 ws://127.0.0.1:8000 ws://localhost:8000 https://llack.example.com wss://llack.example.com",
-"img-src": "'self' data: blob: asset: http://asset.localhost http://127.0.0.1:8000 http://localhost:8000 https://llack.example.com"
-```
+`LLACK_SERVER_URL` 은 **빌드**할 때 읽습니다. 서버 설정은 손댈 필요가
+없습니다. 앱이 가리키는 주소만 바뀝니다. 서버 주소가 바뀐 다음 배포라면
+앱도 다시 빌드해 주세요.
 
 CORS 도 맞춰야 합니다. 서버의 `CORS_ORIGINS` 에 데스크톱 앱의 오리진이
 들어 있어야 합니다. Tauri 의 오리진은 플랫폼마다 `tauri://localhost`

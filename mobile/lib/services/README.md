@@ -35,8 +35,9 @@ Static constants:
 
 - `static const String keyAccess = 'llack.access'`
 - `static const String keyRefresh = 'llack.refresh'`
-- `static const String keyApiBase = 'llack.api_base'`
 - `static const Duration requestTimeout = Duration(seconds: 15)`
+- `static const String ApiService.buildServerUrl` — the address compiled into
+  the binary with `--dart-define=LLACK_SERVER_URL=…`.
 - `static String ApiService.getDefaultBaseUrl()`
 
 Getters and lifecycle:
@@ -44,7 +45,6 @@ Getters and lifecycle:
 - `String get baseUrl`, `String? get accessToken`, `String? get refreshToken`
 - `String get apiEndpoint` — `'$_baseUrl/api/v1'`
 - `Future<void> init()` — loads base URL and tokens from `SharedPreferences`.
-- `Future<void> setBaseUrl(String url)` — strips trailing slashes, persists.
 - `String absoluteFileUrl(String url)` — makes a relative file path absolute.
 - `Future<void> setTokens(String access, String refresh)` — stores both tokens and fires `onTokensChanged`.
 - `void Function()? onTokensChanged` — public mutable hook, fired when tokens change so the WS can re-attach.
@@ -127,7 +127,8 @@ Seam:
 
 ## Invariants
 
-- `[mobile/lib/services/api_service.dart:ApiService.getDefaultBaseUrl]` Returns `'http://10.0.2.2:8000'` only when `!kIsWeb && Platform.isAndroid`, otherwise returns `'http://127.0.0.1:8000'`.
+- `[mobile/lib/services/api_service.dart:ApiService.getDefaultBaseUrl]` Returns `buildServerUrl` (trailing slashes stripped) when it is not empty; otherwise returns `'http://10.0.2.2:8000'` when `!kIsWeb && Platform.isAndroid`, and `'http://127.0.0.1:8000'` otherwise.
+- `[mobile/lib/services/api_service.dart:ApiService.buildServerUrl]` Read with `String.fromEnvironment('LLACK_SERVER_URL')` — the server address is fixed at build time and cannot be changed from the UI.
 - `[mobile/lib/services/api_service.dart:ApiService._request]` Every request is wrapped in `.timeout(requestTimeout)` (15 seconds); a `TimeoutException` becomes `ApiException(0, 'timeout', ...)` and any other exception becomes `ApiException(0, 'network', ...)`, so the UI never hangs without a response.
 - `[mobile/lib/services/api_service.dart:ApiService._request]` Request headers always contain `'Content-Type': 'application/json'` and `'Accept': 'application/json'`; the `'Authorization': 'Bearer $_accessToken'` header is added only when `_accessToken != null`.
 - `[mobile/lib/services/api_service.dart:ApiService._request]` A 401 response triggers a token refresh and a single retry with `retry: false`, so at most one refresh-and-retry happens per request; the refresh path is only taken when `_refreshToken != null`.
@@ -135,8 +136,7 @@ Seam:
 - `[mobile/lib/services/api_service.dart:ApiService._errorFromResponse]` The error parsing lives in its own helper: `code`/`message` come from the JSON body's `error.code`/`error.message`, otherwise the message comes from the body's `detail` field, falling back to `'error'` and `'요청이 실패했습니다 (<status>)'`. A 401 replaces the message with `_unauthorizedMessage(path, method, message)` and a 409 replaces it with `'이미 존재하는 리소스입니다.'`.
 - `[mobile/lib/services/api_service.dart:ApiService._unauthorizedMessage]` For a POST to a path containing `'/auth/login'` or `'/auth/signup'` the message is `'이메일 또는 비밀번호가 맞지 않습니다.'`; otherwise, if the server message contains any of `'expired'`, `'token'`, `'session'`, `'만료'`, `'세션'`, `'토큰'` (case-insensitive) the server message is kept, else the message is `'세션이 만료되었습니다. 다시 로그인해주세요.'`.
 - `[mobile/lib/services/api_service.dart:ApiService._refreshAccessToken]` Only a 200 response is treated as success; `access_token` and `refresh_token` are stored via `setTokens`, and any non-200 status or thrown exception falls through to `clearTokens()` and returns false.
-- `[mobile/lib/services/api_service.dart:ApiService.init]` The base URL is read from SharedPreferences key `'llack.api_base'` and falls back to `getDefaultBaseUrl()` when absent; tokens are read from `'llack.access'` and `'llack.refresh'`.
-- `[mobile/lib/services/api_service.dart:ApiService.setBaseUrl]` Trailing slashes are stripped with `url.replaceAll(RegExp(r'/+$'), '')` before the URL is stored in memory and persisted.
+- `[mobile/lib/services/api_service.dart:ApiService.init]` The base URL comes from `getDefaultBaseUrl()` and is never read from storage; tokens are read from `'llack.access'` and `'llack.refresh'`.
 - `[mobile/lib/services/api_service.dart:ApiService.absoluteFileUrl]` An empty string is returned unchanged, a string starting with `'http://'` or `'https://'` is returned unchanged, and a relative path is prefixed with `'/'` and concatenated onto `_baseUrl`.
 - `[mobile/lib/services/api_service.dart:ApiService.setTokens]` Both tokens are written to memory and to SharedPreferences, and `onTokensChanged` is invoked afterwards so the WebSocket can be re-attached with the new token.
 - `[mobile/lib/services/api_service.dart:ApiService.getMessages]` The returned tuple is `(messages, hasMore, hasMoreAfter)`, where a missing `'messages'` list defaults to empty and `'has_more'`/`'has_more_after'` default to false; the query always starts with `?limit=$limit` and appends `'&before='`, `'&after='`, `'&around='` only for non-null cursors. The documented cursor semantics are that before/after/around cursors are all exclusive (the reference message is included only for `around`).
@@ -202,7 +202,7 @@ Every request is issued against `Uri.parse('$apiEndpoint$path')` where `apiEndpo
 - `GET /workspaces/$workspaceId/org`; `POST /workspaces/$workspaceId/org/units`; `PATCH /org/units/$unitId`; `DELETE /org/units/$unitId`; `POST /org/units/$unitId/members` body `{user_id}`; `DELETE /org/units/$unitId/members/$userId`; `POST /org/units/$unitId/managers` body `{user_id}`; `DELETE /org/units/$unitId/managers/$userId`.
 - `GET /workspaces/$workspaceId/search?q=..&limit=30`.
 
-Disk: `init` reads the SharedPreferences keys `'llack.api_base'`, `'llack.access'`, `'llack.refresh'`; `setBaseUrl` writes `'llack.api_base'`; `setTokens` writes `'llack.access'` and `'llack.refresh'` and fires `onTokensChanged`; `clearTokens` removes `'llack.access'` and `'llack.refresh'`.
+Disk: `init` reads the SharedPreferences keys `'llack.access'` and `'llack.refresh'`; `setTokens` writes `'llack.access'` and `'llack.refresh'` and fires `onTokensChanged`; `clearTokens` removes `'llack.access'` and `'llack.refresh'`. The server address is never written to disk.
 
 ### Device settings (`mobile/lib/services/device_settings.dart`)
 

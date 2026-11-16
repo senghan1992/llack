@@ -136,6 +136,7 @@
      The states a person can wear. They are states, not decoration: one
      green, one amber, one red — the same three a chat client has used
      for years, so a glance still means something. */
+  --color-online: oklch(60% 0.17 150);
   --color-warn: oklch(72% 0.14 78);
   --warn-wash: oklch(93% 0.055 80);
 
@@ -307,6 +308,7 @@
   --error-wash: oklch(28% 0.06 27);
   --error-ink: oklch(86% 0.08 27);
 
+  --color-online: oklch(72% 0.17 150);
   --color-warn: oklch(80% 0.13 78);
   --warn-wash: oklch(28% 0.05 80);
 

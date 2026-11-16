@@ -21,6 +21,10 @@ DESKTOP="$ROOT/desktop"
 API="http://127.0.0.1:8000"
 MODE="${1:-app}"
 
+# 데스크톱 앱이 말하는 서버. 배포하면 고정되고, 개발 중에는 로컬 백엔드입니다.
+# 이 주소 하나가 프런트엔드 번들·CSP·Rust 셸에 함께 들어갑니다.
+export LLACK_SERVER_URL="${LLACK_SERVER_URL:-$API}"
+
 say() { printf '\033[36m[dev]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[dev] %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -81,7 +85,9 @@ if [ "$MODE" = "mobile" ]; then
   say "Flutter 모바일 앱 실행 (mobile/)"
   cd "$ROOT/mobile"
   need flutter "flutter.dev 에서 Flutter SDK 설치"
-  exec flutter run
+  # 서버 주소는 빌드할 때 정합니다 — 앱 안에서 바꿀 수 없습니다.
+  # 로컬 백엔드를 물어볼 테니 주소를 넘겨 줍니다.
+  exec flutter run --dart-define="LLACK_SERVER_URL=$LLACK_SERVER_URL"
 fi
 
 if [ "$MODE" = "web" ]; then
@@ -91,10 +97,7 @@ if [ "$MODE" = "web" ]; then
 fi
 
 cd "$DESKTOP"
-if command -v cargo-tauri >/dev/null 2>&1; then
-  say "cargo tauri dev 실행 (창이 뜹니다)"
-  cargo tauri dev
-else
-  say "cargo-tauri CLI 가 없어 npm 으로 실행합니다"
-  npm run app:dev
-fi
+# 항상 같은 경로로 띄웁니다 — scripts/tauri.mjs 가 서버 주소를 CSP 와
+# 번들에 함께 심습니다. cargo tauri 로 바로 띄우면 그 주소를 빠뜨립니다.
+say "데스크톱 앱 실행 (창이 뜹니다)"
+npm run app:dev

@@ -417,9 +417,11 @@ class _MainShellState extends State<MainShell> {
               borderRadius: BorderRadius.circular(12),
             ),
             alignment: Alignment.center,
-            child: const Text(
-              'Ll',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
+            child: Image.asset(
+              'assets/brand/symbol-white.png',
+              width: 24,
+              height: 24,
+              fit: BoxFit.contain,
             ),
           ),
           const SizedBox(height: 20),

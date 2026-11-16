@@ -11,6 +11,7 @@ SHELL := /bin/bash
 
 BACKEND  := backend
 DESKTOP  := desktop
+MOBILE   := mobile
 SHELL_DIR := $(DESKTOP)/src-tauri
 
 ## ── 도움말 ────────────────────────────────────────────────────────────
@@ -47,6 +48,14 @@ dev-desktop: ## Tauri 데스크톱 앱 실행 (창이 뜹니다 — 백엔드가
 .PHONY: dev-web
 dev-web: ## 브라우저에서 프런트엔드만 실행 (vite, 127.0.0.1:1420)
 	cd $(DESKTOP) && npm run dev
+
+.PHONY: mobile-run
+mobile-run: ## 모바일 앱 실행 (로컬 백엔드 주소 포함)
+	cd $(MOBILE) && flutter run --dart-define=LLACK_SERVER_URL=$${LLACK_SERVER_URL:-http://127.0.0.1:8000}
+
+.PHONY: mobile-build
+mobile-build: ## 모바일 설치 파일 (apk) — LLACK_SERVER_URL 로 서버 주소 지정
+	cd $(MOBILE) && flutter build apk --dart-define=LLACK_SERVER_URL=$${LLACK_SERVER_URL:?LLACK_SERVER_URL 를 지정하세요}
 
 .PHONY: desktop-headless
 desktop-headless: ## 실제 데스크톱 앱을 Xvfb 위에서 실행하고 스크린샷 (xvfb·ffmpeg 필요)
@@ -95,6 +104,26 @@ clean: ## 빌드 산출물 삭제
 .PHONY: db-reset
 db-reset: ## 개발용 SQLite DB 삭제 (다음 실행 때 자동으로 다시 만들어집니다)
 	rm -f $(BACKEND)/llack.db $(BACKEND)/llack.db-wal $(BACKEND)/llack.db-shm
+
+.PHONY: db-migrate
+db-migrate: ## 스키마를 현재 리비전까지 올리기 (alembic upgrade head)
+	cd $(BACKEND) && .venv/bin/alembic upgrade head
+
+.PHONY: db-current
+db-current: ## 데이터베이스가 지금 어느 리비전인지 보기
+	cd $(BACKEND) && .venv/bin/alembic current
+
+.PHONY: db-history
+db-history: ## 마이그레이션 이력 보기
+	cd $(BACKEND) && .venv/bin/alembic history
+
+.PHONY: db-revision
+db-revision: ## 모델을 바꾸고 나서 마이그레이션 하나 쓰기 — 사용: make db-revision m="설명"
+	cd $(BACKEND) && .venv/bin/alembic revision --autogenerate -m "$(m)"
+
+.PHONY: db-check
+db-check: ## 마이그레이션과 모델이 어긋났는지 보기 (어긋나면 실패)
+	cd $(BACKEND) && .venv/bin/alembic check
 
 ## ── Docker ────────────────────────────────────────────────────────────
 

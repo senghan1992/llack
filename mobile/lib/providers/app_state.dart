@@ -127,26 +127,6 @@ class AppState extends _AppStateWorkspace {
     _notify();
   }
 
-  /// 서버 주소를 바꾸고 WS 를 재연결하며 데이터를 다시 불러온다.
-  Future<void> changeApiBaseUrl(String url) async {
-    await api.setBaseUrl(url);
-    ws.disconnect();
-    if (_currentUser == null || api.accessToken == null) {
-      _notify();
-      return;
-    }
-    _connectWs();
-    await refreshWorkspace();
-    final cid = _activeChannelId;
-    if (cid != null) {
-      await loadMessages(cid);
-    }
-    await loadEvents();
-    await loadProjects();
-    await loadOrg();
-    _notify();
-  }
-
   // ── Auth Actions ─────────────────────────────────────────────
 
   /// 로그인. 실패하면 예외를 다시 던지지 않고 `authError` 로 알린다.

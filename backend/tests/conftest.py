@@ -24,10 +24,24 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.core.db import Base, SessionLocal, engine  # noqa: E402
 from app.core.ids import MEMBER_PREFIX, new_id  # noqa: E402
+from app.core.ratelimit import limiter  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.workspace import WorkspaceMembership  # noqa: E402
 
 API = "/api/v1"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """레이트 리밋은 프로세스 하나가 함께 씁니다.
+
+     서버에서는 그게 맞습니다 — 여러 워커가 같은 한도를 나눠 써야 하니까요.
+     테스트에서는 첫 테스트가 남긴 기억이 다음 테스트를 죽이므로, 테스트
+    마다 지웁니다.
+    """
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 @pytest.fixture
