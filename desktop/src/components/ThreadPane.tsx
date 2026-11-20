@@ -1,6 +1,8 @@
+import { useLayoutEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { MessageRow } from "./MessageRow";
 import { Composer } from "./Composer";
+import { useStore } from "../store/useStore";
 import type { Channel, Message } from "../lib/types";
 
 interface Props {
@@ -30,6 +32,26 @@ export function ThreadPane({
   onDelete,
   onPin,
 }: Props) {
+  const enteringIds = useStore((s) => s.enteringIds);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const rootId = root?.id ?? null;
+  const lastReplyId = replies[replies.length - 1]?.id ?? null;
+  const prevRootIdRef = useRef<string | null>(rootId);
+  const prevLastReplyIdRef = useRef<string | null>(lastReplyId);
+
+  useLayoutEffect(() => {
+    const rootChanged = prevRootIdRef.current !== rootId;
+    const prevLastId = prevLastReplyIdRef.current;
+    prevRootIdRef.current = rootId;
+    prevLastReplyIdRef.current = lastReplyId;
+
+    const scroller = bodyRef.current;
+    if (!scroller || rootChanged || !lastReplyId || lastReplyId === prevLastId) return;
+    if (enteringIds[lastReplyId]) {
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+    }
+  }, [rootId, lastReplyId, enteringIds]);
+
   if (!root) return null;
 
   return (
@@ -46,7 +68,7 @@ export function ThreadPane({
         </button>
       </header>
 
-      <div className="scroll thread__body">
+      <div ref={bodyRef} className="scroll thread__body">
         <MessageRow
           message={root}
           grouped={false}
@@ -76,6 +98,7 @@ export function ThreadPane({
             onPin={onPin}
             replyScope="thread"
             flat
+            entering={Boolean(enteringIds[reply.id])}
           />
         ))}
       </div>

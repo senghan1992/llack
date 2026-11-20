@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, Hash, MessageSquare } from "lucide-react";
 import { MessageRow } from "./MessageRow";
 import { dayLabel, isSameDay } from "../lib/format";
+import { useStore } from "../store/useStore";
 import type { Channel, Message } from "../lib/types";
 
 interface Props {
@@ -35,18 +36,51 @@ export function MessageList({
   onPin,
   ownId,
 }: Props) {
+  const enteringIds = useStore((s) => s.enteringIds);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    setCount(messages.length);
-  }, [messages.length]);
+  const channelId = channel?.id ?? null;
+  const lastMessage = messages[messages.length - 1];
+  const lastId = lastMessage?.id ?? null;
+  const prevChannelIdRef = useRef<string | null>(null);
+  const prevLastIdRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
-    if (atBottom) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [count, atBottom]);
+    const channelChanged = prevChannelIdRef.current !== channelId;
+    const prevLastId = prevLastIdRef.current;
+    prevChannelIdRef.current = channelId;
+    prevLastIdRef.current = lastId;
+
+    const scroller = scrollRef.current;
+    if (channelChanged) {
+      setAtBottom(true);
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      else bottomRef.current?.scrollIntoView({ block: "end" });
+      return;
+    }
+
+    if (!lastMessage || !lastId || lastId === prevLastId) return;
+
+    const isEntering = Boolean(enteringIds[lastId]);
+    const isOwn = lastMessage.user_id === ownId;
+    if (isEntering) {
+      if (atBottom || isOwn) {
+        if (!atBottom) setAtBottom(true);
+        if (scroller) {
+          scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+        } else {
+          bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+        }
+      }
+      return;
+    }
+
+    if (atBottom) {
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      else bottomRef.current?.scrollIntoView({ block: "end" });
+    }
+  }, [channelId, lastId, lastMessage, enteringIds, atBottom, ownId]);
 
   const onScroll = () => {
     const node = scrollRef.current;
@@ -161,6 +195,7 @@ export function MessageList({
                   message={message}
                   grouped={grouped}
                   own={message.user_id === ownId}
+                  entering={Boolean(enteringIds[message.id])}
                   onOpenThread={onOpenThread}
                   onReact={onReact}
                   onEdit={onEdit}

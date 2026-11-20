@@ -246,6 +246,10 @@ abstract class _AppStateMessages extends _AppStateRealtime {
         inline: replyTo != null,
         attachmentIds: attachmentIds,
       );
+      final existed = (_messages[cid] ?? const []).any((m) => m.id == msg.id);
+      if (!existed && cid == _activeChannelId) {
+        _markMessageEntering(msg.id);
+      }
       _upsertMessage(cid, msg);
       _notify();
       return true;
@@ -286,6 +290,10 @@ abstract class _AppStateMessages extends _AppStateRealtime {
       if (_threadRoot?.id != root.id) return false;
       // WS 'message.created' 가 먼저 도착할 수 있다.
       // id 로 중복을 막아야 어느 쪽이 먼저 오든 답글이 1개로 보인다.
+      final existed = _threadReplies.any((r) => r.id == reply.id);
+      if (!existed) {
+        _markMessageEntering(reply.id);
+      }
       _threadReplies = upsertById(_threadReplies, reply, (r) => r.id);
       // replyCount 는 서버가 WS 로 알려준다 (로컬에서 더하면 2씩 증가한다).
       _notify();
@@ -390,6 +398,9 @@ abstract class _AppStateMessages extends _AppStateRealtime {
   }
 
   void closeThread() {
+    for (final reply in _threadReplies) {
+      _enteringMessageAt.remove(reply.id);
+    }
     _threadRoot = null;
     _threadReplies = [];
     _isLoadingReplies = false;
@@ -412,8 +423,13 @@ abstract class _AppStateMessages extends _AppStateRealtime {
     final previous = _typingChannelId;
     if (previous != null && previous != channelId) {
       ws.sendTyping(previous, on: false);
+      _typingChannelId = null;
     }
-    _typingChannelId = channelId;
+    if (on) {
+      _typingChannelId = channelId;
+    } else if (_typingChannelId == channelId) {
+      _typingChannelId = null;
+    }
     ws.sendTyping(channelId, on: on);
   }
 
@@ -436,6 +452,11 @@ abstract class _AppStateMessages extends _AppStateRealtime {
       return;
     }
     if (!sameChannel) {
+      if (_typingChannelId != null && _typingChannelId != channelId) {
+        ws.sendTyping(_typingChannelId!, on: false);
+        _typingChannelId = null;
+      }
+      _enteringMessageAt.clear();
       // 다른 채널로 옮기면 확인이 안 올 수도 있는 읽음 확인 플래그를 정리한다.
       _readAckPending.clear();
     }

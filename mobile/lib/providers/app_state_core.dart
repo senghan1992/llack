@@ -1,5 +1,17 @@
 part of 'app_state.dart';
 
+class _TypingEntry {
+  final String userId;
+  final String name;
+  final DateTime updatedAt;
+
+  const _TypingEntry({
+    required this.userId,
+    required this.name,
+    required this.updatedAt,
+  });
+}
+
 /// 모든 탭이 공유하는 상태의 뼈대.
 ///
 /// 필드와 getter, 인증, 그리고 다른 영역에서도 쓰는 헬퍼만 여기에 둔다.
@@ -88,9 +100,14 @@ abstract class _AppStateCore extends ChangeNotifier with WidgetsBindingObserver 
 
   Message? _replyToMessage;
 
-  /// 채널 → (이름 → 마지막 입력 시각). 5초가 지나면 자동으로 만료된다.
-  final Map<String, Map<String, DateTime>> _typing = {};
+  /// 채널 → (userId → 마지막 입력 시각). 5초가 지나면 자동으로 만료된다.
+  final Map<String, Map<String, _TypingEntry>> _typing = {};
+  final Map<String, Timer> _typingTimers = {};
+  final Map<String, DateTime> _enteringMessageAt = {};
   String? _typingChannelId;
+
+  static const Duration _typingTtl = Duration(seconds: 5);
+  static const Duration _enteringTtl = Duration(seconds: 2);
 
   final Map<String, Presence> _presence = {};
 
@@ -203,9 +220,97 @@ abstract class _AppStateCore extends ChangeNotifier with WidgetsBindingObserver 
     final users = _typing[cid];
     if (users == null) return const [];
     final now = DateTime.now();
-    users.removeWhere((_, ts) => now.difference(ts) > const Duration(seconds: 5));
+    users.removeWhere((userId, entry) {
+      final expired = now.difference(entry.updatedAt) > _typingTtl;
+      if (expired) {
+        _typingTimers.remove('$cid:$userId')?.cancel();
+      }
+      return expired;
+    });
     if (users.isEmpty) return const [];
-    return users.keys.toList();
+    return users.values.map((entry) => entry.name).toList();
+  }
+
+  /// 실시간으로 도착했거나 방금 전송한 새 메시지인지 판정한다.
+  bool shouldAnimateMessage(String messageId) {
+    final at = _enteringMessageAt[messageId];
+    if (at == null) return false;
+    if (DateTime.now().difference(at) > _enteringTtl) {
+      _enteringMessageAt.remove(messageId);
+      return false;
+    }
+    return true;
+  }
+
+  /// 등장 애니메이션을 시작한 뒤 중복 재생을 막기 위해 표시를 지운다.
+  void markMessageAnimated(String messageId) {
+    _enteringMessageAt.remove(messageId);
+  }
+
+  void _markMessageEntering(String messageId) {
+    final now = DateTime.now();
+    _enteringMessageAt.removeWhere((_, ts) => now.difference(ts) > _enteringTtl);
+    _enteringMessageAt[messageId] = now;
+  }
+
+  void _setTypingUser(String channelId, String userId, String name) {
+    final key = '$channelId:$userId';
+    _typingTimers.remove(key)?.cancel();
+    final users = _typing.putIfAbsent(channelId, () => {});
+    users[userId] = _TypingEntry(
+      userId: userId,
+      name: name,
+      updatedAt: DateTime.now(),
+    );
+    _typingTimers[key] = Timer(_typingTtl, () {
+      _typingTimers.remove(key);
+      _clearTypingUser(channelId, userId);
+    });
+    _notify();
+  }
+
+  void _clearTypingUser(String channelId, String userId, {bool notify = true}) {
+    final key = '$channelId:$userId';
+    _typingTimers.remove(key)?.cancel();
+    final users = _typing[channelId];
+    if (users == null) return;
+    final removed = users.remove(userId);
+    if (users.isEmpty) {
+      _typing.remove(channelId);
+    }
+    if (removed != null && notify) {
+      _notify();
+    }
+  }
+
+  void _clearTypingForUserEverywhere(String userId, {bool notify = true}) {
+    var changed = false;
+    for (final channelId in _typing.keys.toList()) {
+      final key = '$channelId:$userId';
+      _typingTimers.remove(key)?.cancel();
+      final users = _typing[channelId];
+      if (users != null && users.remove(userId) != null) {
+        changed = true;
+        if (users.isEmpty) {
+          _typing.remove(channelId);
+        }
+      }
+    }
+    if (changed && notify) {
+      _notify();
+    }
+  }
+
+  void _clearAllTyping({bool notify = false}) {
+    for (final timer in _typingTimers.values) {
+      timer.cancel();
+    }
+    _typingTimers.clear();
+    if (_typing.isEmpty) return;
+    _typing.clear();
+    if (notify) {
+      _notify();
+    }
   }
 
   Presence getPresence(String userId) => _presence[userId] ?? Presence.offline;
@@ -338,6 +443,9 @@ abstract class _AppStateCore extends ChangeNotifier with WidgetsBindingObserver 
   Future<void> logout() async {
     ws.disconnect();
     await api.clearTokens();
+    _clearAllTyping();
+    _enteringMessageAt.clear();
+    _typingChannelId = null;
     // 세션이 끝났으므로 다음 로그인에서는 다시 "첫 hello = 재동기화 없음" 이다.
     _hasSeenHello = false;
     _currentUser = null;

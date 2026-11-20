@@ -1,5 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Channel } from "../lib/types";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Channel, Message, User } from "../lib/types";
 
 /** localStorage 가 없는 환경(node)에서 도는 테스트라 흉내를 낸다. */
 function stubStorage() {
@@ -16,10 +16,12 @@ function stubStorage() {
 }
 
 let useStore: typeof import("./useStore").useStore;
+let handleRealtimeEvent: typeof import("./useStore").handleRealtimeEvent;
+let resetRealtimeTimers: typeof import("./useStore").resetRealtimeTimers;
 
 beforeAll(async () => {
   stubStorage();
-  ({ useStore } = await import("./useStore"));
+  ({ useStore, handleRealtimeEvent, resetRealtimeTimers } = await import("./useStore"));
 });
 
 function channel(id: string, over: Partial<Channel> = {}): Channel {
@@ -44,17 +46,26 @@ function channel(id: string, over: Partial<Channel> = {}): Channel {
 }
 
 beforeEach(() => {
+  resetRealtimeTimers();
   useStore.setState({
+    user: null,
     channels: [],
     activeId: null,
     recentRooms: [],
     drafts: {},
     messages: {},
+    typing: {},
+    enteringIds: {},
     // The rooms of this test are not on a server: the network is not the
     // test's business.
     loadMessages: vi.fn(async () => undefined),
     markRead: vi.fn(),
   });
+});
+
+afterEach(() => {
+  resetRealtimeTimers();
+  vi.useRealTimers();
 });
 
 describe("stepRoom", () => {
@@ -180,5 +191,155 @@ describe("drafts", () => {
     useStore.getState().setDraft("general", "");
 
     expect(useStore.getState().drafts.general).toBeUndefined();
+  });
+});
+
+function makeUser(id: string, name: string): User {
+  return {
+    id,
+    email: `${id}@hanbit.co.kr`,
+    name,
+    title: null,
+    avatar_color: null,
+    avatar_url: null,
+    presence: "online",
+    last_seen_at: null,
+    created_at: "",
+  };
+}
+
+function makeMessage(id: string, channelId: string, user: User): Message {
+  return {
+    id,
+    channel_id: channelId,
+    user_id: user.id,
+    author: user,
+    body: `message ${id}`,
+    kind: "text",
+    parent_id: null,
+    reply_to_id: null,
+    reply_to: null,
+    inline: false,
+    created_at: "2026-11-20T09:00:00Z",
+    edited_at: null,
+    deleted_at: null,
+    reply_count: 0,
+    last_reply_at: null,
+    pinned: false,
+    reactions: [],
+    attachments: [],
+  };
+}
+
+describe("typing and entering messages", () => {
+  it("tracks typing users, ignores self, and expires after 5 seconds", () => {
+    vi.useFakeTimers();
+    const me = makeUser("me", "나");
+    useStore.setState({ user: me, activeId: "general" });
+
+    handleRealtimeEvent({
+      type: "typing",
+      channel_id: "general",
+      user_id: "me",
+      name: "나",
+      on: true,
+    });
+    expect(useStore.getState().typing.general).toBeUndefined();
+
+    handleRealtimeEvent({
+      type: "typing",
+      channel_id: "general",
+      user_id: "u2",
+      name: "김현진",
+      on: true,
+    });
+    expect(useStore.getState().typing.general).toEqual([{ user_id: "u2", name: "김현진" }]);
+
+    vi.advanceTimersByTime(4999);
+    expect(useStore.getState().typing.general).toHaveLength(1);
+
+    vi.advanceTimersByTime(1);
+    expect(useStore.getState().typing.general).toEqual([]);
+  });
+
+  it("clears typing on message.created and marks active-channel live messages as entering", () => {
+    vi.useFakeTimers();
+    const me = makeUser("me", "나");
+    const other = makeUser("u2", "김현진");
+    useStore.setState({
+      user: me,
+      activeId: "general",
+      channels: [channel("general"), channel("random")],
+      messages: { general: [], random: [] },
+    });
+
+    handleRealtimeEvent({
+      type: "typing",
+      channel_id: "general",
+      user_id: other.id,
+      name: other.name,
+      on: true,
+    });
+    expect(useStore.getState().typing.general).toHaveLength(1);
+
+    handleRealtimeEvent({
+      type: "message.created",
+      message: makeMessage("m1", "general", other),
+    });
+    expect(useStore.getState().typing.general).toEqual([]);
+    expect(useStore.getState().enteringIds.m1).toBe(true);
+
+    // Inactive channel messages do not animate on arrival.
+    handleRealtimeEvent({
+      type: "message.created",
+      message: makeMessage("m2", "random", other),
+    });
+    expect(useStore.getState().enteringIds.m2).toBeUndefined();
+
+    vi.advanceTimersByTime(600);
+    expect(useStore.getState().enteringIds.m1).toBeUndefined();
+  });
+
+  it("clears typing across channels when a user goes offline and clears entering on channel switch", async () => {
+    const me = makeUser("me", "나");
+    const other = makeUser("u2", "김현진");
+    useStore.setState({
+      user: me,
+      activeId: "general",
+      channels: [channel("general"), channel("random")],
+      messages: { general: [], random: [] },
+    });
+
+    handleRealtimeEvent({
+      type: "typing",
+      channel_id: "general",
+      user_id: other.id,
+      name: other.name,
+      on: true,
+    });
+    handleRealtimeEvent({
+      type: "typing",
+      channel_id: "random",
+      user_id: other.id,
+      name: other.name,
+      on: true,
+    });
+
+    handleRealtimeEvent({
+      type: "presence",
+      user_id: other.id,
+      presence: "offline",
+    });
+    expect(useStore.getState().typing.general).toEqual([]);
+    expect(useStore.getState().typing.random).toEqual([]);
+
+    handleRealtimeEvent({
+      type: "message.created",
+      message: makeMessage("m3", "general", other),
+    });
+    expect(useStore.getState().enteringIds.m3).toBe(true);
+
+    await useStore.getState().openChannel("random");
+    expect(useStore.getState().enteringIds).toEqual({});
   });
 });

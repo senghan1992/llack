@@ -4,6 +4,7 @@ import '../../models/models.dart';
 import '../../providers/app_state.dart';
 import '../../theme/llack_colors.dart';
 import '../../theme/llack_typography.dart';
+import '../../widgets/animated_message_entry.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/message_composer.dart';
 import 'message_actions.dart';
@@ -123,15 +124,20 @@ class _ThreadScreenState extends State<ThreadScreen> {
                         )
                       else
                         ...replies.map((reply) {
-                          return MessageBubble(
-                            message: reply,
-                            isMine: reply.userId == myId,
-                            fileUrlResolver: state.api.absoluteFileUrl,
-                            onToggleReaction: (emoji) => state.toggleReaction(reply, emoji),
-                            onTogglePin: () => state.togglePin(reply),
-                            onEdit: (newBody) => state.editMessage(reply.id, newBody),
-                            onDelete: () =>
-                                MessageActions.deleteMessage(innerCtx, reply, reply.channelId),
+                          return AnimatedMessageEntry(
+                            key: ValueKey(reply.id),
+                            animate: state.shouldAnimateMessage(reply.id),
+                            onAnimationStarted: () => state.markMessageAnimated(reply.id),
+                            child: MessageBubble(
+                              message: reply,
+                              isMine: reply.userId == myId,
+                              fileUrlResolver: state.api.absoluteFileUrl,
+                              onToggleReaction: (emoji) => state.toggleReaction(reply, emoji),
+                              onTogglePin: () => state.togglePin(reply),
+                              onEdit: (newBody) => state.editMessage(reply.id, newBody),
+                              onDelete: () =>
+                                  MessageActions.deleteMessage(innerCtx, reply, reply.channelId),
+                            ),
                           );
                         }),
                     ],

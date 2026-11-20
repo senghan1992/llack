@@ -44,6 +44,8 @@ interface Props {
   hideThread?: boolean;
   /** Put the avatar on the name line instead of in a column of its own. */
   flat?: boolean;
+  /** Play the entrance rise animation when arriving live. */
+  entering?: boolean;
 }
 
 /** A quoted message is a line, never a paragraph. */
@@ -207,6 +209,7 @@ export function MessageRow({
   replyScope = "channel",
   hideThread = false,
   flat = false,
+  entering = false,
 }: Props) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
@@ -355,7 +358,7 @@ export function MessageRow({
     <article
       ref={rowRef}
       onPointerEnter={placeTools}
-      className={`msg${grouped ? " msg--grouped" : ""}${flat ? " msg--flat" : ""}${own ? " msg--mine" : ""}`}
+      className={`msg${grouped ? " msg--grouped" : ""}${flat ? " msg--flat" : ""}${own ? " msg--mine" : ""}${entering ? " msg--enter" : ""}`}
       id={message.id}
     >
       {flat || own ? null : (

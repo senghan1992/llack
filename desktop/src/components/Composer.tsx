@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CornerUpLeft, Paperclip, Send, Smile, X } from "lucide-react";
 import { api, ApiError, fileUrl } from "../lib/api";
 import { QUICK_REACTIONS } from "../lib/markdown";
@@ -26,6 +26,10 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
+  const lastTypingSentAtRef = useRef(0);
+  const onTypingRef = useRef(onTyping);
+  onTypingRef.current = onTyping;
 
   useEffect(() => {
     if (channel?.id) inputRef.current?.focus();
@@ -48,6 +52,25 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
     else setTyped(next);
   };
 
+  const stopTyping = useCallback((notifyFn?: (on: boolean) => void) => {
+    if (typingTimer.current) {
+      clearTimeout(typingTimer.current);
+      typingTimer.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      lastTypingSentAtRef.current = 0;
+      (notifyFn ?? onTypingRef.current)(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const channelOnTyping = onTypingRef.current;
+    return () => {
+      stopTyping(channelOnTyping);
+    };
+  }, [channelId, stopTyping]);
+
   useEffect(() => {
     const node = inputRef.current;
     if (!node) return;
@@ -63,11 +86,28 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
       await onSend(body, files.map((f) => f.id));
       write("");
       setFiles([]);
-      onTyping(false);
+      stopTyping();
     } finally {
       setSending(false);
       inputRef.current?.focus();
     }
+  };
+
+  const notifyTyping = (next: string) => {
+    if (!next.trim()) {
+      stopTyping();
+      return;
+    }
+    const now = Date.now();
+    if (!isTypingRef.current || now - lastTypingSentAtRef.current >= 2000) {
+      isTypingRef.current = true;
+      lastTypingSentAtRef.current = now;
+      onTypingRef.current(true);
+    }
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => {
+      stopTyping();
+    }, 3000);
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -78,10 +118,9 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
   };
 
   const onChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    write(event.target.value);
-    onTyping(true);
-    if (typingTimer.current) clearTimeout(typingTimer.current);
-    typingTimer.current = setTimeout(() => onTyping(false), 2500);
+    const next = event.target.value;
+    write(next);
+    notifyTyping(next);
   };
 
   const pickFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +151,7 @@ export function Composer({ channel, threadRoot, onSend, onTyping, onCancelThread
     const start = node.selectionStart ?? value.length;
     const next = `${value.slice(0, start)}${text}${value.slice(node.selectionEnd ?? start)}`;
     write(next);
+    notifyTyping(next);
     setEmojiAnchor(null);
     requestAnimationFrame(() => {
       node.focus();

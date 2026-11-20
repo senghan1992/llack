@@ -5,6 +5,7 @@ import '../theme/llack_colors.dart';
 import '../theme/llack_theme.dart';
 import '../theme/llack_typography.dart';
 import 'message_markdown.dart';
+import 'typing_indicator.dart';
 
 class MessageComposer extends StatefulWidget {
   /// 메시지를 보내고 성공 여부를 돌려준다. (false 면 전송 실패)
@@ -26,6 +27,8 @@ class MessageComposer extends StatefulWidget {
   final String initialText;
 
   final ValueChanged<bool>? onTyping;
+  final List<String> typingUsers;
+  final bool reserveTypingSpace;
   final Message? replyTo;
   final VoidCallback? onCancelReply;
   final String hintText;
@@ -38,6 +41,8 @@ class MessageComposer extends StatefulWidget {
     this.onChanged,
     this.initialText = '',
     this.onTyping,
+    this.typingUsers = const [],
+    this.reserveTypingSpace = false,
     this.replyTo,
     this.onCancelReply,
     this.hintText = '메시지 보내기...',
@@ -66,6 +71,10 @@ class _MessageComposerState extends State<MessageComposer> {
   bool _canSend = false;
   bool _isSending = false;
   Timer? _typingTimer;
+  Timer? _typingThrottleTimer;
+  bool _isTyping = false;
+  bool _typingThrottled = false;
+  bool _suppressTyping = false;
 
   /// 마지막으로 알린 글자. (선택이 움직일 때는 알리지 않는다)
   String _lastText = '';
@@ -93,19 +102,42 @@ class _MessageComposerState extends State<MessageComposer> {
     }
   }
 
+  void _stopTyping() {
+    _typingTimer?.cancel();
+    _typingTimer = null;
+    _typingThrottleTimer?.cancel();
+    _typingThrottleTimer = null;
+    _typingThrottled = false;
+    if (_isTyping) {
+      _isTyping = false;
+      widget.onTyping?.call(false);
+    }
+  }
+
   void _handleTextChanged() {
     final text = _controller.text;
-    if (text != _lastText) {
+    final changed = text != _lastText;
+    if (changed) {
       _lastText = text;
       widget.onChanged?.call(text);
     }
     _updateCanSend();
-    if (widget.onTyping != null) {
-      widget.onTyping!(true);
+    if (changed && !_suppressTyping && widget.onTyping != null) {
+      if (text.trim().isEmpty) {
+        _stopTyping();
+        return;
+      }
+      if (!_isTyping || !_typingThrottled) {
+        _isTyping = true;
+        _typingThrottled = true;
+        _typingThrottleTimer?.cancel();
+        _typingThrottleTimer = Timer(const Duration(seconds: 2), () {
+          _typingThrottled = false;
+        });
+        widget.onTyping!(true);
+      }
       _typingTimer?.cancel();
-      _typingTimer = Timer(const Duration(seconds: 3), () {
-        widget.onTyping?.call(false);
-      });
+      _typingTimer = Timer(const Duration(seconds: 3), _stopTyping);
     }
   }
 
@@ -151,13 +183,14 @@ class _MessageComposerState extends State<MessageComposer> {
     if (!mounted) return;
 
     if (ok) {
+      _suppressTyping = true;
       _controller.clear();
+      _suppressTyping = false;
       setState(() {
         _attachments.clear();
         _showEmojiGrid = false;
       });
-      _typingTimer?.cancel();
-      widget.onTyping?.call(false);
+      _stopTyping();
     } else {
       // 전송에 실패하면 지운 글은 되살리고 사용자에게 알린다.
       _controller.text = text;
@@ -242,7 +275,7 @@ class _MessageComposerState extends State<MessageComposer> {
 
   @override
   void dispose() {
-    _typingTimer?.cancel();
+    _stopTyping();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -253,6 +286,7 @@ class _MessageComposerState extends State<MessageComposer> {
     // 보낼 방법이 하나도 없으면 전송할 수 없다.
     final canSendAtAll = widget.onSend != null || widget.onSendWithAttachments != null;
     final sendEnabled = _canSend && !_isSending && canSendAtAll;
+    final showTypingArea = widget.reserveTypingSpace || widget.typingUsers.isNotEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -272,7 +306,7 @@ class _MessageComposerState extends State<MessageComposer> {
             if (_attachments.isNotEmpty) _buildAttachmentChips(),
             if (_showEmojiGrid) _buildEmojiGrid(),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: EdgeInsets.fromLTRB(12, 8, 12, showTypingArea ? 4 : 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -336,6 +370,14 @@ class _MessageComposerState extends State<MessageComposer> {
                 ],
               ),
             ),
+            if (showTypingArea)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: TypingIndicator(
+                  typingUsers: widget.typingUsers,
+                  reserveSpace: widget.reserveTypingSpace,
+                ),
+              ),
           ],
         ),
       ),

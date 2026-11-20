@@ -775,6 +775,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                             run++;
                                           }
                                           return ChatMessageItem(
+                                            key: ValueKey(msg.id),
                                             message: msg,
                                             isMine: isMine,
                                             showDateHeader: showDateHeader,
@@ -788,12 +789,16 @@ class _ChatScreenState extends State<ChatScreen> {
                                         }
 
                                         return ChatMessageItem(
+                                          key: ValueKey(msg.id),
                                           message: msg,
                                           isMine: isMine,
                                           showDateHeader: showDateHeader,
                                           // 점프 대상에만 키를 붙인다
                                           jumpKey: msg.id == focusId ? _jumpKey : null,
                                           highlight: msg.id == _highlightedMessageId,
+                                          animateEntrance: state.shouldAnimateMessage(msg.id),
+                                          onEntranceAnimated: () =>
+                                              state.markMessageAnimated(msg.id),
                                           fileUrlResolver: state.api.absoluteFileUrl,
                                           onOpenThread: () => _openThread(context, msg),
                                           onReplyInline: () => state.setReplyTo(msg),
@@ -825,21 +830,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
 
-            // Typing indicator
-            if (typingUsers.isNotEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Text(
-                  '${typingUsers.join(', ')}님이 입력 중입니다...',
-                  style: LlackTypography.caption.copyWith(
-                    fontStyle: FontStyle.italic,
-                    color: LlackColors.accent,
-                  ),
-                ),
-              ),
-
-            // Composer
+            // Composer (하단에 실시간 타이핑 표시줄 포함)
             KeyedSubtree(
               // 입력창을 찾기 위한 키 (임시저장을 연결할 때 쓴다)
               key: _composerKey,
@@ -849,6 +840,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 key: ValueKey('composer-$channelId-$_composerGeneration'),
                 // 채널마다 작성 중인 글을 따로 남긴다.
                 initialText: _pendingDraft,
+                typingUsers: typingUsers,
+                reserveTypingSpace: true,
                 replyTo: state.replyToMessage,
                 onCancelReply: state.clearReplyTo,
                 // 채널마다 작성 중인 글을 따로 남긴다.

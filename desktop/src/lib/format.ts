@@ -149,3 +149,11 @@ export function mentionsUser(body: string, name: string): boolean {
   const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`@${escaped}(?![\\w가-힯])`).test(body);
 }
+
+/** Format active typers into a concise Korean status line. */
+export function formatTyping(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return `${names[0]}님이 입력 중입니다`;
+  if (names.length === 2) return `${names[0]}, ${names[1]}님이 입력 중입니다`;
+  return `${names[0]}, ${names[1]} 외 ${names.length - 2}명이 입력 중입니다`;
+}

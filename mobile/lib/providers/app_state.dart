@@ -25,6 +25,10 @@ class AppState extends _AppStateWorkspace {
     ws.onStatusChanged = (connected, error) {
       _isConnected = connected;
       _connectionError = error;
+      if (!connected) {
+        _clearAllTyping(notify: false);
+        _typingChannelId = null;
+      }
       // "일시적 단절" 과 "인증 만료" 를 구분한다.
       _isSessionExpired = ws.isAuthExpired;
       _notify();
@@ -48,6 +52,8 @@ class AppState extends _AppStateWorkspace {
   @override
   void dispose() {
     _disposed = true;
+    _clearAllTyping();
+    _enteringMessageAt.clear();
     WidgetsBinding.instance.removeObserver(this);
     ws.removeListener(_handleWsEvent);
     ws.onStatusChanged = null;
@@ -223,6 +229,9 @@ class AppState extends _AppStateWorkspace {
 
   Future<void> selectWorkspace(Workspace workspace) async {
     if (_activeWorkspace?.id == workspace.id) return;
+    _clearAllTyping();
+    _enteringMessageAt.clear();
+    _typingChannelId = null;
     _activeWorkspace = workspace;
     _activeChannelId = null;
     _messages.clear();

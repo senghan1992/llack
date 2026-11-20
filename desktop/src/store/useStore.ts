@@ -118,6 +118,8 @@ interface StoreState {
   /** The message being answered, and the surface the answer is written in. */
   replyTo: { message: Message; scope: ReplyScope } | null;
   typing: Record<string, TypingEntry[]>;
+  /** Message IDs currently playing the live entrance animation. */
+  enteringIds: Record<string, true>;
   dialog: DialogKind;
   /** The channel a dialog acts on, when it is not the open one. */
   dialogTarget: string | null;
@@ -494,6 +496,96 @@ function pickUnread(
   return null;
 }
 
+const TYPING_TTL_MS = 5000;
+const ENTERING_TTL_MS = 600;
+const typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const enteringTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let typingChannelId: string | null = null;
+
+function clearTypingEntry(channelId: string, userId: string): void {
+  const key = `${channelId}:${userId}`;
+  const timer = typingTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    typingTimers.delete(key);
+  }
+  const state = useStore.getState();
+  const list = state.typing[channelId];
+  if (!list || !list.some((t) => t.user_id === userId)) return;
+  useStore.setState({
+    typing: {
+      ...state.typing,
+      [channelId]: list.filter((t) => t.user_id !== userId),
+    },
+  });
+}
+
+function clearTypingForUser(userId: string): void {
+  const state = useStore.getState();
+  let nextTyping: Record<string, TypingEntry[]> | null = null;
+  for (const [channelId, list] of Object.entries(state.typing)) {
+    const key = `${channelId}:${userId}`;
+    const timer = typingTimers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      typingTimers.delete(key);
+    }
+    if (list.some((t) => t.user_id === userId)) {
+      if (!nextTyping) nextTyping = { ...state.typing };
+      nextTyping[channelId] = list.filter((t) => t.user_id !== userId);
+    }
+  }
+  if (nextTyping) useStore.setState({ typing: nextTyping });
+}
+
+function clearAllTyping(): void {
+  for (const timer of typingTimers.values()) clearTimeout(timer);
+  typingTimers.clear();
+  if (Object.keys(useStore.getState().typing).length > 0) {
+    useStore.setState({ typing: {} });
+  }
+}
+
+function stopOutgoingTyping(exceptChannelId?: string | null): void {
+  if (typingChannelId && typingChannelId !== exceptChannelId) {
+    realtime.send({ type: "typing", channel_id: typingChannelId, on: false });
+    typingChannelId = null;
+  }
+}
+
+function markMessageEntering(messageId: string): void {
+  const prev = enteringTimers.get(messageId);
+  if (prev) clearTimeout(prev);
+  const timer = setTimeout(() => {
+    enteringTimers.delete(messageId);
+    const current = useStore.getState().enteringIds;
+    if (!current[messageId]) return;
+    const next = { ...current };
+    delete next[messageId];
+    useStore.setState({ enteringIds: next });
+  }, ENTERING_TTL_MS);
+  enteringTimers.set(messageId, timer);
+  useStore.setState((state) =>
+    state.enteringIds[messageId]
+      ? state
+      : { enteringIds: { ...state.enteringIds, [messageId]: true } },
+  );
+}
+
+function clearAllEntering(): void {
+  for (const timer of enteringTimers.values()) clearTimeout(timer);
+  enteringTimers.clear();
+  if (Object.keys(useStore.getState().enteringIds).length > 0) {
+    useStore.setState({ enteringIds: {} });
+  }
+}
+
+export function resetRealtimeTimers(): void {
+  typingChannelId = null;
+  clearAllTyping();
+  clearAllEntering();
+}
+
 let toastId = 0;
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -524,6 +616,7 @@ export const useStore = create<StoreState>((set, get) => ({
   replies: [],
   replyTo: null,
   typing: {},
+  enteringIds: {},
   dialog: null,
   dialogTarget: null,
   toasts: [],
@@ -626,6 +719,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   signOut() {
+    stopOutgoingTyping(null);
+    clearAllTyping();
+    clearAllEntering();
     realtime.close();
     tokens.clear();
     set({
@@ -640,6 +736,8 @@ export const useStore = create<StoreState>((set, get) => ({
       messages: {},
       recentRooms: [],
       drafts: {},
+      typing: {},
+      enteringIds: {},
       threadRoot: null,
       replies: [],
       view: "channel",
@@ -670,6 +768,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const presence: Record<string, Presence> = {};
     for (const member of data.members) presence[member.user.id] = member.user.presence;
     const switching = get().workspaceId !== null && get().workspaceId !== workspaceId;
+    if (switching) {
+      stopOutgoingTyping(null);
+      clearAllTyping();
+      clearAllEntering();
+    }
     set({
       workspaceId,
       workspaceName: data.workspace.name,
@@ -692,6 +795,7 @@ export const useStore = create<StoreState>((set, get) => ({
             loadingMore: {},
             errors: {},
             typing: {},
+            enteringIds: {},
             channelMembers: {},
             threadRoot: null,
             replies: [],
@@ -729,6 +833,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
   async openChannel(channelId) {
     if (get().activeId !== channelId) {
+      stopOutgoingTyping(channelId);
+      clearAllEntering();
       // A thread reads with the room it belongs to.
       get().closeThread();
     }
@@ -787,6 +893,8 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   clearScreen() {
+    stopOutgoingTyping(null);
+    clearAllEntering();
     // Nothing is selected any more: no room, no board, no thread. The rail
     // stays, and the main pane shows an empty state — a screen that can be
     // shared without the conversation behind it.
@@ -1446,6 +1554,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (parentId) {
       const root = get().threadRoot;
       if (root && root.id === parentId) {
+        const existed = get().replies.some((r) => r.id === message.id);
+        if (!existed) markMessageEntering(message.id);
         set({ replies: upsertMessage(get().replies, message) });
       }
     }
@@ -1533,6 +1643,15 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setTyping(channelId, on) {
+    if (on) {
+      if (typingChannelId && typingChannelId !== channelId) {
+        realtime.send({ type: "typing", channel_id: typingChannelId, on: false });
+      }
+      typingChannelId = channelId;
+    } else {
+      if (typingChannelId !== channelId) return;
+      typingChannelId = null;
+    }
     realtime.send({ type: "typing", channel_id: channelId, on });
   },
 
@@ -1781,9 +1900,13 @@ subscribeSettings(() => {
 });
 
 realtime.onOpen = () => useStore.setState({ connected: true });
-realtime.onClose = () => useStore.setState({ connected: false });
+realtime.onClose = () => {
+  typingChannelId = null;
+  clearAllTyping();
+  useStore.setState({ connected: false });
+};
 
-realtime.onEvent = (event: WsEvent) => {
+export function handleRealtimeEvent(event: WsEvent): void {
   const state = useStore.getState();
   const set = useStore.setState;
 
@@ -1791,11 +1914,15 @@ realtime.onEvent = (event: WsEvent) => {
     case "message.created": {
       const message = event.message;
       if (!message) return;
+      clearTypingEntry(message.channel_id, message.user_id);
       if (message.parent_id) {
         if (state.threadRoot?.id === message.parent_id) {
-          set({ replies: upsertMessage(state.replies, message) });
+          const existed = state.replies.some((r) => r.id === message.id);
+          if (!existed) markMessageEntering(message.id);
+          set({ replies: upsertMessage(useStore.getState().replies, message) });
         }
-        const root = state.messages[message.channel_id]?.find((m) => m.id === message.parent_id);
+        const currentMessages = useStore.getState().messages;
+        const root = currentMessages[message.channel_id]?.find((m) => m.id === message.parent_id);
         if (
           root &&
           root.user_id === state.user?.id &&
@@ -1809,10 +1936,11 @@ realtime.onEvent = (event: WsEvent) => {
           );
         }
         if (root) {
+          const latestMessages = useStore.getState().messages;
           set({
             messages: {
-              ...state.messages,
-              [message.channel_id]: replaceMessage(state.messages[message.channel_id], {
+              ...latestMessages,
+              [message.channel_id]: replaceMessage(latestMessages[message.channel_id], {
                 ...root,
                 reply_count: root.reply_count + 1,
                 last_reply_at: message.created_at,
@@ -1822,11 +1950,15 @@ realtime.onEvent = (event: WsEvent) => {
         }
         if (message.inline) {
           // An answer written in the room shows in the room too, quoted.
-          const list = state.messages[message.channel_id] ?? [];
+          const latestMessages = useStore.getState().messages;
+          const list = latestMessages[message.channel_id] ?? [];
           if (!list.some((m) => m.id === message.id)) {
+            if (useStore.getState().activeId === message.channel_id) {
+              markMessageEntering(message.id);
+            }
             set({
               messages: {
-                ...state.messages,
+                ...useStore.getState().messages,
                 [message.channel_id]: [...list, message],
               },
             });
@@ -1835,15 +1967,25 @@ realtime.onEvent = (event: WsEvent) => {
         return;
       }
 
-      const list = state.messages[message.channel_id] ?? [];
+      const latestMessages = useStore.getState().messages;
+      const list = latestMessages[message.channel_id] ?? [];
       if (!list.some((m) => m.id === message.id)) {
-        set({ messages: { ...state.messages, [message.channel_id]: [...list, message] } });
+        if (useStore.getState().activeId === message.channel_id) {
+          markMessageEntering(message.id);
+        }
+        set({
+          messages: {
+            ...useStore.getState().messages,
+            [message.channel_id]: [...list, message],
+          },
+        });
       }
 
-      const isActive = state.activeId === message.channel_id;
-      if (!isActive && message.user_id !== state.user?.id) {
+      const latestState = useStore.getState();
+      const isActive = latestState.activeId === message.channel_id;
+      if (!isActive && message.user_id !== latestState.user?.id) {
         set({
-          channels: state.channels.map((c) =>
+          channels: latestState.channels.map((c) =>
             c.id === message.channel_id ? { ...c, unread_count: c.unread_count + 1 } : c,
           ),
         });
@@ -1852,8 +1994,8 @@ realtime.onEvent = (event: WsEvent) => {
           message.body.length > 120 ? `${message.body.slice(0, 120)}\u2026` : message.body,
         );
       } else if (
-        message.user_id !== state.user?.id &&
-        mentionsUser(message.body, state.user?.name ?? "")
+        message.user_id !== latestState.user?.id &&
+        mentionsUser(message.body, latestState.user?.name ?? "")
       ) {
         // Being named counts even in the room you are already reading.
         void notify(
@@ -1908,14 +2050,30 @@ realtime.onEvent = (event: WsEvent) => {
 
     case "typing": {
       const { channel_id: channelId, user_id: userId, name, on } = event;
-      if (!channelId || !userId) return;
-      const current = (state.typing[channelId] ?? []).filter((t) => t.user_id !== userId);
-      set({
-        typing: {
-          ...state.typing,
-          [channelId]: on && name ? [...current, { user_id: userId, name }] : current,
-        },
-      });
+      if (!channelId || !userId || userId === state.user?.id) return;
+      if (on && name) {
+        const key = `${channelId}:${userId}`;
+        const prev = typingTimers.get(key);
+        if (prev) clearTimeout(prev);
+        typingTimers.set(
+          key,
+          setTimeout(() => {
+            typingTimers.delete(key);
+            clearTypingEntry(channelId, userId);
+          }, TYPING_TTL_MS),
+        );
+        const current = (useStore.getState().typing[channelId] ?? []).filter(
+          (t) => t.user_id !== userId,
+        );
+        set({
+          typing: {
+            ...useStore.getState().typing,
+            [channelId]: [...current, { user_id: userId, name }],
+          },
+        });
+      } else {
+        clearTypingEntry(channelId, userId);
+      }
       return;
     }
 
@@ -1941,15 +2099,19 @@ realtime.onEvent = (event: WsEvent) => {
     case "presence": {
       const { user_id: userId, presence } = event;
       if (!userId || !presence) return;
-      const me = state.user && state.user.id === userId ? { ...state.user, presence } : null;
+      if (presence === "offline") {
+        clearTypingForUser(userId);
+      }
+      const latest = useStore.getState();
+      const me = latest.user && latest.user.id === userId ? { ...latest.user, presence } : null;
       set({
-        presence: { ...state.presence, [userId]: presence },
+        presence: { ...latest.presence, [userId]: presence },
         // my own face wears the state too — the rail's own chip and name
         ...(me
           ? {
               user: me,
-              session: state.session ? { ...state.session, user: me } : null,
-              members: replaceUser(state.members, me),
+              session: latest.session ? { ...latest.session, user: me } : null,
+              members: replaceUser(latest.members, me),
             }
           : {}),
       });
@@ -2102,4 +2264,6 @@ realtime.onEvent = (event: WsEvent) => {
     default:
       return;
   }
-};
+}
+
+realtime.onEvent = handleRealtimeEvent;

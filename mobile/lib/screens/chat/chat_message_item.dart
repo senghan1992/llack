@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/models.dart';
+import '../../widgets/animated_message_entry.dart';
 import '../../widgets/message_bubble.dart';
 import 'message_date_header.dart';
 
@@ -35,6 +36,10 @@ class ChatMessageItem extends StatelessWidget {
   /// (없으면 말풍선이 기본 동작으로 직접 보여준다)
   final void Function(Reaction reaction)? onShowReactionParticipants;
 
+  /// 새로 도착하거나 방금 전송한 메시지일 때 아래에서 올라오는 애니메이션을 재생한다.
+  final bool animateEntrance;
+  final VoidCallback? onEntranceAnimated;
+
   const ChatMessageItem({
     super.key,
     required this.message,
@@ -51,6 +56,8 @@ class ChatMessageItem extends StatelessWidget {
     this.onEdit,
     this.onDelete,
     this.onShowReactionParticipants,
+    this.animateEntrance = false,
+    this.onEntranceAnimated,
   });
 
   @override
@@ -73,12 +80,16 @@ class ChatMessageItem extends StatelessWidget {
 
     return KeyedSubtree(
       key: jumpKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (showDateHeader) MessageDateHeader(date: message.createdAt),
-          bubble,
-        ],
+      child: AnimatedMessageEntry(
+        animate: animateEntrance,
+        onAnimationStarted: onEntranceAnimated,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showDateHeader) MessageDateHeader(date: message.createdAt),
+            bubble,
+          ],
+        ),
       ),
     );
   }

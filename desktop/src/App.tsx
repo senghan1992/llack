@@ -31,6 +31,7 @@ import {
 } from "./components/Dialogs";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { watchTheme } from "./lib/theme";
+import { formatTyping } from "./lib/format";
 import { isWriting } from "./lib/keys";
 import { currentRoomId, roomTitle, setRoomTitle } from "./lib/popout";
 import { useStore } from "./store/useStore";
@@ -283,9 +284,6 @@ export default function App() {
         </div>
 
         <div className="conversation__foot">
-          <div className="typing" aria-live="polite">
-            {typingHere.length ? `${typingHere.map((t) => t.name).join(", ")} 입력 중` : ""}
-          </div>
           <Composer
             channel={channel}
             onSend={onSend}
@@ -293,6 +291,20 @@ export default function App() {
               if (activeId) setTyping(activeId, on);
             }}
           />
+          <div className="typing" role="status" aria-live="polite" aria-atomic="true">
+            {typingHere.length ? (
+              <span className="typing__indicator">
+                <span className="typing__dots" aria-hidden="true">
+                  <span className="typing__dot" />
+                  <span className="typing__dot" />
+                  <span className="typing__dot" />
+                </span>
+                <span className="typing__text">
+                  {formatTyping(typingHere.map((t) => t.name))}
+                </span>
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
     </>

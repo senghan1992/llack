@@ -40,6 +40,9 @@ abstract class _AppStateRealtime extends _AppStateCore {
         if (userId != null && presVal != null) {
           final p = Presence.fromString(presVal);
           _presence[userId] = p;
+          if (p == Presence.offline) {
+            _clearTypingForUserEverywhere(userId, notify: false);
+          }
           if (_currentUser?.id == userId) {
             _currentUser = _currentUser!.copyWith(presence: p);
           }
@@ -50,9 +53,14 @@ abstract class _AppStateRealtime extends _AppStateCore {
       case 'message.created':
         if (event['message'] != null) {
           final msg = Message.fromJson(event['message'] as Map<String, dynamic>);
+          _clearTypingUser(msg.channelId, msg.userId, notify: false);
           if (msg.parentId != null) {
             if (_threadRoot?.id == msg.parentId) {
               // id 로 중복을 막는다 (sendReply 의 HTTP 응답과 같은 기준).
+              final existed = _threadReplies.any((r) => r.id == msg.id);
+              if (!existed) {
+                _markMessageEntering(msg.id);
+              }
               _threadReplies = upsertById(_threadReplies, msg, (r) => r.id);
             }
             final list = _messages[msg.channelId] ?? [];
@@ -65,9 +73,17 @@ abstract class _AppStateRealtime extends _AppStateCore {
               );
             }
             if (msg.inline) {
+              final existed = (_messages[msg.channelId] ?? const []).any((m) => m.id == msg.id);
+              if (!existed && _activeChannelId == msg.channelId) {
+                _markMessageEntering(msg.id);
+              }
               _upsertMessage(msg.channelId, msg);
             }
           } else {
+            final existed = (_messages[msg.channelId] ?? const []).any((m) => m.id == msg.id);
+            if (!existed && _activeChannelId == msg.channelId) {
+              _markMessageEntering(msg.id);
+            }
             _upsertMessage(msg.channelId, msg);
             if (_activeChannelId != msg.channelId && msg.userId != _currentUser?.id) {
               final cidx = _channels.indexWhere((c) => c.id == msg.channelId);
@@ -122,14 +138,11 @@ abstract class _AppStateRealtime extends _AppStateCore {
         final name = event['name'] as String?;
         final on = event['on'] as bool? ?? false;
         if (cid != null && uid != null && uid != _currentUser?.id) {
-          final users = _typing.putIfAbsent(cid, () => {});
-          if (on && name != null) {
-            // 시각을 함께 저장해 5초가 지나면 자동으로 만료된다.
-            users[name] = DateTime.now();
-          } else if (name != null) {
-            users.remove(name);
+          if (on && name != null && name.isNotEmpty) {
+            _setTypingUser(cid, uid, name);
+          } else {
+            _clearTypingUser(cid, uid);
           }
-          _notify();
         }
         break;
 
